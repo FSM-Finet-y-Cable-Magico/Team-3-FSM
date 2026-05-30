@@ -21,8 +21,18 @@
   let tipoOT = $state('');
   let prioridad = $state('MEDIA');
   let idTecnico = $state('');
-  let bloqueHorario = $state('');
+  let bloqueHorarioFecha = $state('');
+  let bloqueHorarioHora = $state('');
   let observaciones = $state('');
+
+  const bloqueHorario = $derived(
+    bloqueHorarioFecha && bloqueHorarioHora
+      ? (() => {
+          const d = new Date(`${bloqueHorarioFecha}T${bloqueHorarioHora}:00`);
+          return isNaN(d.getTime()) ? '' : d.toISOString();
+        })()
+      : '',
+  );
   let creando = $state(false);
   let crearError = $state('');
 
@@ -237,14 +247,27 @@
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">
+            <label class="block text-sm font-medium text-gray-700 mb-2">
               Bloque horario <span class="text-gray-400 text-xs">(opcional)</span>
             </label>
-            <input
-              type="datetime-local"
-              bind:value={bloqueHorario}
-              class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">Fecha</label>
+                <input
+                  type="date"
+                  bind:value={bloqueHorarioFecha}
+                  class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-gray-400 mb-1">Hora (24h)</label>
+                <input
+                  type="time"
+                  bind:value={bloqueHorarioHora}
+                  class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
           </div>
 
           <div>

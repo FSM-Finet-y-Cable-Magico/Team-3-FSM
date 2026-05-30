@@ -17,7 +17,17 @@
   let errorMsg = $state('');
 
   let idTecnicoAsignar = $state('');
-  let bloqueHorarioAsignar = $state('');
+  let bloqueHorarioAsignarFecha = $state('');
+  let bloqueHorarioAsignarHora = $state('');
+
+  const bloqueHorarioAsignar = $derived(
+    bloqueHorarioAsignarFecha && bloqueHorarioAsignarHora
+      ? (() => {
+          const d = new Date(`${bloqueHorarioAsignarFecha}T${bloqueHorarioAsignarHora}:00`);
+          return isNaN(d.getTime()) ? '' : d.toISOString();
+        })()
+      : '',
+  );
   let asignando = $state(false);
   let asignarError = $state('');
 
@@ -209,12 +219,19 @@
                 </option>
               {/each}
             </select>
-            <input
-              type="datetime-local"
-              bind:value={bloqueHorarioAsignar}
-              class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Bloque horario (opcional)"
-            />
+            <div class="grid grid-cols-2 gap-2">
+              <input
+                type="date"
+                bind:value={bloqueHorarioAsignarFecha}
+                class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <input
+                type="time"
+                bind:value={bloqueHorarioAsignarHora}
+                class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <p class="text-xs text-gray-400">Bloque horario opcional — formato 24h</p>
             {#if asignarError}
               <p class="text-red-500 text-sm">{asignarError}</p>
             {/if}
@@ -234,7 +251,7 @@
               disabled={cambiandoEstado}
               class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-lg transition-colors disabled:opacity-50 text-sm"
             >
-              Marcar EN_CURSO
+              Marcar OT en curso
             </button>
             <button
               onclick={() => (mostrarModalCancelar = true)}

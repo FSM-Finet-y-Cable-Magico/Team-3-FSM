@@ -253,16 +253,19 @@
 
 <!-- Bottom sheet: historial de fallas -->
 {#if historialClienteId !== null}
-  <div
-    class="fixed inset-0 bg-black/50 z-50 flex flex-col justify-end"
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
-    onclick={(e: MouseEvent) => { if (e.target === e.currentTarget) historialClienteId = null; }}
-    onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') historialClienteId = null; }}
-  >
-    <div class="bg-white rounded-t-2xl max-h-[85dvh] flex flex-col">
-      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="fixed inset-0 z-50" onclick={() => historialClienteId = null}>
+    <div class="absolute inset-0 bg-black/50" aria-hidden="true"></div>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl max-h-[85vh] flex flex-col"
+      onclick={(e: MouseEvent) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 flex-shrink-0">
         <h3 class="font-semibold text-slate-800">Historial de Fallas</h3>
         <button
           onclick={() => historialClienteId = null}
