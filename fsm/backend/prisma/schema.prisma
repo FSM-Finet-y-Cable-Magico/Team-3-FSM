@@ -311,7 +311,7 @@ model orden_trabajo {
   prioridad            String   @db.VarChar(10)
   estado               String   @db.VarChar(25)
   fecha_creacion       DateTime @default(now())
-  fecha_programada     DateTime? @db.Date
+  fecha_programada     DateTime? @db.Timestamptz()
   fecha_completada     DateTime?
   potencia_optica_dbm  Decimal? @db.Decimal(5, 2)
   observaciones        String?  @db.Text
