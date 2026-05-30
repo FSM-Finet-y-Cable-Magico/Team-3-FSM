@@ -100,7 +100,7 @@
       <div>
         <div class="flex items-center gap-2 mb-0.5">
           <div class="bg-white rounded px-1.5 py-0.5">
-            <img src="/logo_finet.png" alt="FiNet" class="h-5 w-auto" />
+            <img src="/Logo_finet.png" alt="FiNet" class="h-5 w-auto" />
           </div>
           <span class="text-sm font-semibold text-slate-100">{nombreTecnico}</span>
         </div>
@@ -185,7 +185,7 @@
               <!-- Bloque horario -->
               {#if ot.fecha_programada}
                 <p class="text-xs text-slate-400 mt-1">
-                  Programada: {new Date(ot.fecha_programada).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                  Programada: {new Date(ot.fecha_programada).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
               {/if}
 
