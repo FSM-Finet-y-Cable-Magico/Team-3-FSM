@@ -67,7 +67,13 @@ async function fetchApi(token: string, url: string, options?: RequestInit) {
     throw new Error(data.message || 'Error en la solicitud');
   }
 
-  return res.json();
+  //return res.json(); provoca error de respuestas vacias
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return null;
+  }
+
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 export async function buscarPorRut(token: string, rut: string): Promise<ClienteConHistorial> {

@@ -21,8 +21,25 @@
   let tipoOT = $state('');
   let prioridad = $state('MEDIA');
   let idTecnico = $state('');
-  let bloqueHorario = $state('');
+  let bloqueDia = $state('');
+  let bloqueMes = $state('');
+  let bloqueAnio = $state('');
+  let bloqueHora = $state('');
   let observaciones = $state('');
+
+  function buildBloqueHorario(): string | undefined {
+    if (!bloqueDia || !bloqueMes || !bloqueAnio || !bloqueHora) return undefined;
+    const dd = String(bloqueDia).padStart(2, '0');
+    const mm = String(bloqueMes).padStart(2, '0');
+    const yyyy = String(bloqueAnio);
+    const off = new Date().getTimezoneOffset();
+    const sign = off <= 0 ? '+' : '-';
+    const oh = String(Math.floor(Math.abs(off) / 60)).padStart(2, '0');
+    const om = String(Math.abs(off) % 60).padStart(2, '0');
+    const iso = `${yyyy}-${mm}-${dd}T${bloqueHora}:00${sign}${oh}:${om}`;
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? undefined : d.toISOString();
+  }
   let creando = $state(false);
   let crearError = $state('');
 
@@ -101,7 +118,7 @@
         tipo_ot: tipoOT,
         prioridad,
         id_tecnico: idTecnico ? +idTecnico : undefined,
-        bloque_horario: bloqueHorario || undefined,
+        bloque_horario: buildBloqueHorario(),
         observaciones: observaciones || undefined,
       });
       goto(`/ot/${nueva.id_ot}`);
@@ -237,14 +254,37 @@
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">
+            <label class="block text-sm font-medium text-gray-700 mb-2">
               Bloque horario <span class="text-gray-400 text-xs">(opcional)</span>
             </label>
-            <input
-              type="datetime-local"
-              bind:value={bloqueHorario}
-              class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <div class="flex items-center gap-1 flex-wrap">
+              <input
+                type="number" min="1" max="31"
+                bind:value={bloqueDia}
+                placeholder="DD"
+                class="w-14 border rounded-lg px-2 py-2 text-sm text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span class="text-gray-400 font-medium">/</span>
+              <input
+                type="number" min="1" max="12"
+                bind:value={bloqueMes}
+                placeholder="MM"
+                class="w-14 border rounded-lg px-2 py-2 text-sm text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span class="text-gray-400 font-medium">/</span>
+              <input
+                type="number" min="2024" max="2099"
+                bind:value={bloqueAnio}
+                placeholder="AAAA"
+                class="w-20 border rounded-lg px-2 py-2 text-sm text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span class="text-gray-400 text-xs ml-1">a las</span>
+              <input
+                type="time"
+                bind:value={bloqueHora}
+                class="border rounded-lg px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
 
           <div>

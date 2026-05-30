@@ -100,7 +100,7 @@
       <div>
         <div class="flex items-center gap-2 mb-0.5">
           <div class="bg-white rounded px-1.5 py-0.5">
-            <img src="/logo_finet.png" alt="FiNet" class="h-5 w-auto" />
+            <img src="/Logo_finet.png" alt="FiNet" class="h-5 w-auto" />
           </div>
           <span class="text-sm font-semibold text-slate-100">{nombreTecnico}</span>
         </div>
@@ -185,7 +185,7 @@
               <!-- Bloque horario -->
               {#if ot.fecha_programada}
                 <p class="text-xs text-slate-400 mt-1">
-                  Programada: {new Date(ot.fecha_programada).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+                  Programada: {new Date(ot.fecha_programada).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
               {/if}
 
@@ -253,16 +253,19 @@
 
 <!-- Bottom sheet: historial de fallas -->
 {#if historialClienteId !== null}
-  <div
-    class="fixed inset-0 bg-black/50 z-50 flex flex-col justify-end"
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
-    onclick={(e: MouseEvent) => { if (e.target === e.currentTarget) historialClienteId = null; }}
-    onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') historialClienteId = null; }}
-  >
-    <div class="bg-white rounded-t-2xl max-h-[85dvh] flex flex-col">
-      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="fixed inset-0 z-50" onclick={() => historialClienteId = null}>
+    <div class="absolute inset-0 bg-black/50" aria-hidden="true"></div>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl max-h-[85vh] flex flex-col"
+      onclick={(e: MouseEvent) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 flex-shrink-0">
         <h3 class="font-semibold text-slate-800">Historial de Fallas</h3>
         <button
           onclick={() => historialClienteId = null}

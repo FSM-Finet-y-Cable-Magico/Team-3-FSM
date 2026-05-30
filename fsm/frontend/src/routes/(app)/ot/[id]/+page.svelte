@@ -17,8 +17,25 @@
   let errorMsg = $state('');
 
   let idTecnicoAsignar = $state('');
-  let bloqueHorarioAsignar = $state('');
+  let asignarDia = $state('');
+  let asignarMes = $state('');
+  let asignarAnio = $state('');
+  let asignarHora = $state('');
   let asignando = $state(false);
+
+  function buildBloqueAsignar(): string | undefined {
+    if (!asignarDia || !asignarMes || !asignarAnio || !asignarHora) return undefined;
+    const dd = String(asignarDia).padStart(2, '0');
+    const mm = String(asignarMes).padStart(2, '0');
+    const yyyy = String(asignarAnio);
+    const off = new Date().getTimezoneOffset();
+    const sign = off <= 0 ? '+' : '-';
+    const oh = String(Math.floor(Math.abs(off) / 60)).padStart(2, '0');
+    const om = String(Math.abs(off) % 60).padStart(2, '0');
+    const iso = `${yyyy}-${mm}-${dd}T${asignarHora}:00${sign}${oh}:${om}`;
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? undefined : d.toISOString();
+  }
   let asignarError = $state('');
 
   let mostrarModalCancelar = $state(false);
@@ -74,7 +91,7 @@
     try {
       ot = await ordenesApi.asignarTecnico(token, idOT, {
         id_tecnico: +idTecnicoAsignar,
-        bloque_horario: bloqueHorarioAsignar || undefined,
+        bloque_horario: buildBloqueAsignar(),
       });
     } catch (err) {
       asignarError = err instanceof Error ? err.message : 'Error al asignar';
@@ -209,12 +226,35 @@
                 </option>
               {/each}
             </select>
-            <input
-              type="datetime-local"
-              bind:value={bloqueHorarioAsignar}
-              class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Bloque horario (opcional)"
-            />
+            <div class="flex items-center gap-1 flex-wrap">
+              <input
+                type="number" min="1" max="31"
+                bind:value={asignarDia}
+                placeholder="DD"
+                class="w-14 border rounded-lg px-2 py-2 text-sm text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span class="text-gray-400 font-medium">/</span>
+              <input
+                type="number" min="1" max="12"
+                bind:value={asignarMes}
+                placeholder="MM"
+                class="w-14 border rounded-lg px-2 py-2 text-sm text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span class="text-gray-400 font-medium">/</span>
+              <input
+                type="number" min="2024" max="2099"
+                bind:value={asignarAnio}
+                placeholder="AAAA"
+                class="w-20 border rounded-lg px-2 py-2 text-sm text-center text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span class="text-gray-400 text-xs ml-1">a las</span>
+              <input
+                type="time"
+                bind:value={asignarHora}
+                class="border rounded-lg px-2 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <p class="text-xs text-gray-400 mt-1">Bloque horario opcional (dd/mm/aaaa — hora 24h)</p>
             {#if asignarError}
               <p class="text-red-500 text-sm">{asignarError}</p>
             {/if}
@@ -234,7 +274,7 @@
               disabled={cambiandoEstado}
               class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-lg transition-colors disabled:opacity-50 text-sm"
             >
-              Marcar EN_CURSO
+              Marcar OT en curso
             </button>
             <button
               onclick={() => (mostrarModalCancelar = true)}
