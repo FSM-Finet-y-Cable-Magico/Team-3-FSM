@@ -51,7 +51,7 @@
     <div class="text-center mb-8">
       <div class="inline-flex items-center justify-center bg-white border border-slate-200 rounded-2xl px-7 py-3.5 shadow-sm mb-5">
         <img
-          src="/Logo_finet.png"
+          src="/logo_finet.png"
           alt="FiNet Limitada"
           class="h-20 w-auto"
         />

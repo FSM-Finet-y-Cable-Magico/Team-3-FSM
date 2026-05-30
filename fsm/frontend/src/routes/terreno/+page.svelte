@@ -100,7 +100,7 @@
       <div>
         <div class="flex items-center gap-2 mb-0.5">
           <div class="bg-white rounded px-1.5 py-0.5">
-            <img src="/Logo_finet.png" alt="FiNet" class="h-5 w-auto" />
+            <img src="/logo_finet.png" alt="FiNet" class="h-5 w-auto" />
           </div>
           <span class="text-sm font-semibold text-slate-100">{nombreTecnico}</span>
         </div>

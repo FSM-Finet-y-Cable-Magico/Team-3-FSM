@@ -60,7 +60,7 @@
           <div class="flex items-center gap-8">
             <a href="/dashboard" class="flex items-center">
               <div class="bg-white rounded-lg px-2.5 py-1">
-                <img src="/Logo_finet.png" alt="FiNet" class="h-7 w-auto" />
+                <img src="/logo_finet.png" alt="FiNet" class="h-7 w-auto" />
               </div>
             </a>
 
