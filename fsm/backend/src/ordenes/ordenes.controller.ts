@@ -7,8 +7,14 @@ import {
   Param,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
   ForbiddenException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { v2 as cloudinary } from 'cloudinary';
 import { OrdenesService } from './ordenes.service.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
@@ -28,7 +34,13 @@ interface UserPayload {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('ordenes')
 export class OrdenesController {
-  constructor(private ordenesService: OrdenesService) {}
+  constructor(private ordenesService: OrdenesService) {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET,
+    });
+  }
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
   @Get()
@@ -93,6 +105,26 @@ export class OrdenesController {
     @CurrentUser() user: UserPayload,
   ) {
     return this.ordenesService.asignarTecnico(+id, dto, user.userId, user.id_empresa);
+  }
+
+  @Roles('TECNICO')
+  @Post(':id/foto')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  async subirFoto(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('No se recibió ningún archivo');
+    const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    const result = await cloudinary.uploader.upload(dataUri, {
+      folder: 'fsm_evidencias',
+      resource_type: 'image',
+    });
+    return {
+      url_cloudinary: result.secure_url,
+      formato: result.format,
+      tamano_kb: Math.round(result.bytes / 1024),
+    };
   }
 
   @Roles('TECNICO')

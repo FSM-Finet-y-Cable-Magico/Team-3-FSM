@@ -45,27 +45,22 @@ export async function cerrarOT(token: string, id_ot: number, dto: CerrarOTDto): 
   });
 }
 
-export async function subirFotoCloudinary(
+export async function subirFoto(
+  token: string,
+  id_ot: number,
   file: File,
-  cloudName: string,
-  uploadPreset: string,
-): Promise<{ url: string; formato: string; tamano_kb: number }> {
+): Promise<{ url_cloudinary: string; formato: string; tamano_kb: number }> {
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('upload_preset', uploadPreset);
 
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+  const res = await fetch(`${API_URL}/api/ordenes/${id_ot}/foto`, {
     method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
     body: formData,
   });
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error?.message || 'Error al subir foto a Cloudinary');
+  if (res.status >= 400) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || 'Error al subir foto');
   }
-  const data = await res.json();
-  return {
-    url: data.secure_url,
-    formato: data.format,
-    tamano_kb: Math.round(data.bytes / 1024),
-  };
+  return res.json();
 }

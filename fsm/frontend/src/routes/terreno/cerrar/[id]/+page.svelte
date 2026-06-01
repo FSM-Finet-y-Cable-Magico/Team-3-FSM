@@ -6,7 +6,6 @@
   import { authStore } from '$lib/stores/auth.store';
   import * as ordenesApi from '$lib/api/ordenes.api';
   import * as terrenoApi from '$lib/api/terreno.api';
-  import { PUBLIC_CLOUDINARY_CLOUD_NAME, PUBLIC_CLOUDINARY_UPLOAD_PRESET } from '$env/static/public';
 
   let token = '';
   let userId = $state(0);
@@ -92,10 +91,10 @@
       const placeholderIdx = fotos.length;
       fotos = [...fotos, { url: '', formato: '', tamano_kb: 0, preview: '', cargando: true }];
       try {
-        const result = await terrenoApi.subirFotoCloudinary(file, PUBLIC_CLOUDINARY_CLOUD_NAME, PUBLIC_CLOUDINARY_UPLOAD_PRESET);
+        const result = await terrenoApi.subirFoto(token, idOT, file);
         fotos = fotos.map((f, i) =>
           i === placeholderIdx
-            ? { url: result.url, formato: result.formato, tamano_kb: result.tamano_kb, preview: result.url, cargando: false }
+            ? { url: result.url_cloudinary, formato: result.formato, tamano_kb: result.tamano_kb, preview: result.url_cloudinary, cargando: false }
             : f,
         );
       } catch (err) {
