@@ -96,7 +96,7 @@
 
   async function cargar() {
     actualizando = true;
-    await dashboardStore.cargarIndicadores(token);
+    await dashboardStore.cargarIndicadores(token, empresaSeleccionada || undefined);
     actualizando = false;
   }
 

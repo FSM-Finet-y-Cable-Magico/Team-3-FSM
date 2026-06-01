@@ -33,8 +33,9 @@ export interface Empresa {
   rut_empresa: string | null;
 }
 
-export async function obtenerIndicadores(token: string): Promise<IndicadoresDashboard> {
-  const res = await fetch(`${API_URL}/api/dashboard`, {
+export async function obtenerIndicadores(token: string, id_empresa?: number): Promise<IndicadoresDashboard> {
+  const params = id_empresa ? `?empresa=${id_empresa}` : '';
+  const res = await fetch(`${API_URL}/api/dashboard${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status >= 400) {
@@ -55,7 +56,7 @@ export async function listarEmpresas(token: string): Promise<Empresa[]> {
   return res.json();
 }
 
-export async function obtenerDatosEmpresa(token: string, id_empresa: number): Promise<unknown> {
+export async function obtenerDatosEmpresa(token: string, id_empresa: number): Promise<{ empresa: unknown; total_clientes: number; ot_activas: number }> {
   const res = await fetch(`${API_URL}/api/dashboard/empresa/${id_empresa}`, {
     headers: { Authorization: `Bearer ${token}` },
   });

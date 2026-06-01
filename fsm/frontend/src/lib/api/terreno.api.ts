@@ -1,7 +1,5 @@
 const API_URL = 'http://localhost:3000';
 
-const CLOUDINARY_CLOUD_NAME = 'REEMPLAZAR';
-const CLOUDINARY_UPLOAD_PRESET = 'fsm_unsigned';
 
 export interface MaterialDisponible {
   id_tipo_equipo: number;
@@ -49,24 +47,9 @@ export async function cerrarOT(token: string, id_ot: number, dto: CerrarOTDto): 
 
 export async function subirFotoCloudinary(
   file: File,
-  cloudName: string = CLOUDINARY_CLOUD_NAME,
-  uploadPreset: string = CLOUDINARY_UPLOAD_PRESET,
+  cloudName: string,
+  uploadPreset: string,
 ): Promise<{ url: string; formato: string; tamano_kb: number }> {
-  if (!cloudName || cloudName === 'REEMPLAZAR') {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        resolve({
-          url: reader.result as string,
-          formato: file.type.split('/')[1]?.slice(0, 5) || 'jpeg',
-          tamano_kb: Math.round(file.size / 1024),
-        });
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
   const formData = new FormData();
   formData.append('file', file);
   formData.append('upload_preset', uploadPreset);
@@ -75,7 +58,10 @@ export async function subirFotoCloudinary(
     method: 'POST',
     body: formData,
   });
-  if (!res.ok) throw new Error('Error al subir foto a Cloudinary');
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error?.message || 'Error al subir foto a Cloudinary');
+  }
   const data = await res.json();
   return {
     url: data.secure_url,
