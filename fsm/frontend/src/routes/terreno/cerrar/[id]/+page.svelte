@@ -24,9 +24,11 @@
     formato: string;
     tamano_kb: number;
     preview: string;
+    cargando?: boolean;
   }
   let fotos = $state<FotoLocal[]>([]);
-  let subiendoFoto = $state(false);
+  const subiendoFoto = $derived(fotos.some(f => f.cargando));
+  const fotosListas = $derived(fotos.filter(f => !f.cargando));
 
   // Paso 2 - Materiales
   let cantidades = $state<Record<number, number>>({});
@@ -81,17 +83,24 @@
   async function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (!input.files?.length) return;
-    subiendoFoto = true;
-    try {
-      for (const file of Array.from(input.files)) {
-        const result = await terrenoApi.subirFotoCloudinary(file);
-        fotos = [...fotos, { url: result.url, formato: result.formato, tamano_kb: result.tamano_kb, preview: result.url }];
+    const archivos = Array.from(input.files);
+    input.value = '';
+    errorCierre = '';
+
+    for (const file of archivos) {
+      const placeholderIdx = fotos.length;
+      fotos = [...fotos, { url: '', formato: '', tamano_kb: 0, preview: '', cargando: true }];
+      try {
+        const result = await terrenoApi.subirFoto(token, idOT, file);
+        fotos = fotos.map((f, i) =>
+          i === placeholderIdx
+            ? { url: result.url_cloudinary, formato: result.formato, tamano_kb: result.tamano_kb, preview: result.url_cloudinary, cargando: false }
+            : f,
+        );
+      } catch (err) {
+        fotos = fotos.filter((_, i) => i !== placeholderIdx);
+        errorCierre = err instanceof Error ? err.message : 'Error al subir foto';
       }
-    } catch (err) {
-      errorCierre = err instanceof Error ? err.message : 'Error al subir foto';
-    } finally {
-      subiendoFoto = false;
-      input.value = '';
     }
   }
 
@@ -196,7 +205,7 @@
       {#if paso === 1}
         <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <h2 class="font-semibold text-slate-800 mb-1">Fotografias de evidencia</h2>
-          <p class="text-xs text-slate-400 mb-4">Minimo 1 foto requerida · {fotos.length} cargada{fotos.length !== 1 ? 's' : ''}</p>
+          <p class="text-xs text-slate-400 mb-4">Minimo 1 foto requerida · {fotosListas.length} cargada{fotosListas.length !== 1 ? 's' : ''}</p>
 
           <label class="block w-full">
             <div class="border-2 border-dashed border-slate-200 rounded-xl p-6 flex flex-col items-center gap-2 active:bg-slate-50 transition-colors cursor-pointer">
@@ -230,24 +239,39 @@
             <div class="grid grid-cols-3 gap-2 mt-4">
               {#each fotos as foto, i}
                 <div class="relative aspect-square rounded-lg overflow-hidden bg-slate-100">
-                  <img src={foto.preview} alt="evidencia {i + 1}" class="w-full h-full object-cover" />
-                  <button
-                    onclick={() => eliminarFoto(i)}
-                    class="absolute top-1 right-1 bg-black/60 rounded-full p-0.5"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  {#if foto.cargando}
+                    <div class="w-full h-full flex items-center justify-center">
+                      <svg class="animate-spin h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                      </svg>
+                    </div>
+                  {:else}
+                    <img src={foto.preview} alt="evidencia {i + 1}" class="w-full h-full object-cover" />
+                    <button
+                      onclick={() => eliminarFoto(i)}
+                      class="absolute top-1 right-1 bg-black/60 rounded-full p-0.5"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  {/if}
                 </div>
               {/each}
             </div>
           {/if}
         </div>
 
+        {#if errorCierre}
+          <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+            {errorCierre}
+          </div>
+        {/if}
+
         <button
           onclick={() => (paso = 2)}
-          disabled={fotos.length === 0}
+          disabled={fotosListas.length === 0 || subiendoFoto}
           class="w-full bg-blue-600 active:bg-blue-800 text-white font-semibold py-4 rounded-xl text-base disabled:opacity-40 flex items-center justify-center gap-2"
         >
           Siguiente

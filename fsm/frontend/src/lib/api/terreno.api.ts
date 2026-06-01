@@ -1,7 +1,5 @@
 const API_URL = 'http://localhost:3000';
 
-const CLOUDINARY_CLOUD_NAME = 'REEMPLAZAR';
-const CLOUDINARY_UPLOAD_PRESET = 'fsm_unsigned';
 
 export interface MaterialDisponible {
   id_tipo_equipo: number;
@@ -47,39 +45,22 @@ export async function cerrarOT(token: string, id_ot: number, dto: CerrarOTDto): 
   });
 }
 
-export async function subirFotoCloudinary(
+export async function subirFoto(
+  token: string,
+  id_ot: number,
   file: File,
-  cloudName: string = CLOUDINARY_CLOUD_NAME,
-  uploadPreset: string = CLOUDINARY_UPLOAD_PRESET,
-): Promise<{ url: string; formato: string; tamano_kb: number }> {
-  if (!cloudName || cloudName === 'REEMPLAZAR') {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        resolve({
-          url: reader.result as string,
-          formato: file.type.split('/')[1]?.slice(0, 5) || 'jpeg',
-          tamano_kb: Math.round(file.size / 1024),
-        });
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
+): Promise<{ url_cloudinary: string; formato: string; tamano_kb: number }> {
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('upload_preset', uploadPreset);
 
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+  const res = await fetch(`${API_URL}/api/ordenes/${id_ot}/foto`, {
     method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
     body: formData,
   });
-  if (!res.ok) throw new Error('Error al subir foto a Cloudinary');
-  const data = await res.json();
-  return {
-    url: data.secure_url,
-    formato: data.format,
-    tamano_kb: Math.round(data.bytes / 1024),
-  };
+  if (res.status >= 400) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || 'Error al subir foto');
+  }
+  return res.json();
 }

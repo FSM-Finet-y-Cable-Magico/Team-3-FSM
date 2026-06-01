@@ -15,10 +15,10 @@ function createDashboardStore() {
     ultimaActualizacion: null,
   });
 
-  async function cargarIndicadores(token: string) {
+  async function cargarIndicadores(token: string, id_empresa?: number) {
     update((s) => ({ ...s, isLoading: true }));
     try {
-      const indicadores = await obtenerIndicadores(token);
+      const indicadores = await obtenerIndicadores(token, id_empresa);
       update(() => ({
         indicadores,
         isLoading: false,

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { DashboardService } from './dashboard.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
@@ -18,8 +18,9 @@ export class DashboardController {
 
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Get()
-  indicadores(@CurrentUser() user: UserPayload) {
-    return this.dashboardService.indicadoresDelDia(user.id_empresa);
+  indicadores(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.dashboardService.indicadoresDelDia(id);
   }
 
   @Roles('ADMIN')
