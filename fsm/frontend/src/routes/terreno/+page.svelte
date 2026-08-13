@@ -17,6 +17,7 @@
   let errorMsg = $state('');
   let iniciando = $state<number | null>(null);
   let marcandoAusente = $state<number | null>(null);
+  let reintentando = $state<number | null>(null);
 
   const hoy = new Date().toLocaleDateString('en-CA');
 
@@ -111,6 +112,19 @@
       errorMsg = err instanceof Error ? err.message : 'Error al marcar cliente ausente';
     } finally {
       marcandoAusente = null;
+    }
+  }
+
+  async function reintentarVisita(idOT: number) {
+    reintentando = idOT;
+    errorMsg = '';
+    try {
+      await ordenesApi.actualizarEstado(token, idOT, 'ASIGNADA');
+      await cargarOTs();
+    } catch (err) {
+      errorMsg = err instanceof Error ? err.message : 'Error al reintentar la visita';
+    } finally {
+      reintentando = null;
     }
   }
 
@@ -278,10 +292,17 @@
                 </button>
               </div>
             {:else if ot.estado === 'PENDIENTE_CLIENTE_AUSENTE'}
-              <div class="px-4 pb-4">
+              <div class="px-4 pb-4 space-y-2">
                 <div class="w-full bg-amber-50 text-amber-700 font-semibold py-3 rounded-xl text-sm text-center border border-amber-200">
                   Cliente ausente
                 </div>
+                <button
+                  onclick={() => reintentarVisita(ot.id_ot)}
+                  disabled={reintentando === ot.id_ot}
+                  class="w-full bg-indigo-600 active:bg-indigo-800 text-white font-semibold py-4 rounded-xl text-base transition-colors disabled:opacity-50"
+                >
+                  {reintentando === ot.id_ot ? 'Reintentando...' : 'Reintentar visita'}
+                </button>
               </div>
             {:else if ot.estado === 'COMPLETADA'}
               <div class="px-4 pb-4">

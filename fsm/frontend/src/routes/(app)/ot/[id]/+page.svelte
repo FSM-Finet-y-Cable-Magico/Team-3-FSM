@@ -376,6 +376,34 @@
               Cliente ausente
             </button>
           </div>
+
+        {:else if ot.estado === 'PENDIENTE_CLIENTE_AUSENTE'}
+          {#if rol === 'ADMIN' || rol === 'JEFE_TECNICO' || ot.id_tecnico === userId}
+            <div class="flex gap-3 flex-wrap">
+              <button
+                onclick={() => cambiarEstado('ASIGNADA')}
+                disabled={cambiandoEstado}
+                class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-lg transition-colors disabled:opacity-50 text-sm"
+              >
+                {cambiandoEstado ? 'Reintentando...' : 'Reintentar visita'}
+              </button>
+              {#if rol === 'ADMIN' || rol === 'JEFE_TECNICO'}
+                <button
+                  onclick={() => (mostrarModalCancelar = true)}
+                  class="bg-red-100 hover:bg-red-200 text-red-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+                >
+                  Cancelar OT
+                </button>
+              {/if}
+            </div>
+            <p class="text-xs text-gray-400 mt-3">
+              Reintentar devuelve la OT a ASIGNADA con el mismo técnico y limpia la observación de cliente ausente.
+            </p>
+          {:else}
+            <p class="text-sm text-gray-500">
+              OT pendiente por cliente ausente. Solo el técnico asignado o un administrador puede reintentarla o cancelarla.
+            </p>
+          {/if}
         {/if}
       </div>
     {:else}
