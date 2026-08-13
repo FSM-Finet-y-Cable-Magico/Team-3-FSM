@@ -190,6 +190,7 @@ CREATE TABLE orden_trabajo (
     id_tecnico_externo             INTEGER       ,
     id_direccion                   INTEGER       ,
     id_ticket                      INTEGER        UNIQUE,
+    id_categoria_falla             INTEGER       ,
     tipo_ot                        VARCHAR(20)    NOT NULL,
     prioridad                      VARCHAR(10)    NOT NULL,
     estado                         VARCHAR(25)    NOT NULL,
@@ -197,7 +198,9 @@ CREATE TABLE orden_trabajo (
     fecha_programada               DATE          ,
     fecha_completada               TIMESTAMP     ,
     potencia_optica_dbm            DECIMAL(5,2)  ,
+    categoria_falla_otro           VARCHAR(120)  ,
     observaciones                  TEXT          ,
+    obs_cliente_ausente            VARCHAR(500)  ,
     resuelto_remotamente           BOOLEAN        DEFAULT FALSE
 );
 
@@ -632,4 +635,5 @@ ALTER TABLE prospecto          ADD CONSTRAINT fk_prospecto_id_cliente         FO
 ALTER TABLE configuracion_seo  ADD CONSTRAINT fk_configuracion_seo_id_empresa FOREIGN KEY (id_empresa)           REFERENCES empresa(id_empresa);
 ALTER TABLE intento_fallido    ADD CONSTRAINT fk_intento_fallido_id_empresa   FOREIGN KEY (id_empresa)           REFERENCES empresa(id_empresa);
 ALTER TABLE orden_trabajo      ADD CONSTRAINT fk_orden_trabajo_id_ticket      FOREIGN KEY (id_ticket)            REFERENCES ticket(id_ticket);
+ALTER TABLE orden_trabajo      ADD CONSTRAINT fk_orden_trabajo_id_categoria_falla FOREIGN KEY (id_categoria_falla) REFERENCES categoria_falla(id_categoria);
 ALTER TABLE monitoreo_ont      ADD CONSTRAINT fk_monitoreo_ont_id_caja_nap    FOREIGN KEY (id_caja_nap)          REFERENCES caja_nap(id_caja_nap);

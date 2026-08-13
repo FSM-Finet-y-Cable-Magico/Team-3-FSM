@@ -38,6 +38,11 @@ export interface HistorialOT {
 export interface ClienteConHistorial {
   cliente: ClienteFicha;
   historial_ot: HistorialOT[];
+  alerta_reparaciones_30_dias?: {
+    activa: boolean;
+    total_reparaciones_30_dias: number;
+    desde: string;
+  };
 }
 
 export interface PlanResumen {

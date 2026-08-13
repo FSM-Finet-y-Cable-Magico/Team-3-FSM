@@ -10,6 +10,8 @@ export class DashboardService {
     hoy.setHours(0, 0, 0, 0);
     const manana = new Date(hoy);
     manana.setDate(manana.getDate() + 1);
+    const hace30Dias = new Date();
+    hace30Dias.setDate(hace30Dias.getDate() - 30);
 
     const [
       otsPorEstado,
@@ -18,6 +20,7 @@ export class DashboardService {
       ultimasCompletadas,
       totalClientes,
       resueltasRemoto,
+      clientesConReparacionesRecurrentes,
     ] = await Promise.all([
       this.prisma.orden_trabajo.groupBy({
         by: ['estado'],
@@ -68,10 +71,23 @@ export class DashboardService {
           fecha_completada: { gte: hoy, lt: manana },
         },
       }),
+
+      this.prisma.orden_trabajo.groupBy({
+        by: ['id_cliente'],
+        where: {
+          id_empresa,
+          id_cliente: { not: null },
+          tipo_ot: 'REPARACION',
+          estado: { not: 'CANCELADA' },
+          fecha_creacion: { gte: hace30Dias },
+        },
+        _count: { id_cliente: true },
+      }),
     ]);
 
     const ot_por_estado = {
       PENDIENTE: 0,
+      PENDIENTE_CLIENTE_AUSENTE: 0,
       ASIGNADA: 0,
       EN_CURSO: 0,
       COMPLETADA: 0,
@@ -107,6 +123,9 @@ export class DashboardService {
     return {
       ot_por_estado,
       ot_criticas_activas: criticas,
+      clientes_reparacion_recurrente: clientesConReparacionesRecurrentes.filter(
+        (row) => row._count.id_cliente >= 3,
+      ).length,
       tecnicos,
       ultimas_completadas: ultimasCompletadas,
       total_clientes_activos: totalClientes,

@@ -8,6 +8,7 @@
 
   interface UsuarioRow {
     id_usuario: number;
+    id_empresa: number | null;
     nombre_completo: string;
     nombre_usuario: string;
     email: string | null;

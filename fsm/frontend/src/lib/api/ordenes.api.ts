@@ -9,7 +9,11 @@ export interface OT {
   fecha_creacion: string;
   fecha_programada?: string;
   fecha_completada?: string;
+  antiguedad_dias?: number;
   observaciones?: string;
+  obs_cliente_ausente?: string;
+  categoria_falla_otro?: string | null;
+  categoria_falla?: CategoriaFalla | null;
   cliente?: {
     id_cliente: number;
     nombre_completo: string;
@@ -37,6 +41,12 @@ export interface Tecnico {
   nombre_completo: string;
   nombre_usuario: string;
   ot_activas_hoy: number;
+}
+
+export interface CategoriaFalla {
+  id_categoria: number;
+  nombre: string;
+  sla_horas: number | null;
 }
 
 async function fetchApi(token: string, url: string, options?: RequestInit) {
@@ -98,13 +108,18 @@ export async function actualizarEstado(
   id: number,
   estado: string,
   obs_cancelacion?: string,
+  obs_cliente_ausente?: string,
 ): Promise<OT> {
   return fetchApi(token, `${PUBLIC_API_URL}/api/ordenes/${id}/estado`, {
     method: 'PATCH',
-    body: JSON.stringify({ estado, obs_cancelacion }),
+    body: JSON.stringify({ estado, obs_cancelacion, obs_cliente_ausente }),
   });
 }
 
 export async function listarTecnicos(token: string): Promise<Tecnico[]> {
   return fetchApi(token, `${PUBLIC_API_URL}/api/ordenes/tecnicos`);
+}
+
+export async function listarCategoriasFalla(token: string): Promise<CategoriaFalla[]> {
+  return fetchApi(token, `${PUBLIC_API_URL}/api/ordenes/categorias-falla`);
 }

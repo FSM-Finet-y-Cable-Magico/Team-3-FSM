@@ -16,12 +16,13 @@
   let loading = $state(true);
   let errorMsg = $state('');
   let iniciando = $state<number | null>(null);
+  let marcandoAusente = $state<number | null>(null);
 
   const hoy = new Date().toLocaleDateString('en-CA');
 
   const otsDia = $derived(
     ots.filter((o) => {
-      if (o.estado === 'ASIGNADA' || o.estado === 'EN_CURSO') return true;
+      if (['ASIGNADA', 'EN_CURSO', 'PENDIENTE_CLIENTE_AUSENTE'].includes(o.estado)) return true;
       if (o.estado === 'COMPLETADA' && o.fecha_completada) {
         return o.fecha_completada.slice(0, 10) === hoy;
       }
@@ -85,6 +86,31 @@
       errorMsg = err instanceof Error ? err.message : 'Error al iniciar trabajo';
     } finally {
       iniciando = null;
+    }
+  }
+
+  async function marcarClienteAusente(idOT: number) {
+    const obs = window.prompt('Observación de cliente ausente');
+    if (!obs || obs.trim().length < 10) {
+      errorMsg = 'La observación debe tener al menos 10 caracteres';
+      return;
+    }
+
+    marcandoAusente = idOT;
+    errorMsg = '';
+    try {
+      await ordenesApi.actualizarEstado(
+        token,
+        idOT,
+        'PENDIENTE_CLIENTE_AUSENTE',
+        undefined,
+        obs.trim(),
+      );
+      await cargarOTs();
+    } catch (err) {
+      errorMsg = err instanceof Error ? err.message : 'Error al marcar cliente ausente';
+    } finally {
+      marcandoAusente = null;
     }
   }
 
@@ -204,7 +230,7 @@
 
             <!-- Acciones -->
             {#if ot.estado === 'ASIGNADA'}
-              <div class="px-4 pb-4">
+              <div class="px-4 pb-4 space-y-2">
                 <button
                   onclick={() => iniciarTrabajo(ot.id_ot)}
                   disabled={iniciando === ot.id_ot}
@@ -224,9 +250,16 @@
                     Iniciar trabajo
                   {/if}
                 </button>
+                <button
+                  onclick={() => marcarClienteAusente(ot.id_ot)}
+                  disabled={marcandoAusente === ot.id_ot}
+                  class="w-full bg-amber-100 active:bg-amber-200 text-amber-800 font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-50"
+                >
+                  {marcandoAusente === ot.id_ot ? 'Marcando...' : 'Cliente ausente'}
+                </button>
               </div>
             {:else if ot.estado === 'EN_CURSO'}
-              <div class="px-4 pb-4">
+              <div class="px-4 pb-4 space-y-2">
                 <button
                   onclick={() => goto(`/terreno/cerrar/${ot.id_ot}`)}
                   class="w-full bg-green-600 active:bg-green-800 text-white font-semibold py-4 rounded-xl text-base transition-colors flex items-center justify-center gap-2"
@@ -236,6 +269,19 @@
                   </svg>
                   Cerrar OT
                 </button>
+                <button
+                  onclick={() => marcarClienteAusente(ot.id_ot)}
+                  disabled={marcandoAusente === ot.id_ot}
+                  class="w-full bg-amber-100 active:bg-amber-200 text-amber-800 font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-50"
+                >
+                  {marcandoAusente === ot.id_ot ? 'Marcando...' : 'Cliente ausente'}
+                </button>
+              </div>
+            {:else if ot.estado === 'PENDIENTE_CLIENTE_AUSENTE'}
+              <div class="px-4 pb-4">
+                <div class="w-full bg-amber-50 text-amber-700 font-semibold py-3 rounded-xl text-sm text-center border border-amber-200">
+                  Cliente ausente
+                </div>
               </div>
             {:else if ot.estado === 'COMPLETADA'}
               <div class="px-4 pb-4">

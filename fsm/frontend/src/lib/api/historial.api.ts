@@ -12,6 +12,8 @@ export interface HistorialFalla {
   resuelto_remotamente: boolean;
   fotos: { url_cloudinary: string; formato: string }[];
   materiales: { cantidad: number; tipo_equipo: { nombre: string; categoria?: string | null } | null }[];
+  categoria_falla?: { id_categoria: number; nombre: string; sla_horas?: number | null } | null;
+  categoria_falla_otro?: string | null;
   llamada?: { resultado: string; observaciones?: string | null } | null;
 }
 

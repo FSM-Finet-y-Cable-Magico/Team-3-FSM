@@ -9,8 +9,9 @@ import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
 
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
   PENDIENTE: ['ASIGNADA', 'CANCELADA'],
-  ASIGNADA: ['EN_CURSO', 'PENDIENTE', 'CANCELADA'],
-  EN_CURSO: ['COMPLETADA', 'CANCELADA'],
+  ASIGNADA: ['EN_CURSO', 'PENDIENTE', 'PENDIENTE_CLIENTE_AUSENTE', 'CANCELADA'],
+  EN_CURSO: ['COMPLETADA', 'PENDIENTE_CLIENTE_AUSENTE', 'CANCELADA'],
+  PENDIENTE_CLIENTE_AUSENTE: ['ASIGNADA', 'CANCELADA'],
   COMPLETADA: [],
   CANCELADA: [],
 };
@@ -21,6 +22,7 @@ const OT_INCLUDE = {
   cliente: { select: { id_cliente: true, nombre_completo: true, rut: true, es_conflictivo: true } },
   tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
   direccion: { select: { direccion_completa: true, comuna: true } },
+  categoria_falla: { select: { id_categoria: true, nombre: true, sla_horas: true } },
 } as const;
 
 @Injectable()
@@ -136,6 +138,10 @@ export class OrdenesService {
     });
 
     all.sort((a, b) => {
+      if (filtros.estado === 'PENDIENTE_CLIENTE_AUSENTE') {
+        return new Date(a.fecha_creacion).getTime() - new Date(b.fecha_creacion).getTime();
+      }
+
       const pa = PRIORIDAD_ORDEN[a.prioridad ?? ''] ?? 99;
       const pb = PRIORIDAD_ORDEN[b.prioridad ?? ''] ?? 99;
       if (pa !== pb) return pa - pb;
@@ -143,7 +149,10 @@ export class OrdenesService {
     });
 
     const total = all.length;
-    const data = all.slice((page - 1) * limit, page * limit);
+    const data = all.slice((page - 1) * limit, page * limit).map((ot) => ({
+      ...ot,
+      antiguedad_dias: this.calcularAntiguedadDias(ot.fecha_creacion),
+    }));
 
     return { data, total, page, limit };
   }
@@ -157,6 +166,7 @@ export class OrdenesService {
         },
         tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
         direccion: { select: { direccion_completa: true, comuna: true } },
+        categoria_falla: { select: { id_categoria: true, nombre: true, sla_horas: true } },
         historial: { orderBy: { fecha_hora: 'desc' } },
       },
     });
@@ -258,12 +268,25 @@ export class OrdenesService {
       throw new BadRequestException('Se requiere motivo de cancelación');
     }
 
+    if (dto.estado === 'PENDIENTE_CLIENTE_AUSENTE' && !dto.obs_cliente_ausente) {
+      throw new BadRequestException('Se requiere observacion de cliente ausente');
+    }
+
+    const observacionEstado = dto.obs_cancelacion ?? dto.obs_cliente_ausente ?? null;
+
     await this.prisma.$transaction(async (tx) => {
       await tx.orden_trabajo.update({
         where: { id_ot },
         data: {
           estado: dto.estado,
           ...(dto.estado === 'CANCELADA' && { observaciones: dto.obs_cancelacion }),
+          ...(dto.estado === 'PENDIENTE_CLIENTE_AUSENTE' && {
+            obs_cliente_ausente: dto.obs_cliente_ausente,
+          }),
+          ...(dto.estado === 'ASIGNADA' &&
+            ot.estado === 'PENDIENTE_CLIENTE_AUSENTE' && {
+              obs_cliente_ausente: null,
+            }),
           ...(dto.estado === 'COMPLETADA' && { fecha_completada: new Date() }),
         },
       });
@@ -274,7 +297,7 @@ export class OrdenesService {
           id_usuario: userId,
           estado_anterior: ot.estado,
           estado_nuevo: dto.estado,
-          observaciones: dto.obs_cancelacion ?? null,
+          observaciones: observacionEstado,
           fecha_hora: new Date(),
         },
       });
@@ -286,7 +309,7 @@ export class OrdenesService {
           entidad_afectada: 'orden_trabajo',
           id_entidad_afectada: id_ot,
           valor_anterior: { estado: ot.estado },
-          valor_nuevo: { estado: dto.estado },
+          valor_nuevo: { estado: dto.estado, observacion: observacionEstado },
           fecha_hora: new Date(),
         },
       });
@@ -303,8 +326,31 @@ export class OrdenesService {
     if (ot.estado !== 'EN_CURSO') {
       throw new BadRequestException('Solo se pueden cerrar OT en estado EN_CURSO');
     }
+
     if (ot.id_tecnico !== userId) {
-      throw new ForbiddenException('Solo el técnico asignado puede cerrar esta OT');
+      throw new ForbiddenException('Solo el tÃ©cnico asignado puede cerrar esta OT');
+    }
+
+    let categoriaFalla: { id_categoria: number; nombre: string; sla_horas: number | null } | null = null;
+    if (ot.tipo_ot === 'REPARACION') {
+      if (!dto.id_categoria_falla) {
+        throw new BadRequestException('Debe seleccionar la categoria de falla');
+      }
+
+      categoriaFalla = await this.prisma.categoria_falla.findUnique({
+        where: { id_categoria: dto.id_categoria_falla },
+      });
+
+      if (!categoriaFalla) {
+        throw new NotFoundException('Categoria de falla no encontrada');
+      }
+
+      if (
+        categoriaFalla.nombre.toLowerCase() === 'otro' &&
+        !dto.categoria_falla_otro?.trim()
+      ) {
+        throw new BadRequestException('Debe describir la categoria de falla');
+      }
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -359,6 +405,8 @@ export class OrdenesService {
           estado: 'COMPLETADA',
           fecha_completada: new Date(),
           potencia_optica_dbm: dto.potencia_optica_dbm,
+          id_categoria_falla: categoriaFalla?.id_categoria ?? null,
+          categoria_falla_otro: dto.categoria_falla_otro?.trim() || null,
           resuelto_remotamente: dto.resuelto_remotamente ?? false,
         },
       });
@@ -388,6 +436,7 @@ export class OrdenesService {
         cliente: { select: { id_cliente: true, nombre_completo: true, rut: true, es_conflictivo: true } },
         tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
         direccion: { select: { direccion_completa: true, comuna: true } },
+        categoria_falla: { select: { id_categoria: true, nombre: true, sla_horas: true } },
         fotos: true,
         materiales: { include: { tipo_equipo: { select: { nombre: true } } } },
         llamada: true,
@@ -396,9 +445,12 @@ export class OrdenesService {
 
     const advertencia_potencia =
       dto.potencia_optica_dbm < -24 || dto.potencia_optica_dbm > -19;
+    const alerta_reparaciones_30_dias = otActualizada?.id_cliente
+      ? await this.alertaReparacionesCliente(otActualizada.id_cliente, id_empresa)
+      : null;
 
     this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
-    return { ...otActualizada, advertencia_potencia };
+    return { ...otActualizada, advertencia_potencia, alerta_reparaciones_30_dias };
   }
 
   async historialFallas(id_cliente: number, id_empresa: number) {
@@ -412,6 +464,7 @@ export class OrdenesService {
         materiales: {
           include: { tipo_equipo: { select: { nombre: true, categoria: true } } },
         },
+        categoria_falla: true,
         llamada: true,
         ticket: { include: { categoria: true } },
       },
@@ -420,7 +473,7 @@ export class OrdenesService {
     // Categoría de falla más frecuente
     const conteo = new Map<number, number>();
     for (const ot of ots) {
-      const idCat = ot.ticket?.id_categoria;
+      const idCat = ot.id_categoria_falla ?? ot.ticket?.id_categoria;
       if (idCat) conteo.set(idCat, (conteo.get(idCat) ?? 0) + 1);
     }
 
@@ -487,5 +540,37 @@ export class OrdenesService {
           }
         : null,
     }));
+  }
+
+  async listarCategoriasFalla() {
+    return this.prisma.categoria_falla.findMany({
+      select: { id_categoria: true, nombre: true, sla_horas: true },
+      orderBy: { nombre: 'asc' },
+    });
+  }
+
+  private calcularAntiguedadDias(fecha: Date) {
+    return Math.max(0, Math.floor((Date.now() - new Date(fecha).getTime()) / 86400000));
+  }
+
+  private async alertaReparacionesCliente(id_cliente: number, id_empresa: number) {
+    const desde = new Date();
+    desde.setDate(desde.getDate() - 30);
+
+    const total = await this.prisma.orden_trabajo.count({
+      where: {
+        id_cliente,
+        id_empresa,
+        tipo_ot: 'REPARACION',
+        estado: { not: 'CANCELADA' },
+        fecha_creacion: { gte: desde },
+      },
+    });
+
+    return {
+      activa: total >= 3,
+      total_reparaciones_30_dias: total,
+      desde,
+    };
   }
 }

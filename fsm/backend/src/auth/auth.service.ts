@@ -173,6 +173,7 @@ export class AuthService {
 
     return usuarios.map((u) => ({
       id_usuario: u.id_usuario,
+      id_empresa: u.id_empresa,
       nombre_completo: u.nombre_completo,
       nombre_usuario: u.nombre_usuario,
       email: u.email,

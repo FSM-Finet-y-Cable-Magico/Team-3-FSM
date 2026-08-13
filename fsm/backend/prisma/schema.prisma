@@ -307,6 +307,7 @@ model orden_trabajo {
   id_tecnico_externo   Int?
   id_direccion         Int?
   id_ticket            Int?     @unique
+  id_categoria_falla   Int?
   tipo_ot              String   @db.VarChar(20)
   prioridad            String   @db.VarChar(10)
   estado               String   @db.VarChar(25)
@@ -314,7 +315,9 @@ model orden_trabajo {
   fecha_programada     DateTime? @db.Timestamptz()
   fecha_completada     DateTime?
   potencia_optica_dbm  Decimal? @db.Decimal(5, 2)
+  categoria_falla_otro String?  @db.VarChar(120)
   observaciones        String?  @db.Text
+  obs_cliente_ausente  String?  @db.VarChar(500)
   resuelto_remotamente Boolean  @default(false)
   empresa              empresa?         @relation(fields: [id_empresa], references: [id_empresa])
   cliente              cliente?         @relation(fields: [id_cliente], references: [id_cliente])
@@ -322,6 +325,7 @@ model orden_trabajo {
   tecnico_externo      tecnico_externo? @relation(fields: [id_tecnico_externo], references: [id_tecnico_ext])
   direccion            direccion_servicio? @relation(fields: [id_direccion], references: [id_direccion])
   ticket               ticket?          @relation(fields: [id_ticket], references: [id_ticket])
+  categoria_falla      categoria_falla? @relation(fields: [id_categoria_falla], references: [id_categoria])
   historial            historial_ot[]
   materiales           uso_material_ot[]
   fotos                evidencia_foto[]
@@ -345,6 +349,7 @@ model categoria_falla {
   nombre       String  @db.VarChar(80)
   sla_horas    Int?    @db.SmallInt
   tickets      ticket[]
+  ordenes      orden_trabajo[]
 }
 
 model uso_material_ot {
