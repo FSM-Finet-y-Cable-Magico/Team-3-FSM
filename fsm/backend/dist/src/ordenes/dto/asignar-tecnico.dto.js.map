@@ -1,1 +1,0 @@
-{"version":3,"file":"asignar-tecnico.dto.js","sourceRoot":"","sources":["../../../../src/ordenes/dto/asignar-tecnico.dto.ts"],"names":[],"mappings":";;;;;;;;;AAAA,OAAO,EAAE,KAAK,EAAE,UAAU,EAAE,UAAU,EAAE,YAAY,EAAE,MAAM,iBAAiB,CAAC;AAE9E,MAAM,OAAO,iBAAiB;IAG5B,UAAU,CAAS;IAInB,cAAc,CAAU;CACzB;AALC;IAFC,KAAK,EAAE;IACP,UAAU,EAAE;;qDACM;AAInB;IAFC,UAAU,EAAE;IACZ,YAAY,EAAE;;yDACS"}
