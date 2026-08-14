@@ -1,4 +1,4 @@
-import { PUBLIC_API_URL } from '$env/static/public';
+import { API_URL } from './config.js';
 
 export interface ClienteFicha {
   id_cliente: number;
@@ -82,25 +82,25 @@ async function fetchApi(token: string, url: string, options?: RequestInit) {
 }
 
 export async function buscarPorRut(token: string, rut: string): Promise<ClienteConHistorial> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/clientes/rut/${rut}`);
+  return fetchApi(token, `${API_URL}/api/clientes/rut/${rut}`);
 }
 
 export async function registrarCliente(token: string, dto: Record<string, unknown>): Promise<ClienteFicha> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/clientes`, {
+  return fetchApi(token, `${API_URL}/api/clientes`, {
     method: 'POST',
     body: JSON.stringify(dto),
   });
 }
 
 export async function editarCliente(token: string, id: number, dto: Record<string, unknown>): Promise<ClienteFicha> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/clientes/${id}`, {
+  return fetchApi(token, `${API_URL}/api/clientes/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(dto),
   });
 }
 
 export async function marcarConflictivo(token: string, id: number, motivo: string): Promise<void> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/clientes/${id}/conflictivo`, {
+  return fetchApi(token, `${API_URL}/api/clientes/${id}/conflictivo`, {
     method: 'POST',
     body: JSON.stringify({ motivo }),
   });
@@ -111,9 +111,9 @@ export async function listarClientes(
   page: number = 1,
   limit: number = 20,
 ): Promise<ClientesPaginados> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/clientes?page=${page}&limit=${limit}`);
+  return fetchApi(token, `${API_URL}/api/clientes?page=${page}&limit=${limit}`);
 }
 
 export async function listarPlanes(token: string): Promise<PlanResumen[]> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/clientes/planes`);
+  return fetchApi(token, `${API_URL}/api/clientes/planes`);
 }

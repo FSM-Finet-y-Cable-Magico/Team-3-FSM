@@ -1,4 +1,4 @@
-import { PUBLIC_API_URL } from '$env/static/public';
+import { API_URL } from './config.js';
 
 export interface OT {
   id_ot: number;
@@ -78,15 +78,15 @@ export async function listarOT(
   if (filtros?.page) params.set('page', String(filtros.page));
   if (filtros?.limit) params.set('limit', String(filtros.limit));
   const qs = params.toString();
-  return fetchApi(token, `${PUBLIC_API_URL}/api/ordenes${qs ? '?' + qs : ''}`);
+  return fetchApi(token, `${API_URL}/api/ordenes${qs ? '?' + qs : ''}`);
 }
 
 export async function obtenerOT(token: string, id: number): Promise<OT> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/ordenes/${id}`);
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}`);
 }
 
 export async function crearOT(token: string, dto: Record<string, unknown>): Promise<OT> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/ordenes`, {
+  return fetchApi(token, `${API_URL}/api/ordenes`, {
     method: 'POST',
     body: JSON.stringify(dto),
   });
@@ -97,7 +97,7 @@ export async function asignarTecnico(
   id: number,
   dto: { id_tecnico: number; bloque_horario?: string },
 ): Promise<OT> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/ordenes/${id}/asignar`, {
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}/asignar`, {
     method: 'PATCH',
     body: JSON.stringify(dto),
   });
@@ -110,16 +110,16 @@ export async function actualizarEstado(
   obs_cancelacion?: string,
   obs_cliente_ausente?: string,
 ): Promise<OT> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/ordenes/${id}/estado`, {
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}/estado`, {
     method: 'PATCH',
     body: JSON.stringify({ estado, obs_cancelacion, obs_cliente_ausente }),
   });
 }
 
 export async function listarTecnicos(token: string): Promise<Tecnico[]> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/ordenes/tecnicos`);
+  return fetchApi(token, `${API_URL}/api/ordenes/tecnicos`);
 }
 
 export async function listarCategoriasFalla(token: string): Promise<CategoriaFalla[]> {
-  return fetchApi(token, `${PUBLIC_API_URL}/api/ordenes/categorias-falla`);
+  return fetchApi(token, `${API_URL}/api/ordenes/categorias-falla`);
 }

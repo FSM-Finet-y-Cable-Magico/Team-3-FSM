@@ -1,4 +1,4 @@
-import { PUBLIC_API_URL as API_URL } from '$env/static/public';
+import { API_URL } from './config.js';
 
 export interface IndicadoresDashboard {
   ot_por_estado: {
