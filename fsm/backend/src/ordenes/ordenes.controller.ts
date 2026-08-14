@@ -119,8 +119,15 @@ export class OrdenesController {
   async subirFoto(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: UserPayload,
   ) {
     if (!file) throw new BadRequestException('No se recibió ningún archivo');
+
+    const ot = await this.ordenesService.obtenerOT(+id, user.id_empresa);
+    if (ot.id_tecnico !== user.userId) {
+      throw new ForbiddenException('Solo el técnico asignado puede subir evidencias a esta OT');
+    }
+
     const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
     const formato = this.formatoDesdeMime(file.mimetype);
     const tamano_kb = Math.round(file.size / 1024);
