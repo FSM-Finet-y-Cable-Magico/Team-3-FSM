@@ -126,7 +126,6 @@ export class AuthService {
           es_password_temporal: true,
           empresa: { connect: { id_empresa: dto.id_empresa } },
         },
-        omit: { password_hash: true },
       });
 
       const rol = await tx.rol.findUnique({

@@ -167,6 +167,8 @@ export class OrdenesService {
             nombre_completo: true,
             rut: true,
             es_conflictivo: true,
+            // El tecnico debe poder llamar al cliente antes de marcar PENDIENTE_CLIENTE_AUSENTE; el email no hace falta para eso y se deja fuera por minima exposicion.
+            telefono: true,
             direcciones: { where: { es_principal: true }, take: 1 },
           },
         },
