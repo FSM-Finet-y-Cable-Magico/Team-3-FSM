@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3000';
+import { API_URL } from './config.js';
 
 export interface IndicadoresDashboard {
   ot_por_estado: {

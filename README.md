@@ -55,7 +55,10 @@ npx prisma generate
 ```bash
 cd fsm/frontend
 npm install
+cp .env.example .env
 ```
+
+`.env.example` ya trae el valor para desarrollo local (`PUBLIC_API_URL=http://localhost:3000`), así que no hay que editar nada para levantar el proyecto. Sin este paso el build y `npm run dev` fallan con `"PUBLIC_API_URL" is not exported by "$env/static/public"`.
 
 ---
 

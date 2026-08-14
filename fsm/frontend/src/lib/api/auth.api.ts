@@ -1,4 +1,4 @@
-const PUBLIC_API_URL = 'http://localhost:3000';
+import { API_URL } from './config.js';
 
 export interface LoginResponse {
   token: string;
@@ -18,7 +18,7 @@ export interface CrearUsuarioDto {
 }
 
 export async function login(nombre_usuario: string, password: string): Promise<LoginResponse> {
-  const res = await fetch(`${PUBLIC_API_URL}/api/auth/login`, {
+  const res = await fetch(`${API_URL}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nombre_usuario, password }),
@@ -37,7 +37,7 @@ export async function cambiarPassword(
   nueva_password: string,
   confirmar_password: string
 ): Promise<void> {
-  const res = await fetch(`${PUBLIC_API_URL}/api/auth/cambiar-password`, {
+  const res = await fetch(`${API_URL}/api/auth/cambiar-password`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -53,7 +53,7 @@ export async function cambiarPassword(
 }
 
 export async function crearUsuario(token: string, dto: CrearUsuarioDto): Promise<void> {
-  const res = await fetch(`${PUBLIC_API_URL}/api/auth/usuarios`, {
+  const res = await fetch(`${API_URL}/api/auth/usuarios`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -79,7 +79,7 @@ export async function listarUsuarios(token: string): Promise<
     rol: string;
   }>
 > {
-  const res = await fetch(`${PUBLIC_API_URL}/api/auth/usuarios`, {
+  const res = await fetch(`${API_URL}/api/auth/usuarios`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${token}` },
   });
