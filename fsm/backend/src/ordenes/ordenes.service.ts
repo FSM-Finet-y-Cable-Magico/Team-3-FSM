@@ -162,8 +162,13 @@ export class OrdenesService {
       where: { id_ot, id_empresa },
       include: {
         cliente: {
-          omit: { password_portal_hash: true },
-          include: { direcciones: { where: { es_principal: true }, take: 1 } },
+          select: {
+            id_cliente: true,
+            nombre_completo: true,
+            rut: true,
+            es_conflictivo: true,
+            direcciones: { where: { es_principal: true }, take: 1 },
+          },
         },
         tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
         direccion: { select: { direccion_completa: true, comuna: true } },

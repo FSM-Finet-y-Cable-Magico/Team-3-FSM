@@ -22,6 +22,8 @@ export class AuthService {
   async login(dto: LoginDto, ip: string) {
     const usuario = await this.prisma.usuario.findUnique({
       where: { nombre_usuario: dto.nombre_usuario },
+      // Unico punto que necesita el hash: se compara con bcrypt y no se retorna.
+      omit: { password_hash: false },
     });
 
     if (!usuario) {

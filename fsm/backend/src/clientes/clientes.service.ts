@@ -46,7 +46,6 @@ export class ClientesService {
             },
           },
         },
-        omit: { password_portal_hash: true },
         include: {
           direcciones: true,
         },
@@ -224,7 +223,6 @@ export class ClientesService {
 
       return tx.cliente.findUnique({
         where: { id_cliente },
-        omit: { password_portal_hash: true },
         include: {
           direcciones: { where: { es_principal: true } },
         },
@@ -283,7 +281,6 @@ export class ClientesService {
         orderBy: { fecha_creacion: 'desc' },
         skip,
         take: limit,
-        omit: { password_portal_hash: true },
         include: {
           direcciones: {
             where: { es_principal: true },
