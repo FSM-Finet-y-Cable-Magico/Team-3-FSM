@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { validarRut } from '../common/utils/rut.util.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
@@ -120,39 +121,47 @@ export class OrdenesService {
     const page = filtros.page ?? 1;
     const limit = filtros.limit ?? 20;
 
-    const where: Record<string, unknown> = { id_empresa };
-    if (filtros.estado) where.estado = filtros.estado;
-    if (filtros.tipo_ot) where.tipo_ot = filtros.tipo_ot;
-    if (filtros.prioridad) where.prioridad = filtros.prioridad;
-    if (filtros.id_tecnico) where.id_tecnico = filtros.id_tecnico;
-    if (filtros.fecha_desde || filtros.fecha_hasta) {
-      where.fecha_creacion = {
-        ...(filtros.fecha_desde && { gte: new Date(filtros.fecha_desde) }),
-        ...(filtros.fecha_hasta && { lte: new Date(filtros.fecha_hasta) }),
-      };
-    }
+    const condiciones: Prisma.Sql[] = [Prisma.sql`id_empresa = ${id_empresa}`];
+    if (filtros.estado) condiciones.push(Prisma.sql`estado = ${filtros.estado}`);
+    if (filtros.tipo_ot) condiciones.push(Prisma.sql`tipo_ot = ${filtros.tipo_ot}`);
+    if (filtros.prioridad) condiciones.push(Prisma.sql`prioridad = ${filtros.prioridad}`);
+    if (filtros.id_tecnico) condiciones.push(Prisma.sql`id_tecnico = ${filtros.id_tecnico}`);
+    if (filtros.fecha_desde) condiciones.push(Prisma.sql`fecha_creacion >= ${new Date(filtros.fecha_desde)}`);
+    if (filtros.fecha_hasta) condiciones.push(Prisma.sql`fecha_creacion <= ${new Date(filtros.fecha_hasta)}`);
+    const where = Prisma.join(condiciones, ' AND ');
 
-    const all = await this.prisma.orden_trabajo.findMany({
-      where,
-      include: OT_INCLUDE,
-    });
+    // El orden por prioridad se resuelve en SQL porque es un VarChar sin
+    // orden alfabetico util (CRITICA/ALTA/MEDIA/BAJA); ver PRIORIDAD_ORDEN.
+    const casoPrioridad = Prisma.join(
+      Object.entries(PRIORIDAD_ORDEN).map(([p, n]) => Prisma.sql`WHEN ${p} THEN ${n}`),
+      ' ',
+    );
+    const orderBy =
+      filtros.estado === 'PENDIENTE_CLIENTE_AUSENTE'
+        ? Prisma.sql`fecha_creacion ASC`
+        : Prisma.sql`(CASE prioridad ${casoPrioridad} ELSE 99 END) ASC, fecha_creacion DESC`;
 
-    all.sort((a, b) => {
-      if (filtros.estado === 'PENDIENTE_CLIENTE_AUSENTE') {
-        return new Date(a.fecha_creacion).getTime() - new Date(b.fecha_creacion).getTime();
-      }
+    const [{ total }] = await this.prisma.$queryRaw<{ total: number }[]>(
+      Prisma.sql`SELECT COUNT(*)::int AS total FROM orden_trabajo WHERE ${where}`,
+    );
 
-      const pa = PRIORIDAD_ORDEN[a.prioridad ?? ''] ?? 99;
-      const pb = PRIORIDAD_ORDEN[b.prioridad ?? ''] ?? 99;
-      if (pa !== pb) return pa - pb;
-      return new Date(b.fecha_creacion).getTime() - new Date(a.fecha_creacion).getTime();
-    });
+    const idsPagina = await this.prisma.$queryRaw<{ id_ot: number }[]>(
+      Prisma.sql`SELECT id_ot FROM orden_trabajo WHERE ${where} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${(page - 1) * limit}`,
+    );
+    const ids = idsPagina.map((r) => r.id_ot);
 
-    const total = all.length;
-    const data = all.slice((page - 1) * limit, page * limit).map((ot) => ({
-      ...ot,
-      antiguedad_dias: this.calcularAntiguedadDias(ot.fecha_creacion),
-    }));
+    const filas = ids.length
+      ? await this.prisma.orden_trabajo.findMany({ where: { id_ot: { in: ids } }, include: OT_INCLUDE })
+      : [];
+    const porId = new Map(filas.map((ot) => [ot.id_ot, ot]));
+
+    const data = ids
+      .map((id) => porId.get(id))
+      .filter((ot): ot is NonNullable<typeof ot> => ot !== undefined)
+      .map((ot) => ({
+        ...ot,
+        antiguedad_dias: this.calcularAntiguedadDias(ot.fecha_creacion),
+      }));
 
     return { data, total, page, limit };
   }
