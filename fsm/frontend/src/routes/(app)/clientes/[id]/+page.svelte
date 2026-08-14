@@ -15,6 +15,7 @@
 
   let cliente: clientesApi.ClienteFicha | null = $state(null);
   let historialOT: clientesApi.HistorialOT[] = $state([]);
+  let alertaReparaciones: clientesApi.ClienteConHistorial['alerta_reparaciones_30_dias'] = $state(undefined);
 
   let editMode = $state(false);
   let editNombre = $state('');
@@ -57,6 +58,7 @@
       const result = await clientesApi.buscarPorRut(token, rut);
       cliente = result.cliente;
       historialOT = result.historial_ot;
+      alertaReparaciones = result.alerta_reparaciones_30_dias;
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : 'Error al cargar cliente';
     } finally {
@@ -170,12 +172,21 @@
                     {cliente.estado}
                   </span>
                 </div>
-                {#if cliente.es_conflictivo}
-                  <div>
+              {#if cliente.es_conflictivo}
+                <div>
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">CONFLICTIVO</span>
                     {#if cliente.obs_conflictivo}
                       <p class="text-sm text-red-600 mt-1">{cliente.obs_conflictivo}</p>
                     {/if}
+                  </div>
+                {/if}
+                {#if alertaReparaciones?.activa}
+                  <div class="bg-orange-50 border border-orange-200 text-orange-800 px-4 py-3 rounded-lg">
+                    <p class="text-sm font-semibold">Alerta por reparaciones recurrentes</p>
+                    <p class="text-sm mt-0.5">
+                      {alertaReparaciones.total_reparaciones_30_dias}
+                      reparaciones registradas en los ultimos 30 dias.
+                    </p>
                   </div>
                 {/if}
                 {#if cliente.email}

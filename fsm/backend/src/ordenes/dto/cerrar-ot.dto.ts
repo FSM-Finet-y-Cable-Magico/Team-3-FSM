@@ -9,6 +9,8 @@ import {
   MaxLength,
   IsBoolean,
   ArrayMinSize,
+  IsInt,
+  IsPositive,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -64,4 +66,14 @@ export class CerrarOtDto {
   @IsOptional()
   @IsBoolean()
   resuelto_remotamente?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  id_categoria_falla?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  categoria_falla_otro?: string;
 }

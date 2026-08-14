@@ -3,12 +3,14 @@ const API_URL = 'http://localhost:3000';
 export interface IndicadoresDashboard {
   ot_por_estado: {
     PENDIENTE: number;
+    PENDIENTE_CLIENTE_AUSENTE: number;
     ASIGNADA: number;
     EN_CURSO: number;
     COMPLETADA: number;
     CANCELADA: number;
   };
   ot_criticas_activas: number;
+  clientes_reparacion_recurrente: number;
   tecnicos: {
     id_usuario: number;
     nombre_completo: string;

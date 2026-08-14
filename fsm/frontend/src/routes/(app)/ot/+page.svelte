@@ -104,6 +104,7 @@
         >
           <option value="">Todos</option>
           <option>PENDIENTE</option>
+          <option>PENDIENTE_CLIENTE_AUSENTE</option>
           <option>ASIGNADA</option>
           <option>EN_CURSO</option>
           <option>COMPLETADA</option>
@@ -195,6 +196,9 @@
             <td class="px-5 py-4 text-sm text-slate-500">{ot.tecnico?.nombre_completo ?? '—'}</td>
             <td class="px-5 py-4 text-sm text-slate-400">{formatFecha(ot.fecha_creacion)}</td>
             <td class="px-5 py-4">
+              {#if ot.estado === 'PENDIENTE_CLIENTE_AUSENTE'}
+                <p class="text-xs text-amber-700 font-medium mb-1">{ot.antiguedad_dias ?? 0} dias pendiente</p>
+              {/if}
               <button
                 onclick={() => goto(`/ot/${ot.id_ot}`)}
                 class="text-blue-600 hover:text-blue-800 text-sm font-semibold hover:underline transition-colors whitespace-nowrap"

@@ -71,6 +71,7 @@ export async function crearUsuario(token: string, dto: CrearUsuarioDto): Promise
 export async function listarUsuarios(token: string): Promise<
   Array<{
     id_usuario: number;
+    id_empresa: number | null;
     nombre_completo: string;
     nombre_usuario: string;
     email: string | null;

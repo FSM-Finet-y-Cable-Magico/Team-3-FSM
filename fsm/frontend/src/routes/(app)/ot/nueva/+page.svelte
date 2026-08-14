@@ -99,9 +99,9 @@
     crearError = '';
   }
 
-  const bloqueadoPorConflictivo = $derived(
-    clienteEncontrado?.cliente.es_conflictivo === true && tipoOT === 'INSTALACION',
-  );
+  const bloqueadoPorConflictivo = $derived.by(() => {
+    return Boolean(clienteEncontrado?.cliente.es_conflictivo && tipoOT === 'INSTALACION');
+  });
 
   async function crearOT() {
     if (!clienteEncontrado || !tipoOT) {

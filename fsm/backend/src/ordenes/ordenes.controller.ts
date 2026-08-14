@@ -86,6 +86,12 @@ export class OrdenesController {
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
+  @Get('categorias-falla')
+  listarCategoriasFalla() {
+    return this.ordenesService.listarCategoriasFalla();
+  }
+
+  @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
   @Get(':id')
   obtenerOT(@Param('id') id: string, @CurrentUser() user: UserPayload) {
     return this.ordenesService.obtenerOT(+id, user.id_empresa);
@@ -113,9 +119,31 @@ export class OrdenesController {
   async subirFoto(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: UserPayload,
   ) {
     if (!file) throw new BadRequestException('No se recibió ningún archivo');
+
+    const ot = await this.ordenesService.obtenerOT(+id, user.id_empresa);
+    if (ot.id_tecnico !== user.userId) {
+      throw new ForbiddenException('Solo el técnico asignado puede subir evidencias a esta OT');
+    }
+
     const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+    const formato = this.formatoDesdeMime(file.mimetype);
+    const tamano_kb = Math.round(file.size / 1024);
+    const cloudinaryConfigurado =
+      process.env.CLOUDINARY_CLOUD_NAME &&
+      process.env.CLOUDINARY_API_KEY &&
+      process.env.CLOUDINARY_API_SECRET;
+
+    if (!cloudinaryConfigurado) {
+      return {
+        url_cloudinary: dataUri,
+        formato,
+        tamano_kb,
+      };
+    }
+
     const result = await cloudinary.uploader.upload(dataUri, {
       folder: 'fsm_evidencias',
       resource_type: 'image',
@@ -152,5 +180,10 @@ export class OrdenesController {
       }
     }
     return this.ordenesService.actualizarEstado(+id, dto, user.userId, user.id_empresa);
+  }
+
+  private formatoDesdeMime(mimetype: string) {
+    const formato = mimetype.split('/')[1] ?? 'img';
+    return formato === 'jpeg' ? 'jpg' : formato.slice(0, 5);
   }
 }

@@ -10,11 +10,12 @@
   let token = '';
   let userId = $state(0);
 
-  const idOT = $derived(+$page.params.id);
+  const idOT = $derived(Number($page.params.id ?? 0));
 
   let paso = $state(1);
   let ot = $state<ordenesApi.OT | null>(null);
   let materiales = $state<terrenoApi.MaterialDisponible[]>([]);
+  let categoriasFalla = $state<ordenesApi.CategoriaFalla[]>([]);
   let loadingInit = $state(true);
   let errorInit = $state('');
 
@@ -39,11 +40,16 @@
   let resultadoLlamada = $state<'CONFORME' | 'NO_CONFORME'>('CONFORME');
   let obsLlamada = $state('');
   let resueltoRemotamente = $state(false);
+  let idCategoriaFalla = $state('');
+  let categoriaFallaOtro = $state('');
+  let alertaReparaciones = $state<{
+    activa: boolean;
+    total_reparaciones_30_dias: number;
+  } | null>(null);
 
   let cerrando = $state(false);
   let errorCierre = $state('');
   let mostrarModalPotencia = $state(false);
-  let dtoParaConfirmar: terrenoApi.CerrarOTDto | null = null;
 
   const potenciaNum = $derived(potencia !== '' ? parseFloat(potencia) : null);
   const advertenciaPotencia = $derived(
@@ -53,6 +59,10 @@
   const materialesSeleccionados = $derived(
     materiales.filter((m) => (cantidades[m.id_tipo_equipo] ?? 0) > 0),
   );
+  const categoriaSeleccionada = $derived(
+    categoriasFalla.find((c) => c.id_categoria === Number(idCategoriaFalla)),
+  );
+  const requiereCategoriaFalla = $derived(ot?.tipo_ot === 'REPARACION');
 
   onMount(async () => {
     authStore.checkAuth();
@@ -67,12 +77,22 @@
     userId = state.usuario?.userId ?? 0;
 
     try {
-      const [otData, matsData] = await Promise.all([
+      const [otData, matsData, catsData] = await Promise.all([
         ordenesApi.obtenerOT(token, idOT),
         terrenoApi.obtenerMateriales(token),
+        ordenesApi.listarCategoriasFalla(token),
       ]);
+      if (otData.id_tecnico !== userId) {
+        errorInit = 'Esta OT está asignada a otro técnico.';
+        return;
+      }
+      if (otData.estado !== 'EN_CURSO') {
+        errorInit = 'Esta OT no está en estado EN_CURSO.';
+        return;
+      }
       ot = otData;
       materiales = matsData;
+      categoriasFalla = catsData;
     } catch (err) {
       errorInit = err instanceof Error ? err.message : 'Error al cargar datos';
     } finally {
@@ -120,17 +140,24 @@
       resultado_llamada: resultadoLlamada,
       obs_llamada: obsLlamada || undefined,
       resuelto_remotamente: resueltoRemotamente,
+      id_categoria_falla: idCategoriaFalla ? Number(idCategoriaFalla) : undefined,
+      categoria_falla_otro: categoriaFallaOtro.trim() || undefined,
     };
   }
 
   async function cerrarOT(dto?: terrenoApi.CerrarOTDto) {
     const payload = dto ?? buildDto();
+    if (ot?.tipo_ot === 'REPARACION' && !payload.id_categoria_falla) {
+      errorCierre = 'Seleccione la categoría de falla';
+      return;
+    }
+
     cerrando = true;
     errorCierre = '';
     try {
       const resp = await terrenoApi.cerrarOT(token, idOT, payload);
+      alertaReparaciones = (resp.alerta_reparaciones_30_dias as typeof alertaReparaciones) ?? null;
       if (resp.advertencia_potencia) {
-        dtoParaConfirmar = payload;
         mostrarModalPotencia = true;
         cerrando = false;
         return;
@@ -144,9 +171,8 @@
   }
 
   async function confirmarCierrePotencia() {
-    if (!dtoParaConfirmar) return;
     mostrarModalPotencia = false;
-    await cerrarOT(dtoParaConfirmar);
+    goto('/terreno');
   }
 </script>
 
@@ -359,6 +385,33 @@
         <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 space-y-4">
           <h2 class="font-semibold text-slate-800">Datos de cierre</h2>
 
+          {#if requiereCategoriaFalla}
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-1">
+                Categoria de falla *
+              </label>
+              <select
+                bind:value={idCategoriaFalla}
+                class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Seleccione categoria</option>
+                {#each categoriasFalla as cat}
+                  <option value={cat.id_categoria}>{cat.nombre}{cat.sla_horas ? ` · SLA ${cat.sla_horas}h` : ''}</option>
+                {/each}
+              </select>
+
+              {#if categoriaSeleccionada?.nombre.toLowerCase() === 'otro'}
+                <input
+                  type="text"
+                  bind:value={categoriaFallaOtro}
+                  maxlength="120"
+                  placeholder="Describa la falla"
+                  class="mt-2 w-full border border-slate-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              {/if}
+            </div>
+          {/if}
+
           <!-- Potencia optica -->
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">
@@ -450,7 +503,7 @@
           </button>
           <button
             onclick={() => cerrarOT()}
-            disabled={cerrando || potencia === '' || isNaN(parseFloat(potencia))}
+            disabled={cerrando || potencia === '' || isNaN(parseFloat(potencia)) || (requiereCategoriaFalla && !idCategoriaFalla)}
             class="flex-1 bg-green-600 active:bg-green-800 text-white font-semibold py-4 rounded-xl text-base disabled:opacity-40 flex items-center justify-center gap-2"
           >
             {#if cerrando}
@@ -485,20 +538,23 @@
         </div>
         <p class="text-sm text-slate-600 mb-5">
           La potencia ingresada ({potencia} dBm) esta fuera del rango normal (-19 a -24 dBm).
-          El cierre se registro correctamente. Confirmar de todas formas?
+          El cierre se registro correctamente.
+          {#if alertaReparaciones?.activa}
+            Este cliente acumula {alertaReparaciones.total_reparaciones_30_dias} reparaciones en 30 dias.
+          {/if}
         </p>
         <div class="flex gap-3">
           <button
-            onclick={() => (mostrarModalPotencia = false)}
+            onclick={() => goto('/terreno')}
             class="flex-1 border border-slate-300 text-slate-700 font-medium py-3 rounded-xl text-sm"
           >
-            Revisar
+            Volver
           </button>
           <button
             onclick={confirmarCierrePotencia}
             class="flex-1 bg-amber-500 text-white font-semibold py-3 rounded-xl text-sm"
           >
-            Confirmar
+            Entendido
           </button>
         </div>
       </div>

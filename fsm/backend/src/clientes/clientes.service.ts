@@ -119,6 +119,18 @@ export class ClientesService {
         fecha_completada: true,
       },
     });
+    const hace30Dias = new Date();
+    hace30Dias.setDate(hace30Dias.getDate() - 30);
+
+    const totalReparaciones30Dias = await this.prisma.orden_trabajo.count({
+      where: {
+        id_cliente: cliente.id_cliente,
+        id_empresa,
+        tipo_ot: 'REPARACION',
+        estado: { not: 'CANCELADA' },
+        fecha_creacion: { gte: hace30Dias },
+      },
+    });
 
     return {
       cliente: {
@@ -135,6 +147,11 @@ export class ClientesService {
         contrato_activo: cliente.contratos[0] ?? null,
       },
       historial_ot,
+      alerta_reparaciones_30_dias: {
+        activa: totalReparaciones30Dias >= 3,
+        total_reparaciones_30_dias: totalReparaciones30Dias,
+        desde: hace30Dias,
+      },
     };
   }
 

@@ -29,6 +29,7 @@
   let ultimaActualizacion = $state<Date | null>(null);
   let socket: Socket | null = null;
   let intervalo: ReturnType<typeof setInterval> | null = null;
+  let unsubDashboard: (() => void) | null = null;
 
   const tiempoDesdeActualizacion = $derived(() => {
     if (!ultimaActualizacion) return 'nunca';
@@ -46,7 +47,15 @@
     }),
   );
 
-  onMount(async () => {
+  onMount(() => {
+    inicializarDashboard();
+
+    return () => {
+      unsubDashboard?.();
+    };
+  });
+
+  async function inicializarDashboard() {
     authStore.checkAuth();
     const state = get(authStore);
 
@@ -64,7 +73,7 @@
     id_empresa = (state.usuario as unknown as { id_empresa?: number })?.id_empresa ?? 0;
     empresaSeleccionada = id_empresa;
 
-    const unsub = dashboardStore.subscribe((s) => {
+    unsubDashboard = dashboardStore.subscribe((s) => {
       indicadores = s.indicadores;
       isLoading = s.isLoading;
       ultimaActualizacion = s.ultimaActualizacion;
@@ -83,11 +92,7 @@
     socket.on('dashboard_update', () => cargar());
 
     intervalo = setInterval(() => cargar(), 60000);
-
-    return () => {
-      unsub();
-    };
-  });
+  }
 
   onDestroy(() => {
     socket?.disconnect();
@@ -192,7 +197,7 @@
     </div>
 
     <!-- Fila 2: 2 cards secundarias -->
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <StatCard
         titulo="Clientes Activos"
         valor={indicadores.total_clientes_activos}
@@ -207,6 +212,15 @@
         subtitulo="hoy"
         color="orange"
         icono={ICONO_DESKTOP}
+      />
+      <StatCard
+        titulo="Reparacion Recurrente"
+        valor={indicadores.clientes_reparacion_recurrente}
+        subtitulo="3+ en 30 dias"
+        color="red"
+        icono={ICONO_EXCLAM}
+        clickable={true}
+        href="/ot?tipo_ot=REPARACION"
       />
     </div>
 

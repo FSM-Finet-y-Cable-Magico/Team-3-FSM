@@ -16,6 +16,8 @@ export interface CerrarOTDto {
   resultado_llamada: 'CONFORME' | 'NO_CONFORME';
   obs_llamada?: string;
   resuelto_remotamente?: boolean;
+  id_categoria_falla?: number;
+  categoria_falla_otro?: string;
 }
 
 async function fetchApi(token: string, url: string, options?: RequestInit) {

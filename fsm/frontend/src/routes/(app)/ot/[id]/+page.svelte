@@ -43,9 +43,14 @@
   let cancelando = $state(false);
   let cancelarError = $state('');
 
+  let mostrarModalAusente = $state(false);
+  let obsAusente = $state('');
+  let marcandoAusente = $state(false);
+  let ausenteError = $state('');
+
   let cambiandoEstado = $state(false);
 
-  const idOT = $derived(+$page.params.id);
+  const idOT = $derived(Number($page.params.id ?? 0));
 
   onMount(() => {
     authStore.checkAuth();
@@ -129,6 +134,30 @@
     }
   }
 
+  async function confirmarClienteAusente() {
+    if (obsAusente.trim().length < 10) {
+      ausenteError = 'La observación debe tener al menos 10 caracteres';
+      return;
+    }
+    marcandoAusente = true;
+    ausenteError = '';
+    try {
+      ot = await ordenesApi.actualizarEstado(
+        token,
+        idOT,
+        'PENDIENTE_CLIENTE_AUSENTE',
+        undefined,
+        obsAusente,
+      );
+      mostrarModalAusente = false;
+      obsAusente = '';
+    } catch (err) {
+      ausenteError = err instanceof Error ? err.message : 'Error al marcar cliente ausente';
+    } finally {
+      marcandoAusente = false;
+    }
+  }
+
   function formatFecha(fecha?: string): string {
     if (!fecha) return '-';
     return new Date(fecha).toLocaleString('es-CL', {
@@ -196,6 +225,15 @@
           <div class="sm:col-span-2">
             <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Observaciones</p>
             <p class="text-gray-700">{ot.observaciones}</p>
+          </div>
+        {/if}
+        {#if ot.estado === 'PENDIENTE_CLIENTE_AUSENTE' && ot.obs_cliente_ausente}
+          <div class="sm:col-span-2">
+            <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Cliente ausente</p>
+            <p class="text-amber-700">{ot.obs_cliente_ausente}</p>
+            {#if ot.antiguedad_dias !== undefined}
+              <p class="text-xs text-amber-600 mt-1">Antiguedad: {ot.antiguedad_dias} dias</p>
+            {/if}
           </div>
         {/if}
         {#if ot.estado === 'CANCELADA' && ot.observaciones}
@@ -282,32 +320,96 @@
             >
               Cancelar OT
             </button>
+            <button
+              onclick={() => (mostrarModalAusente = true)}
+              class="bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+            >
+              Cliente ausente
+            </button>
+          </div>
+
+        {:else if ot.estado === 'ASIGNADA' && rol === 'TECNICO' && esMiOT}
+          <div class="flex gap-3 flex-wrap">
+            <button
+              onclick={() => cambiarEstado('EN_CURSO')}
+              disabled={cambiandoEstado}
+              class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-lg transition-colors disabled:opacity-50 text-sm"
+            >
+              Iniciar trabajo
+            </button>
+            <button
+              onclick={() => (mostrarModalAusente = true)}
+              class="bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+            >
+              Cliente ausente
+            </button>
           </div>
 
         {:else if ot.estado === 'ASIGNADA' && rol === 'TECNICO'}
-          <button
-            onclick={() => cambiarEstado('EN_CURSO')}
-            disabled={cambiandoEstado}
-            class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-lg transition-colors disabled:opacity-50 text-sm"
-          >
-            Iniciar trabajo
-          </button>
+          <p class="text-sm text-gray-500">Esta OT está asignada a otro técnico.</p>
+
+        {:else if ot.estado === 'EN_CURSO' && rol === 'TECNICO' && esMiOT}
+          <div class="flex gap-3 flex-wrap">
+            <button
+              onclick={() => goto(`/terreno/cerrar/${ot!.id_ot}`)}
+              class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+            >
+              Ir a cerrar OT
+            </button>
+            <button
+              onclick={() => (mostrarModalAusente = true)}
+              class="bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+            >
+              Cliente ausente
+            </button>
+          </div>
 
         {:else if ot.estado === 'EN_CURSO' && rol === 'TECNICO'}
-          <button
-            onclick={() => goto(`/ot/${ot!.id_ot}/cerrar`)}
-            class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-5 rounded-lg transition-colors text-sm"
-          >
-            Ir a cerrar OT
-          </button>
+          <p class="text-sm text-gray-500">Esta OT está asignada a otro técnico.</p>
 
         {:else if ot.estado === 'EN_CURSO' && (rol === 'ADMIN' || rol === 'JEFE_TECNICO')}
-          <button
-            onclick={() => (mostrarModalCancelar = true)}
-            class="bg-red-100 hover:bg-red-200 text-red-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
-          >
-            Cancelar OT
-          </button>
+          <div class="flex gap-3 flex-wrap">
+            <button
+              onclick={() => (mostrarModalCancelar = true)}
+              class="bg-red-100 hover:bg-red-200 text-red-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+            >
+              Cancelar OT
+            </button>
+            <button
+              onclick={() => (mostrarModalAusente = true)}
+              class="bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+            >
+              Cliente ausente
+            </button>
+          </div>
+
+        {:else if ot.estado === 'PENDIENTE_CLIENTE_AUSENTE'}
+          {#if rol === 'ADMIN' || rol === 'JEFE_TECNICO' || ot.id_tecnico === userId}
+            <div class="flex gap-3 flex-wrap">
+              <button
+                onclick={() => cambiarEstado('ASIGNADA')}
+                disabled={cambiandoEstado}
+                class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-lg transition-colors disabled:opacity-50 text-sm"
+              >
+                {cambiandoEstado ? 'Reintentando...' : 'Reintentar visita'}
+              </button>
+              {#if rol === 'ADMIN' || rol === 'JEFE_TECNICO'}
+                <button
+                  onclick={() => (mostrarModalCancelar = true)}
+                  class="bg-red-100 hover:bg-red-200 text-red-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+                >
+                  Cancelar OT
+                </button>
+              {/if}
+            </div>
+            <p class="text-xs text-gray-400 mt-3">
+              Reintentar devuelve la OT a ASIGNADA con el mismo técnico y limpia la observación de cliente ausente.
+            </p>
+          {:else}
+            <p class="text-sm text-gray-500">
+              OT pendiente por cliente ausente. Solo el técnico asignado o un administrador puede reintentarla o cancelarla.
+            </p>
+          {/if}
         {/if}
       </div>
     {:else}
@@ -347,6 +449,45 @@
         </div>
       </div>
     {/if}
+  </div>
+{/if}
+
+<!-- Modal cliente ausente -->
+{#if mostrarModalAusente}
+  <div
+    class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+    role="dialog"
+    aria-modal="true"
+  >
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+      <h3 class="font-semibold text-gray-800 mb-3">Cliente ausente OT #{ot?.id_ot}</h3>
+      <p class="text-sm text-gray-600 mb-4">Indique la observación de la visita fallida:</p>
+      <textarea
+        bind:value={obsAusente}
+        rows={4}
+        maxlength={500}
+        class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+        placeholder="Ej: Cliente no responde en domicilio ni teléfono..."
+      ></textarea>
+      {#if ausenteError}
+        <p class="text-red-500 text-sm mt-2">{ausenteError}</p>
+      {/if}
+      <div class="flex gap-3 mt-4">
+        <button
+          onclick={() => { mostrarModalAusente = false; ausenteError = ''; }}
+          class="flex-1 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors text-sm"
+        >
+          Volver
+        </button>
+        <button
+          onclick={confirmarClienteAusente}
+          disabled={marcandoAusente}
+          class="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 text-sm"
+        >
+          {marcandoAusente ? 'Marcando...' : 'Marcar ausente'}
+        </button>
+      </div>
+    </div>
   </div>
 {/if}
 
