@@ -162,7 +162,15 @@ export class OrdenesService {
       where: { id_ot, id_empresa },
       include: {
         cliente: {
-          include: { direcciones: { where: { es_principal: true }, take: 1 } },
+          select: {
+            id_cliente: true,
+            nombre_completo: true,
+            rut: true,
+            es_conflictivo: true,
+            // El tecnico debe poder llamar al cliente antes de marcar PENDIENTE_CLIENTE_AUSENTE; el email no hace falta para eso y se deja fuera por minima exposicion.
+            telefono: true,
+            direcciones: { where: { es_principal: true }, take: 1 },
+          },
         },
         tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
         direccion: { select: { direccion_completa: true, comuna: true } },
