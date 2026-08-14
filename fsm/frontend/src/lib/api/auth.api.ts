@@ -1,4 +1,4 @@
-const PUBLIC_API_URL = 'http://localhost:3000';
+import { PUBLIC_API_URL } from '$env/static/public';
 
 export interface LoginResponse {
   token: string;

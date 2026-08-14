@@ -3,6 +3,7 @@
   import { get } from 'svelte/store';
   import { goto } from '$app/navigation';
   import { io, type Socket } from 'socket.io-client';
+  import { PUBLIC_API_URL } from '$env/static/public';
   import { authStore } from '$lib/stores/auth.store';
   import { dashboardStore } from '$lib/stores/dashboard.store';
   import { listarEmpresas } from '$lib/api/dashboard.api';
@@ -87,7 +88,7 @@
       } catch {}
     }
 
-    socket = io('http://localhost:3000/dashboard', { auth: { token } });
+    socket = io(`${PUBLIC_API_URL}/dashboard`, { auth: { token } });
     socket.emit('join_empresa', id_empresa);
     socket.on('dashboard_update', () => cargar());
 

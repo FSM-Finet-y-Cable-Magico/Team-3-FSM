@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3000';
+import { PUBLIC_API_URL as API_URL } from '$env/static/public';
 
 
 export interface MaterialDisponible {
