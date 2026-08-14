@@ -82,6 +82,14 @@
         terrenoApi.obtenerMateriales(token),
         ordenesApi.listarCategoriasFalla(token),
       ]);
+      if (otData.id_tecnico !== userId) {
+        errorInit = 'Esta OT está asignada a otro técnico.';
+        return;
+      }
+      if (otData.estado !== 'EN_CURSO') {
+        errorInit = 'Esta OT no está en estado EN_CURSO.';
+        return;
+      }
       ot = otData;
       materiales = matsData;
       categoriasFalla = catsData;

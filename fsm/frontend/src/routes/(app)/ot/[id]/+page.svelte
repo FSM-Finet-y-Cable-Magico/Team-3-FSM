@@ -328,7 +328,7 @@
             </button>
           </div>
 
-        {:else if ot.estado === 'ASIGNADA' && rol === 'TECNICO'}
+        {:else if ot.estado === 'ASIGNADA' && rol === 'TECNICO' && esMiOT}
           <div class="flex gap-3 flex-wrap">
             <button
               onclick={() => cambiarEstado('EN_CURSO')}
@@ -345,7 +345,10 @@
             </button>
           </div>
 
-        {:else if ot.estado === 'EN_CURSO' && rol === 'TECNICO'}
+        {:else if ot.estado === 'ASIGNADA' && rol === 'TECNICO'}
+          <p class="text-sm text-gray-500">Esta OT está asignada a otro técnico.</p>
+
+        {:else if ot.estado === 'EN_CURSO' && rol === 'TECNICO' && esMiOT}
           <div class="flex gap-3 flex-wrap">
             <button
               onclick={() => goto(`/terreno/cerrar/${ot!.id_ot}`)}
@@ -360,6 +363,9 @@
               Cliente ausente
             </button>
           </div>
+
+        {:else if ot.estado === 'EN_CURSO' && rol === 'TECNICO'}
+          <p class="text-sm text-gray-500">Esta OT está asignada a otro técnico.</p>
 
         {:else if ot.estado === 'EN_CURSO' && (rol === 'ADMIN' || rol === 'JEFE_TECNICO')}
           <div class="flex gap-3 flex-wrap">
