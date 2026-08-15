@@ -51,9 +51,9 @@ export class ClientesController {
   editarFicha(
     @Param('id') id: string,
     @Body() dto: EditarClienteDto,
-    @CurrentUser() user: { userId: number },
+    @CurrentUser() user: { userId: number; id_empresa: number },
   ) {
-    return this.clientesService.editarFicha(+id, dto, user.userId);
+    return this.clientesService.editarFicha(+id, dto, user.userId, user.id_empresa);
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO')
@@ -61,8 +61,8 @@ export class ClientesController {
   marcarConflictivo(
     @Param('id') id: string,
     @Body() dto: MarcarConflictivoDto,
-    @CurrentUser() user: { userId: number },
+    @CurrentUser() user: { userId: number; id_empresa: number },
   ) {
-    return this.clientesService.marcarConflictivo(+id, dto, user.userId);
+    return this.clientesService.marcarConflictivo(+id, dto, user.userId, user.id_empresa);
   }
 }

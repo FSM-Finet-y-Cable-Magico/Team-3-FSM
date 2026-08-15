@@ -230,7 +230,7 @@ export class OrdenesService {
     }
 
     const tecnico = await this.prisma.usuario.findFirst({
-      where: { id_usuario: dto.id_tecnico, activo: true },
+      where: { id_usuario: dto.id_tecnico, id_empresa, activo: true },
     });
     if (!tecnico) throw new NotFoundException('Técnico no encontrado');
 
@@ -389,8 +389,13 @@ export class OrdenesService {
         const tipo = await tx.tipo_equipo.findUnique({
           where: { id_tipo_equipo: material.id_tipo_equipo },
         });
+        // stock_consumible no tiene id_empresa propio: el aislamiento por
+        // empresa se hereda del tipo_equipo, igual que en obtenerMateriales.
         const stock = await tx.stock_consumible.findFirst({
-          where: { id_tipo_equipo: material.id_tipo_equipo },
+          where: {
+            id_tipo_equipo: material.id_tipo_equipo,
+            tipo_equipo: { id_empresa },
+          },
         });
         if (!stock || Number(stock.cantidad_disponible) < material.cantidad) {
           throw new BadRequestException(
