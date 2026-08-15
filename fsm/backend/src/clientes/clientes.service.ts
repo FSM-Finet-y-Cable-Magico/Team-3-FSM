@@ -107,7 +107,7 @@ export class ClientesService {
     }
 
     const historial_ot = await this.prisma.orden_trabajo.findMany({
-      where: { id_cliente: cliente.id_cliente },
+      where: { id_cliente: cliente.id_cliente, id_empresa },
       orderBy: { fecha_creacion: 'desc' },
       take: 20,
       select: {

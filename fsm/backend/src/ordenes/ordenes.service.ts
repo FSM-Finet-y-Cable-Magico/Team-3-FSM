@@ -390,11 +390,14 @@ export class OrdenesService {
           where: { id_tipo_equipo: material.id_tipo_equipo, id_empresa },
         });
         // stock_consumible no tiene id_empresa propio: el aislamiento por
-        // empresa se hereda del tipo_equipo, igual que en obtenerMateriales.
+        // empresa se hereda del tipo_equipo y de la bodega. Mismo criterio
+        // que obtenerMateriales, para que el cierre descuente exactamente
+        // del conjunto de materiales que el selector le mostro al tecnico.
         const stock = await tx.stock_consumible.findFirst({
           where: {
             id_tipo_equipo: material.id_tipo_equipo,
             tipo_equipo: { id_empresa },
+            OR: [{ bodega: { id_empresa } }, { id_bodega: null }],
           },
         });
         if (!stock || Number(stock.cantidad_disponible) < material.cantidad) {
