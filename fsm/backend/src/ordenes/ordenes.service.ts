@@ -118,8 +118,8 @@ export class OrdenesService {
       limit?: number;
     },
   ) {
-    const page = filtros.page ?? 1;
-    const limit = filtros.limit ?? 20;
+    const page = Math.max(1, Math.trunc(filtros.page ?? 1) || 1);
+    const limit = Math.min(100, Math.max(1, Math.trunc(filtros.limit ?? 20) || 20));
 
     const condiciones: Prisma.Sql[] = [Prisma.sql`id_empresa = ${id_empresa}`];
     if (filtros.estado) condiciones.push(Prisma.sql`estado = ${filtros.estado}`);
@@ -138,9 +138,14 @@ export class OrdenesService {
     );
     const orderBy =
       filtros.estado === 'PENDIENTE_CLIENTE_AUSENTE'
-        ? Prisma.sql`fecha_creacion ASC`
-        : Prisma.sql`(CASE prioridad ${casoPrioridad} ELSE 99 END) ASC, fecha_creacion DESC`;
+        ? Prisma.sql`fecha_creacion ASC, id_ot ASC`
+        : Prisma.sql`(CASE prioridad ${casoPrioridad} ELSE 99 END) ASC, fecha_creacion DESC, id_ot DESC`;
 
+    // OJO: estas dos son las unicas consultas del backend cuyo aislamiento por
+    // empresa NO pasa por un `where` de Prisma, sino por la condicion armada a
+    // mano en `condiciones` (arriba). Un middleware (`$use`) o una extension
+    // (`$extends` con `query`) que inyecte `id_empresa` no cubre `$queryRaw`:
+    // si se agrega esa defensa, hay que revisar este metodo aparte.
     const [{ total }] = await this.prisma.$queryRaw<{ total: number }[]>(
       Prisma.sql`SELECT COUNT(*)::int AS total FROM orden_trabajo WHERE ${where}`,
     );
