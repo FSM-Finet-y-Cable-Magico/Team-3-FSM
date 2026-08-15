@@ -386,8 +386,8 @@ export class OrdenesService {
       });
 
       for (const material of dto.materiales) {
-        const tipo = await tx.tipo_equipo.findUnique({
-          where: { id_tipo_equipo: material.id_tipo_equipo },
+        const tipo = await tx.tipo_equipo.findFirst({
+          where: { id_tipo_equipo: material.id_tipo_equipo, id_empresa },
         });
         // stock_consumible no tiene id_empresa propio: el aislamiento por
         // empresa se hereda del tipo_equipo, igual que en obtenerMateriales.
@@ -547,6 +547,10 @@ export class OrdenesService {
       where: { id_empresa, activo: true },
       include: {
         stock: {
+          // El tipo_equipo ya esta acotado por empresa, pero su stock puede
+          // vivir en una bodega del otro tenant. Las filas sin bodega asignada
+          // se mantienen: no son atribuibles a otra empresa.
+          where: { OR: [{ bodega: { id_empresa } }, { id_bodega: null }] },
           select: { id_stock: true, cantidad_disponible: true, umbral_minimo: true },
           take: 1,
         },
