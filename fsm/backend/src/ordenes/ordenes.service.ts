@@ -207,14 +207,25 @@ export class OrdenesService {
       select: { id_usuario: true, nombre_completo: true, nombre_usuario: true },
     });
 
-    return Promise.all(
-      tecnicos.map(async (t) => {
-        const ot_activas_hoy = await this.prisma.orden_trabajo.count({
-          where: { id_tecnico: t.id_usuario, estado: { in: ['ASIGNADA', 'EN_CURSO'] } },
-        });
-        return { ...t, ot_activas_hoy };
-      }),
-    );
+    if (tecnicos.length === 0) return [];
+
+    // Un solo groupBy en lugar de un count por técnico. El filtro por
+    // id_empresa evita sumar OT de otro tenant asignadas al mismo técnico.
+    const activasPorTecnico = await this.prisma.orden_trabajo.groupBy({
+      by: ['id_tecnico'],
+      where: {
+        id_empresa,
+        id_tecnico: { in: tecnicos.map((t) => t.id_usuario) },
+        estado: { in: ['ASIGNADA', 'EN_CURSO'] },
+      },
+      _count: { id_ot: true },
+    });
+
+    const activas = new Map(activasPorTecnico.map((row) => [row.id_tecnico, row._count.id_ot]));
+
+    // Los técnicos sin OT no aparecen en el groupBy: se recorre la lista de
+    // técnicos, no la del conteo, para que sigan saliendo con 0.
+    return tecnicos.map((t) => ({ ...t, ot_activas_hoy: activas.get(t.id_usuario) ?? 0 }));
   }
 
   async asignarTecnico(
