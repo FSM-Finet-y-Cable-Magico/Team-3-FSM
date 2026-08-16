@@ -89,8 +89,14 @@
     }
 
     socket = io(`${API_URL}/dashboard`, { auth: { token } });
-    socket.emit('join_empresa', id_empresa);
+    // El servidor deriva la empresa del token; no se manda ningun id.
+    socket.emit('join_empresa');
     socket.on('dashboard_update', () => cargar());
+    socket.on('disconnect', (motivo) => {
+      if (motivo === 'io server disconnect') {
+        console.warn('Dashboard en tiempo real desconectado: sesión no válida');
+      }
+    });
 
     intervalo = setInterval(() => cargar(), 60000);
   }
