@@ -21,6 +21,7 @@ export class DashboardService {
       totalClientes,
       resueltasRemoto,
       clientesConReparacionesRecurrentes,
+      cargaTecnicosRaw,
     ] = await Promise.all([
       this.prisma.orden_trabajo.groupBy({
         by: ['estado'],
@@ -83,6 +84,19 @@ export class DashboardService {
         },
         _count: { id_cliente: true },
       }),
+
+      // Los dos contadores por técnico (ot_activas y en_curso) salen de este
+      // único groupBy por id_tecnico + estado. El filtro por id_empresa evita
+      // sumar OT de otro tenant asignadas al mismo técnico.
+      this.prisma.orden_trabajo.groupBy({
+        by: ['id_tecnico', 'estado'],
+        where: {
+          id_empresa,
+          id_tecnico: { not: null },
+          estado: { in: ['ASIGNADA', 'EN_CURSO'] },
+        },
+        _count: { id_ot: true },
+      }),
     ]);
 
     const ot_por_estado = {
@@ -98,27 +112,26 @@ export class DashboardService {
       ot_por_estado[row.estado] = row._count.estado;
     }
 
-    const tecnicos = await Promise.all(
-      tecnicosRaw.map(async (t) => {
-        const [ot_activas, en_cursoCount] = await Promise.all([
-          this.prisma.orden_trabajo.count({
-            where: {
-              id_tecnico: t.id_usuario,
-              estado: { in: ['ASIGNADA', 'EN_CURSO'] },
-            },
-          }),
-          this.prisma.orden_trabajo.count({
-            where: { id_tecnico: t.id_usuario, estado: 'EN_CURSO' },
-          }),
-        ]);
-        return {
-          id_usuario: t.id_usuario,
-          nombre_completo: t.nombre_completo,
-          ot_activas,
-          en_curso: en_cursoCount > 0,
-        };
-      }),
-    );
+    const cargaPorTecnico = new Map<number, { ot_activas: number; en_curso: boolean }>();
+    for (const row of cargaTecnicosRaw) {
+      if (row.id_tecnico === null) continue;
+      const carga = cargaPorTecnico.get(row.id_tecnico) ?? { ot_activas: 0, en_curso: false };
+      carga.ot_activas += row._count.id_ot;
+      if (row.estado === 'EN_CURSO') carga.en_curso = true;
+      cargaPorTecnico.set(row.id_tecnico, carga);
+    }
+
+    // Los técnicos sin OT no aparecen en el groupBy: se recorre tecnicosRaw,
+    // no el conteo, para que sigan saliendo con 0 y en_curso false.
+    const tecnicos = tecnicosRaw.map((t) => {
+      const carga = cargaPorTecnico.get(t.id_usuario);
+      return {
+        id_usuario: t.id_usuario,
+        nombre_completo: t.nombre_completo,
+        ot_activas: carga?.ot_activas ?? 0,
+        en_curso: carga?.en_curso ?? false,
+      };
+    });
 
     return {
       ot_por_estado,
