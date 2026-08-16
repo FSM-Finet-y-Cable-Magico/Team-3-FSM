@@ -23,6 +23,7 @@ export class ClientesController {
     return this.clientesService.listarClientes(user.id_empresa, page ?? 1, limit ?? 20);
   }
 
+  @Roles('ADMIN', 'JEFE_TECNICO')
   @Get('planes')
   listarPlanes(@CurrentUser() user: { id_empresa: number }) {
     return this.clientesService.listarPlanes(user.id_empresa);
