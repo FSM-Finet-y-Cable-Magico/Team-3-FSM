@@ -5,7 +5,7 @@
  * La base de datos todavía NO valida estos valores: la columna es un
  * `VARCHAR(30)` nullable, sin enum ni CHECK, así que estas constantes son hoy
  * el único punto de control. Aplicarlo en el esquema requiere migración y está
- * pendiente en #36, bloqueado por el acceso a Railway igual que C6 (#19).
+ * diferido a la instalación definitiva en #36, igual que C6 (#19).
  *
  * El módulo de Inventario del Incremento 2 necesita los otros tres valores:
  * deben salir de aquí y no repetirse como strings sueltos.
