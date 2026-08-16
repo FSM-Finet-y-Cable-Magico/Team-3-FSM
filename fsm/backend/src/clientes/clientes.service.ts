@@ -107,7 +107,7 @@ export class ClientesService {
     }
 
     const historial_ot = await this.prisma.orden_trabajo.findMany({
-      where: { id_cliente: cliente.id_cliente },
+      where: { id_cliente: cliente.id_cliente, id_empresa },
       orderBy: { fecha_creacion: 'desc' },
       take: 20,
       select: {
@@ -155,9 +155,14 @@ export class ClientesService {
     };
   }
 
-  async editarFicha(id_cliente: number, dto: EditarClienteDto, userId: number) {
-    const cliente = await this.prisma.cliente.findUnique({
-      where: { id_cliente },
+  async editarFicha(
+    id_cliente: number,
+    dto: EditarClienteDto,
+    userId: number,
+    id_empresa: number,
+  ) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id_cliente, id_empresa },
       include: {
         direcciones: {
           where: { es_principal: true },
@@ -232,9 +237,14 @@ export class ClientesService {
     return resultado;
   }
 
-  async marcarConflictivo(id_cliente: number, dto: MarcarConflictivoDto, userId: number) {
-    const cliente = await this.prisma.cliente.findUnique({
-      where: { id_cliente },
+  async marcarConflictivo(
+    id_cliente: number,
+    dto: MarcarConflictivoDto,
+    userId: number,
+    id_empresa: number,
+  ) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id_cliente, id_empresa },
     });
 
     if (!cliente) {
