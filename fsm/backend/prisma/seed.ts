@@ -8,6 +8,18 @@ const prisma = new PrismaClient({
 });
 
 async function main() {
+  // Se valida antes de escribir nada, para no dejar la base a medio sembrar.
+  // A proposito no hay valor por defecto: sembrar tiene que ser una decision
+  // explicita de quien corre el seed.
+  const passwordAdmin = process.env.SEED_ADMIN_PASSWORD;
+  if (!passwordAdmin) {
+    throw new Error(
+      'Falta la variable SEED_ADMIN_PASSWORD. Definila en fsm/backend/.env con la ' +
+        'contrasena inicial del administrador antes de correr el seed (ver README). ' +
+        'El seed no trae contrasena por defecto.',
+    );
+  }
+
   const finet = await prisma.empresa.upsert({
     where: { rut_empresa: '76123456-7' },
     update: {},
@@ -28,11 +40,14 @@ async function main() {
     });
   }
 
-  const passwordHash = await bcrypt.hash('Admin2026!', 12);
+  const passwordHash = await bcrypt.hash(passwordAdmin, 12);
 
   const adminUser = await prisma.usuario.upsert({
     where: { nombre_usuario: 'admin.finet' },
-    update: { es_password_temporal: false },
+    // Si el admin ya existe no se toca: reafirmar el hash pisaria la
+    // contrasena que ya haya cambiado, y volver a poner es_password_temporal
+    // alteraria el estado del flujo de cambio obligatorio (CU-39).
+    update: {},
     create: {
       empresa: { connect: { id_empresa: finet.id_empresa } },
       nombre_completo: 'Administrador FSM',
@@ -40,7 +55,8 @@ async function main() {
       email: 'admin@finet.cl',
       password_hash: passwordHash,
       activo: true,
-      es_password_temporal: false,
+      // El primer ingreso obliga a cambiarla (CU-39).
+      es_password_temporal: true,
     },
   });
 
@@ -89,7 +105,7 @@ async function main() {
 
   console.log('Seed completado');
   console.log('FiNet id=' + finet.id_empresa + ' | Cable Magico id=' + cableMagico.id_empresa);
-  console.log('Admin: admin.finet / Admin2026!');
+  console.log('Admin: admin.finet (contrasena: la de SEED_ADMIN_PASSWORD)');
 }
 
 main()

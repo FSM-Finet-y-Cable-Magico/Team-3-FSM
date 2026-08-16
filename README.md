@@ -40,9 +40,12 @@ PORT=3000
 CLOUDINARY_CLOUD_NAME="pedir al equipo"
 CLOUDINARY_API_KEY="pedir al equipo"
 CLOUDINARY_API_SECRET="pedir al equipo"
+SEED_ADMIN_PASSWORD=""
 ```
 
 > Las variables de Cloudinary son opcionales para desarrollo local — si se dejan vacías, las fotos se guardan en base64 automáticamente.
+
+> `SEED_ADMIN_PASSWORD` solo hace falta si se va a sembrar la base (ver más abajo). No tiene valor por defecto a propósito.
 
 Generar el cliente Prisma:
 
@@ -59,6 +62,17 @@ cp .env.example .env
 ```
 
 `.env.example` ya trae el valor para desarrollo local (`PUBLIC_API_URL=http://localhost:3000`), así que no hay que editar nada para levantar el proyecto. Sin este paso el build y `npm run dev` fallan con `"PUBLIC_API_URL" is not exported by "$env/static/public"`.
+
+### 4. Sembrar la base (solo si hace falta)
+
+Sembrar **requiere definir `SEED_ADMIN_PASSWORD`** en `fsm/backend/.env`: es la contraseña inicial del usuario `admin.finet`. El seed no trae ninguna contraseña por defecto y falla con un error si la variable no está definida, para que ninguna base quede con una credencial conocida.
+
+```bash
+cd fsm/backend
+npx prisma db seed
+```
+
+Elegir una contraseña propia, no reutilizar la de otro entorno y no subirla al repo. En el primer ingreso el sistema obliga a cambiarla (CU-39). Si el usuario `admin.finet` ya existe, el seed **no** lo modifica: no pisa la contraseña que se haya cambiado después.
 
 ---
 
