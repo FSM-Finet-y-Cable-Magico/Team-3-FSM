@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException, ForbiddenException,
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { validarRut } from '../common/utils/rut.util.js';
+import { TIPO_MOVIMIENTO } from '../common/constants/inventario.constants.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
@@ -419,6 +420,22 @@ export class OrdenesService {
         await tx.stock_consumible.update({
           where: { id_stock: stock.id_stock },
           data: { cantidad_disponible: { decrement: material.cantidad } },
+        });
+
+        // RNF-14: cada decremento de stock deja su movimiento de inventario,
+        // en la misma transaccion y en la misma iteracion, para que no exista
+        // ningun camino donde se descuente material sin quedar registrado.
+        await tx.movimiento_inventario.create({
+          data: {
+            id_tipo_equipo: material.id_tipo_equipo,
+            id_empresa_origen: ot.id_empresa,
+            // Puede ser null: la busqueda de stock admite filas sin bodega.
+            id_bodega_origen: stock.id_bodega,
+            id_usuario: userId,
+            tipo_movimiento: TIPO_MOVIMIENTO.SALIDA_OT,
+            cantidad: material.cantidad,
+            referencia_id: id_ot,
+          },
         });
       }
 
