@@ -6,9 +6,15 @@ export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.get<string[]>('roles', context.getHandler());
+    const requiredRoles = this.reflector.getAllAndOverride<string[]>('roles', [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    // Fail-closed: sin metadatos de @Roles se deniega. Olvidar el decorador
+    // debe romper el endpoint de forma ruidosa, no dejarlo abierto a
+    // cualquier autenticado.
     if (!requiredRoles) {
-      return true;
+      throw new ForbiddenException('No tienes permisos para esta acción');
     }
 
     const { user } = context.switchToHttp().getRequest();
