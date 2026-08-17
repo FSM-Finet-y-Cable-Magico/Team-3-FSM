@@ -1,7 +1,5 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { DashboardService } from './dashboard.service.js';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
@@ -11,7 +9,7 @@ interface UserPayload {
   rol: string;
 }
 
-@UseGuards(JwtAuthGuard, RolesGuard)
+// Sin @UseGuards: JwtAuthGuard y RolesGuard son APP_GUARD globales.
 @Controller('dashboard')
 export class DashboardController {
   constructor(private dashboardService: DashboardService) {}
