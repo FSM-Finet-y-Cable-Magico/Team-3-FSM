@@ -62,6 +62,9 @@ model usuario {
   transferencias       transferencia_equipo[]
   prospectos           prospecto[]
   lista_negra_registro lista_negra[]
+
+  // C6 (#19). Listado de usuarios y de tecnicos, siempre acotados por empresa.
+  @@index([id_empresa])
 }
 
 model rol {
@@ -124,6 +127,11 @@ model cliente {
   unidades_instaladas  unidad_equipo[]
   puertos_nap          puerto_nap[]
   log_notificacion     log_notificacion[]
+
+  // C6 (#19). rut ya esta indexado, pero como efecto de ser @unique.
+  // El compuesto con fecha_creacion deja que listarClientes lea la pagina
+  // en orden de indice en vez de ordenar la cartera completa del tenant.
+  @@index([id_empresa, fecha_creacion])
 }
 
 model direccion_servicio {
@@ -135,6 +143,10 @@ model direccion_servicio {
   es_principal       Boolean @default(true)
   cliente            cliente? @relation(fields: [id_cliente], references: [id_cliente])
   ordenes            orden_trabajo[]
+
+  // C6 (#19). FK sin indice que se consulta en casi toda operacion de
+  // cliente, via el include de `direcciones` con es_principal.
+  @@index([id_cliente])
 }
 
 model plan {
@@ -150,6 +162,11 @@ model plan {
   empresa          empresa? @relation(fields: [id_empresa], references: [id_empresa])
   contratos        contrato[]
   cotizaciones     cotizacion[]
+
+  // C6 (#19). Catalogo chico: hoy el beneficio es nulo porque PostgreSQL
+  // resuelve por seq scan igual. Se declara porque la columna no esta
+  // cubierta por ningun otro indice y el costo de escritura es igual de nulo.
+  @@index([id_empresa])
 }
 
 model contrato {
@@ -252,6 +269,10 @@ model tipo_equipo {
   uso_ot                    uso_material_ot[]
   detalles_ingreso          detalle_orden_ingreso[]
   movimientos               movimiento_inventario[]
+
+  // C6 (#19). Mismo criterio que plan: catalogo chico, sin cobertura previa
+  // y sin costo relevante. Se consulta en obtenerMateriales y en cerrarOT.
+  @@index([id_empresa])
 }
 
 model unidad_equipo {
@@ -330,6 +351,22 @@ model orden_trabajo {
   materiales           uso_material_ot[]
   fotos                evidencia_foto[]
   llamada              llamada_cortes?
+
+  // C6 (#19). PostgreSQL no indexa las claves foraneas por si solo: de estas
+  // columnas, solo la PK y el @unique de id_ticket tenian indice.
+  //
+  // Listado de OT por estado, groupBy del dashboard y contador de OT activas.
+  @@index([id_empresa, estado])
+  // Carga por tecnico (listarTecnicos, dashboard) y vista de terreno.
+  @@index([id_tecnico, estado])
+  // Rangos fecha_desde/fecha_hasta de listarOT y orden de la rama
+  // PENDIENTE_CLIENTE_AUSENTE. NO evita el sort del listado por defecto:
+  // ese ordena primero por un CASE sobre prioridad, que es calculado.
+  @@index([id_empresa, fecha_creacion])
+  // Historial de OT del cliente, historialFallas y recurrencia de reparaciones.
+  @@index([id_cliente])
+  // Filtro tipo_ot del listado y recuento de REPARACION del dashboard.
+  @@index([id_empresa, tipo_ot])
 }
 
 model historial_ot {
@@ -342,6 +379,11 @@ model historial_ot {
   fecha_hora      DateTime  @default(now())
   orden_trabajo   orden_trabajo? @relation(fields: [id_ot], references: [id_ot])
   usuario         usuario?       @relation(fields: [id_usuario], references: [id_usuario])
+
+  // C6 (#19). FK sin indice sobre una tabla que crece con cada transicion de
+  // estado de cada OT. El detalle de OT la pide con ORDER BY fecha_hora DESC,
+  // asi que el compuesto sirve la busqueda y el orden.
+  @@index([id_ot, fecha_hora])
 }
 
 model categoria_falla {
@@ -416,6 +458,10 @@ model stock_consumible {
   umbral_minimo       Decimal? @db.Decimal(10, 2)
   tipo_equipo         tipo_equipo? @relation(fields: [id_tipo_equipo], references: [id_tipo_equipo])
   bodega              bodega?      @relation(fields: [id_bodega], references: [id_bodega])
+
+  // C6 (#19). FK sin indice que se consulta una vez por material dentro de
+  // la transaccion de cierre de OT.
+  @@index([id_tipo_equipo])
 }
 
 model proveedor {
@@ -534,6 +580,12 @@ model intento_fallido {
   timestamp       DateTime  @default(now())
   bloqueado_hasta DateTime?
   empresa         empresa?  @relation(fields: [id_empresa], references: [id_empresa])
+
+  // C6 (#19). Se consulta en CADA intento de login para ver si la cuenta
+  // esta bloqueada, y la tabla es append-only: suma una fila por cada fallo,
+  // indefinidamente. Sin indice es un seq scan en la ruta de autenticacion
+  // que empeora con el tiempo. El compuesto cubre el filtro y el ORDER BY.
+  @@index([rut_intentado, bloqueado_hasta])
 }
 
 model punto_cobertura {
