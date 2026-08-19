@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { page } from '$app/stores';
   import { authStore } from '$lib/stores/auth.store';
@@ -24,8 +24,18 @@
     url: string;
     formato: string;
     tamano_kb: number;
+    /**
+     * Object URL del archivo local (M12 / RNF-09). La miniatura se pinta desde
+     * el archivo que el tecnico acaba de elegir, sin volver a descargar la foto
+     * de Cloudinary: ahorra un round trip de 2-4 MB sobre red celular y la
+     * vista previa aparece de inmediato, sin esperar a que termine la subida.
+     */
     preview: string;
     cargando?: boolean;
+  }
+
+  function liberarPreview(foto: FotoLocal) {
+    if (foto.preview.startsWith('blob:')) URL.revokeObjectURL(foto.preview);
   }
   let fotos = $state<FotoLocal[]>([]);
   const subiendoFoto = $derived(fotos.some(f => f.cargando));
@@ -109,15 +119,17 @@
 
     for (const file of archivos) {
       const placeholderIdx = fotos.length;
-      fotos = [...fotos, { url: '', formato: '', tamano_kb: 0, preview: '', cargando: true }];
+      const preview = URL.createObjectURL(file);
+      fotos = [...fotos, { url: '', formato: '', tamano_kb: 0, preview, cargando: true }];
       try {
         const result = await terrenoApi.subirFoto(token, idOT, file);
         fotos = fotos.map((f, i) =>
           i === placeholderIdx
-            ? { url: result.url_cloudinary, formato: result.formato, tamano_kb: result.tamano_kb, preview: result.url_cloudinary, cargando: false }
+            ? { ...f, url: result.url_cloudinary, formato: result.formato, tamano_kb: result.tamano_kb, cargando: false }
             : f,
         );
       } catch (err) {
+        URL.revokeObjectURL(preview);
         fotos = fotos.filter((_, i) => i !== placeholderIdx);
         errorCierre = err instanceof Error ? err.message : 'Error al subir foto';
       }
@@ -125,8 +137,13 @@
   }
 
   function eliminarFoto(i: number) {
+    const foto = fotos[i];
+    if (foto) liberarPreview(foto);
     fotos = fotos.filter((_, idx) => idx !== i);
   }
+
+  // Sin esto los object URL sobreviven hasta que se cierre la pestana.
+  onDestroy(() => fotos.forEach(liberarPreview));
 
   function buildDto(): terrenoApi.CerrarOTDto {
     return {
