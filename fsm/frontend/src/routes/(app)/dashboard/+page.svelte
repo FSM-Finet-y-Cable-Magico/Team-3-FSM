@@ -31,6 +31,14 @@
   let socket: Socket | null = null;
   let intervalo: ReturnType<typeof setInterval> | null = null;
   let unsubDashboard: (() => void) | null = null;
+  // Bandera de cancelacion (#45, m1 de #24). `inicializarDashboard` tiene dos
+  // llamadas a la API antes de crear el socket, y cada una arrastra su
+  // preflight de CORS: son cuatro viajes a Railway durante los cuales el
+  // usuario puede irse del dashboard. Si eso pasa, `onDestroy` ya corrio con
+  // `socket` todavia en null y su `disconnect()` no desconecta nada; sin esta
+  // bandera la promesa resuelve despues y crea una conexion huerfana, que se
+  // lleva consigo el listener de `dashboard_update` y el setInterval de 60 s.
+  let destruido = false;
 
   const tiempoDesdeActualizacion = $derived(() => {
     if (!ultimaActualizacion) return 'nunca';
@@ -48,12 +56,10 @@
     }),
   );
 
+  // La limpieza vive entera en `onDestroy`, no repartida entre este `return` y
+  // aquel: tener dos caminos era justamente lo que dejaba fuera al socket.
   onMount(() => {
     inicializarDashboard();
-
-    return () => {
-      unsubDashboard?.();
-    };
   });
 
   async function inicializarDashboard() {
@@ -80,14 +86,24 @@
       ultimaActualizacion = s.ultimaActualizacion;
     });
 
+    // Hay un chequeo despues de cada `await`, y el invariante que sostiene al
+    // resto es que entre el ultimo de ellos y la creacion del socket no queda
+    // ningun `await`: por eso alcanzan para cubrir tambien al `setInterval`.
+    // Si mas adelante se agrega una llamada mas, va con su propio chequeo.
     await cargar();
+    // No tiene sentido pedir las empresas de una pantalla que ya no existe.
+    if (destruido) return;
 
     if (rol === 'ADMIN') {
       try {
         empresas = await listarEmpresas(token);
       } catch {}
+      if (destruido) return;
     }
 
+    // Por si `inicializarDashboard` llegara a correr dos veces: reasignar sin
+    // desconectar dejaba la instancia anterior viva y ya sin referencia.
+    socket?.disconnect();
     socket = io(`${API_URL}/dashboard`, { auth: { token } });
     // El servidor deriva la empresa del token; no se manda ningun id.
     socket.emit('join_empresa');
@@ -101,9 +117,17 @@
     intervalo = setInterval(() => cargar(), 60000);
   }
 
+  // Unico punto de limpieza, y cubre los dos caminos: el normal (el socket y
+  // el intervalo ya existen y se liberan) y el del desmontaje temprano (todavia
+  // son null, y la bandera impide que se lleguen a crear).
   onDestroy(() => {
+    destruido = true;
     socket?.disconnect();
+    socket = null;
     if (intervalo) clearInterval(intervalo);
+    intervalo = null;
+    unsubDashboard?.();
+    unsubDashboard = null;
   });
 
   async function cargar() {
