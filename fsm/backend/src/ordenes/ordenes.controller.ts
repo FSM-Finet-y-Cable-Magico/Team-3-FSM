@@ -6,7 +6,6 @@ import {
   Body,
   Param,
   Query,
-  UseGuards,
   UseInterceptors,
   UploadedFile,
   BadRequestException,
@@ -20,8 +19,6 @@ import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
@@ -31,7 +28,7 @@ interface UserPayload {
   rol: string;
 }
 
-@UseGuards(JwtAuthGuard, RolesGuard)
+// Sin @UseGuards: JwtAuthGuard y RolesGuard son APP_GUARD globales.
 @Controller('ordenes')
 export class OrdenesController {
   constructor(private ordenesService: OrdenesService) {

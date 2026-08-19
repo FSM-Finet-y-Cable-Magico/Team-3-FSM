@@ -1,14 +1,12 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
 import { ClientesService } from './clientes.service.js';
 import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
 import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
-@UseGuards(JwtAuthGuard, RolesGuard)
+// Sin @UseGuards: JwtAuthGuard y RolesGuard son APP_GUARD globales.
 @Controller('clientes')
 export class ClientesController {
   constructor(private clientesService: ClientesService) {}
