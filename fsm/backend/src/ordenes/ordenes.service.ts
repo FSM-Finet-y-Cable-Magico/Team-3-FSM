@@ -115,6 +115,11 @@ export class OrdenesService {
       id_tecnico?: number;
       fecha_desde?: string;
       fecha_hasta?: string;
+      // Rango del dia de operacion, ya resuelto a instantes por el controlador
+      // (ver dia-habil.util.ts). El servicio no calcula la zona horaria ni la
+      // recibe como texto: solo compara.
+      dia_desde?: Date;
+      dia_hasta?: Date;
       page?: number;
       limit?: number;
     },
@@ -122,8 +127,24 @@ export class OrdenesService {
     const page = Math.max(1, Math.trunc(filtros.page ?? 1) || 1);
     const limit = Math.min(100, Math.max(1, Math.trunc(filtros.limit ?? 20) || 20));
 
+    // PRECEDENCIA: `dia_desde`/`dia_hasta` (vista de terreno) mandan sobre
+    // `estado`. Si llegaran los dos, `estado` se ignora por completo: ni entra
+    // al WHERE ni influye en el ORDER BY de mas abajo. Antes se descartaba del
+    // WHERE pero seguia cambiando el orden, que era una combinacion incoherente.
+    const esVistaDia = filtros.dia_desde !== undefined && filtros.dia_hasta !== undefined;
+
     const condiciones: Prisma.Sql[] = [Prisma.sql`id_empresa = ${id_empresa}`];
-    if (filtros.estado) condiciones.push(Prisma.sql`estado = ${filtros.estado}`);
+    if (esVistaDia) {
+      // Vista de terreno (CU-11, M11): "mi dia" del tecnico = los 3 estados
+      // activos sin condicion de fecha —el trabajo pendiente se arrastra y
+      // sigue siendo de hoy—, mas COMPLETADA solo si se cerro dentro del dia.
+      condiciones.push(Prisma.sql`(
+        estado IN ('ASIGNADA', 'EN_CURSO', 'PENDIENTE_CLIENTE_AUSENTE')
+        OR (estado = 'COMPLETADA' AND fecha_completada >= ${filtros.dia_desde} AND fecha_completada < ${filtros.dia_hasta})
+      )`);
+    } else if (filtros.estado) {
+      condiciones.push(Prisma.sql`estado = ${filtros.estado}`);
+    }
     if (filtros.tipo_ot) condiciones.push(Prisma.sql`tipo_ot = ${filtros.tipo_ot}`);
     if (filtros.prioridad) condiciones.push(Prisma.sql`prioridad = ${filtros.prioridad}`);
     if (filtros.id_tecnico) condiciones.push(Prisma.sql`id_tecnico = ${filtros.id_tecnico}`);
@@ -137,8 +158,17 @@ export class OrdenesService {
       Object.entries(PRIORIDAD_ORDEN).map(([p, n]) => Prisma.sql`WHEN ${p} THEN ${n}`),
       ' ',
     );
-    const orderBy =
-      filtros.estado === 'PENDIENTE_CLIENTE_AUSENTE'
+    // CU-11 pide la vista de terreno ordenada por prioridad y despues por
+    // bloque horario, que es `fecha_programada`: el tecnico recorre su dia en
+    // ese orden. Solo aplica a la vista del dia; el listado de administracion
+    // conserva su orden por antiguedad, que es otro caso de uso.
+    //
+    // NULLS LAST porque `fecha_programada` es opcional: una OT sin bloque va al
+    // final del grupo de su prioridad, no al principio, que es lo que hace
+    // Postgres por defecto al ordenar ASC.
+    const orderBy = esVistaDia
+      ? Prisma.sql`(CASE prioridad ${casoPrioridad} ELSE 99 END) ASC, fecha_programada ASC NULLS LAST, id_ot ASC`
+      : filtros.estado === 'PENDIENTE_CLIENTE_AUSENTE'
         ? Prisma.sql`fecha_creacion ASC, id_ot ASC`
         : Prisma.sql`(CASE prioridad ${casoPrioridad} ELSE 99 END) ASC, fecha_creacion DESC, id_ot DESC`;
 

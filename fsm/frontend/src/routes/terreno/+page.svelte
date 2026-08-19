@@ -13,28 +13,26 @@
   let historialClienteId = $state<number | null>(null);
 
   let ots = $state<ordenesApi.OT[]>([]);
+  let totalDia = $state(0);
   let loading = $state(true);
   let errorMsg = $state('');
   let iniciando = $state<number | null>(null);
   let marcandoAusente = $state<number | null>(null);
   let reintentando = $state<number | null>(null);
 
-  const hoy = new Date().toLocaleDateString('en-CA');
-
-  const otsDia = $derived(
-    ots.filter((o) => {
-      if (['ASIGNADA', 'EN_CURSO', 'PENDIENTE_CLIENTE_AUSENTE'].includes(o.estado)) return true;
-      if (o.estado === 'COMPLETADA' && o.fecha_completada) {
-        return o.fecha_completada.slice(0, 10) === hoy;
-      }
-      return false;
-    }),
-  );
-
+  // El filtro de "mi dia" (activas + completadas hoy) ya lo aplica el
+  // backend via ?mi_dia=true (M11): el servidor solo devuelve lo que esta
+  // vista necesita, en vez de traer hasta 100 OT y descartar la mayoria
+  // aca, que es justo el costo mas caro sobre red celular.
+  //
+  // La fecha no viaja: el dia lo resuelve el Controlador en la zona de
+  // operacion de FiNet. Calcularlo aca ataba la jornada al reloj del telefono
+  // y ademas se congelaba al montar, asi que una sesion abierta cruzando la
+  // medianoche seguia pidiendo el dia anterior.
   const resumen = $derived({
-    total: otsDia.length,
-    completadas: otsDia.filter((o) => o.estado === 'COMPLETADA').length,
-    pendientes: otsDia.filter((o) => o.estado !== 'COMPLETADA').length,
+    total: ots.length,
+    completadas: ots.filter((o) => o.estado === 'COMPLETADA').length,
+    pendientes: ots.filter((o) => o.estado !== 'COMPLETADA').length,
   });
 
   const fechaFormateada = $derived(
@@ -68,8 +66,11 @@
     loading = true;
     errorMsg = '';
     try {
-      const result = await ordenesApi.listarOT(token, { limit: 100 });
+      const result = await ordenesApi.listarOT(token, { mi_dia: true, limit: 30 });
       ots = result.data;
+      // La vista de terreno no pagina. Si el dia trae mas OT que el limite, hay
+      // que decirlo en vez de recortar en silencio.
+      totalDia = result.total;
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : 'Error al cargar órdenes';
     } finally {
@@ -190,20 +191,29 @@
         </svg>
         <p class="text-slate-400 text-sm">Cargando órdenes...</p>
       </div>
-    {:else if otsDia.length === 0}
+    {:else if ots.length === 0}
       <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
         <svg class="w-12 h-12 text-slate-200 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
         </svg>
-        <p class="text-slate-400 text-sm">No tienes ordenes asignadas para hoy</p>
+        <!-- Texto literal de la Excepcion 1 de CU-11. -->
+        <p class="text-slate-400 text-sm">No tienes órdenes de trabajo asignadas para hoy.</p>
       </div>
     {:else}
+      {#if totalDia > ots.length}
+        <div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm">
+          Mostrando {ots.length} de {totalDia} órdenes del día. Contacta a tu jefe técnico si
+          falta alguna.
+        </div>
+      {/if}
       <div class="space-y-3">
-        {#each otsDia as ot}
+        {#each ots as ot}
           <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
             <div class="p-4">
               <!-- Badges -->
               <div class="flex items-center gap-2 flex-wrap mb-2">
+                <!-- CU-11 pide el ID de la OT entre los campos de la tarjeta. -->
+                <span class="text-xs font-bold text-slate-500 tabular-nums">#{ot.id_ot}</span>
                 <span class="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
                   {ot.tipo_ot}
                 </span>

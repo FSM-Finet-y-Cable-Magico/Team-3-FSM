@@ -69,7 +69,19 @@ async function fetchApi(token: string, url: string, options?: RequestInit) {
 
 export async function listarOT(
   token: string,
-  filtros?: { estado?: string; tipo_ot?: string; prioridad?: string; page?: number; limit?: number },
+  filtros?: {
+    estado?: string;
+    tipo_ot?: string;
+    prioridad?: string;
+    page?: number;
+    limit?: number;
+    /**
+     * Vista de terreno (CU-11): pide "mi día" ya filtrado por el Controlador.
+     * No lleva fecha: el día lo resuelve el backend en la zona de operación de
+     * FiNet, no el reloj del dispositivo.
+     */
+    mi_dia?: boolean;
+  },
 ): Promise<{ data: OT[]; total: number; page: number; limit: number }> {
   const params = new URLSearchParams();
   if (filtros?.estado) params.set('estado', filtros.estado);
@@ -77,6 +89,7 @@ export async function listarOT(
   if (filtros?.prioridad) params.set('prioridad', filtros.prioridad);
   if (filtros?.page) params.set('page', String(filtros.page));
   if (filtros?.limit) params.set('limit', String(filtros.limit));
+  if (filtros?.mi_dia) params.set('mi_dia', 'true');
   const qs = params.toString();
   return fetchApi(token, `${API_URL}/api/ordenes${qs ? '?' + qs : ''}`);
 }

@@ -21,6 +21,7 @@ import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
+import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 
 interface UserPayload {
   userId: number;
@@ -48,6 +49,7 @@ export class OrdenesController {
     @Query('prioridad') prioridad?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('mi_dia') mi_dia?: string,
   ) {
     const filtros: Record<string, unknown> = {
       estado,
@@ -56,6 +58,17 @@ export class OrdenesController {
       page: page ? +page : 1,
       limit: limit ? +limit : 20,
     };
+
+    // El dia se resuelve aca y no en la Vista (CU-11, M11). Es el dia de
+    // operacion de FiNet en America/Santiago, no el del dispositivo: el reloj
+    // o el huso del telefono del tecnico no deben decidir que jornada ve. Se
+    // recalcula en cada peticion, asi que una sesion abierta que cruza la
+    // medianoche pasa al dia siguiente sola.
+    if (mi_dia === 'true' || mi_dia === '1') {
+      const { desde, hasta } = rangoDiaOperacion();
+      filtros.dia_desde = desde;
+      filtros.dia_hasta = hasta;
+    }
 
     if (user.rol === 'TECNICO') {
       filtros.id_tecnico = user.userId;
