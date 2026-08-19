@@ -75,7 +75,12 @@ export async function listarOT(
     prioridad?: string;
     page?: number;
     limit?: number;
-    fecha_dia?: string;
+    /**
+     * Vista de terreno (CU-11): pide "mi día" ya filtrado por el Controlador.
+     * No lleva fecha: el día lo resuelve el backend en la zona de operación de
+     * FiNet, no el reloj del dispositivo.
+     */
+    mi_dia?: boolean;
   },
 ): Promise<{ data: OT[]; total: number; page: number; limit: number }> {
   const params = new URLSearchParams();
@@ -84,7 +89,7 @@ export async function listarOT(
   if (filtros?.prioridad) params.set('prioridad', filtros.prioridad);
   if (filtros?.page) params.set('page', String(filtros.page));
   if (filtros?.limit) params.set('limit', String(filtros.limit));
-  if (filtros?.fecha_dia) params.set('fecha_dia', filtros.fecha_dia);
+  if (filtros?.mi_dia) params.set('mi_dia', 'true');
   const qs = params.toString();
   return fetchApi(token, `${API_URL}/api/ordenes${qs ? '?' + qs : ''}`);
 }
