@@ -21,20 +21,14 @@
 
   const hoy = new Date().toLocaleDateString('en-CA');
 
-  const otsDia = $derived(
-    ots.filter((o) => {
-      if (['ASIGNADA', 'EN_CURSO', 'PENDIENTE_CLIENTE_AUSENTE'].includes(o.estado)) return true;
-      if (o.estado === 'COMPLETADA' && o.fecha_completada) {
-        return o.fecha_completada.slice(0, 10) === hoy;
-      }
-      return false;
-    }),
-  );
-
+  // El filtro de "mi dia" (activas + completadas hoy) ya lo aplica el
+  // backend via ?fecha_dia= (M11): el servidor solo devuelve lo que esta
+  // vista necesita, en vez de traer hasta 100 OT y descartar la mayoria
+  // aca, que es justo el costo mas caro sobre red celular.
   const resumen = $derived({
-    total: otsDia.length,
-    completadas: otsDia.filter((o) => o.estado === 'COMPLETADA').length,
-    pendientes: otsDia.filter((o) => o.estado !== 'COMPLETADA').length,
+    total: ots.length,
+    completadas: ots.filter((o) => o.estado === 'COMPLETADA').length,
+    pendientes: ots.filter((o) => o.estado !== 'COMPLETADA').length,
   });
 
   const fechaFormateada = $derived(
@@ -68,7 +62,7 @@
     loading = true;
     errorMsg = '';
     try {
-      const result = await ordenesApi.listarOT(token, { limit: 100 });
+      const result = await ordenesApi.listarOT(token, { fecha_dia: hoy, limit: 30 });
       ots = result.data;
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : 'Error al cargar órdenes';
@@ -190,7 +184,7 @@
         </svg>
         <p class="text-slate-400 text-sm">Cargando órdenes...</p>
       </div>
-    {:else if otsDia.length === 0}
+    {:else if ots.length === 0}
       <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
         <svg class="w-12 h-12 text-slate-200 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -199,7 +193,7 @@
       </div>
     {:else}
       <div class="space-y-3">
-        {#each otsDia as ot}
+        {#each ots as ot}
           <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
             <div class="p-4">
               <!-- Badges -->

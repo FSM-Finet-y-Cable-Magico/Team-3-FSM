@@ -115,6 +115,7 @@ export class OrdenesService {
       id_tecnico?: number;
       fecha_desde?: string;
       fecha_hasta?: string;
+      fecha_dia?: string;
       page?: number;
       limit?: number;
     },
@@ -123,7 +124,23 @@ export class OrdenesService {
     const limit = Math.min(100, Math.max(1, Math.trunc(filtros.limit ?? 20) || 20));
 
     const condiciones: Prisma.Sql[] = [Prisma.sql`id_empresa = ${id_empresa}`];
-    if (filtros.estado) condiciones.push(Prisma.sql`estado = ${filtros.estado}`);
+    if (filtros.fecha_dia) {
+      // Vista de terreno (CU-11, M11): "mi dia" del tecnico = las 3 estados
+      // activos sin condicion de fecha, mas COMPLETADA solo si se completo
+      // ese dia. El dia lo calcula el cliente en su propia zona horaria
+      // (dispositivo del tecnico en terreno) y viaja como YYYY-MM-DD; el
+      // backend solo arma el rango [00:00, 24:00) sobre ese string, sin
+      // asumir la zona horaria del servidor.
+      const inicioDia = new Date(`${filtros.fecha_dia}T00:00:00.000Z`);
+      const finDia = new Date(inicioDia);
+      finDia.setUTCDate(finDia.getUTCDate() + 1);
+      condiciones.push(Prisma.sql`(
+        estado IN ('ASIGNADA', 'EN_CURSO', 'PENDIENTE_CLIENTE_AUSENTE')
+        OR (estado = 'COMPLETADA' AND fecha_completada >= ${inicioDia} AND fecha_completada < ${finDia})
+      )`);
+    } else if (filtros.estado) {
+      condiciones.push(Prisma.sql`estado = ${filtros.estado}`);
+    }
     if (filtros.tipo_ot) condiciones.push(Prisma.sql`tipo_ot = ${filtros.tipo_ot}`);
     if (filtros.prioridad) condiciones.push(Prisma.sql`prioridad = ${filtros.prioridad}`);
     if (filtros.id_tecnico) condiciones.push(Prisma.sql`id_tecnico = ${filtros.id_tecnico}`);

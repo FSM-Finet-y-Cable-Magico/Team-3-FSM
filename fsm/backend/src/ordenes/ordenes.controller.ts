@@ -48,6 +48,7 @@ export class OrdenesController {
     @Query('prioridad') prioridad?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('fecha_dia') fecha_dia?: string,
   ) {
     const filtros: Record<string, unknown> = {
       estado,
@@ -55,6 +56,7 @@ export class OrdenesController {
       prioridad,
       page: page ? +page : 1,
       limit: limit ? +limit : 20,
+      fecha_dia,
     };
 
     if (user.rol === 'TECNICO') {
