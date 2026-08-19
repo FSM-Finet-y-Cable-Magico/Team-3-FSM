@@ -190,7 +190,14 @@ export class OrdenesService {
         tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
         direccion: { select: { direccion_completa: true, comuna: true } },
         categoria_falla: { select: { id_categoria: true, nombre: true, sla_horas: true } },
-        historial: { orderBy: { fecha_hora: 'desc' } },
+        // M14: sin `take` una OT muy manipulada arrastra su historial entero en
+        // cada lectura del detalle. Se acotan las 20 transiciones mas recientes,
+        // el mismo techo que ya usan `historialFallas` aca abajo y el historial
+        // de OT de clientes.service. Alcanza porque la vista de detalle solo
+        // itera el timeline, sin paginar; si alguna vez se le agrega un "ver
+        // mas", este `take` hay que revisarlo y probablemente convertirlo en un
+        // endpoint aparte y paginado.
+        historial: { orderBy: { fecha_hora: 'desc' }, take: 20 },
       },
     });
 
