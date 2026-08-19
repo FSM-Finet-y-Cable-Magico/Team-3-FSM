@@ -3,6 +3,7 @@
   import { get } from 'svelte/store';
   import { authStore } from '$lib/stores/auth.store';
   import * as historialApi from '$lib/api/historial.api';
+  import { urlMiniaturaEvidencia } from '$lib/utils/cloudinary';
   import EstadoBadge from './EstadoBadge.svelte';
 
   interface Props {
@@ -284,8 +285,9 @@
                           <div class="flex gap-2 flex-wrap">
                             {#each ot.fotos.slice(0, 3) as foto}
                               <img
-                                src={foto.url_cloudinary}
+                                src={urlMiniaturaEvidencia(foto.url_cloudinary)}
                                 alt="evidencia"
+                                loading="lazy"
                                 class="h-16 w-16 object-cover rounded-lg border border-slate-200"
                               />
                             {/each}
