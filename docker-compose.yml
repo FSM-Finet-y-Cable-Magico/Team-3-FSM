@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fsm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fsm}
+      POSTGRES_DB: ${POSTGRES_DB:-fsm}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-fsm}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./fsm/backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fsm}:${POSTGRES_PASSWORD:-fsm}@postgres:5432/${POSTGRES_DB:-fsm}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      JWT_SECRET: ${JWT_SECRET:?Definí JWT_SECRET en tu .env (ver .env.example)}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme123}
+      PORT: 3000
+    ports:
+      - '3000:3000'
+
+  frontend:
+    build:
+      context: ./fsm/frontend
+      args:
+        PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3000}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      ORIGIN: ${FRONTEND_URL:-http://localhost:5173}
+      PORT: 3000
+    ports:
+      - '5173:3000'
+
+volumes:
+  postgres_data:
