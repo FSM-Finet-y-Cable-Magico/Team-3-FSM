@@ -3,9 +3,10 @@ FROM node:24-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-# npm ci falla acá: @tailwindcss/oxide resuelve una dependencia nativa
-# opcional distinta en Linux/musl que en Windows, y esa rama no queda
-# grabada en el lockfile generado en Windows. npm install la resuelve sola.
+# npm install, no npm ci: en Linux npm exige entradas top-level de @emnapi/core
+# y @emnapi/runtime (peers opcionales de @napi-rs/wasm-runtime, el fallback WASM
+# de rollup) que el lockfile no incluye, y `npm ci` aborta con
+# "Missing: @emnapi/core from lock file". npm install resuelve esa rama sola.
 RUN npm install
 
 COPY . .
@@ -23,9 +24,15 @@ FROM node:24-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
 
+# node_modules propio y solo de producción: adapter-node empaqueta el resto
+# (vite, svelte, tailwind, typescript no hacen falta en runtime), así que no
+# se reutiliza el node_modules completo del builder. npm install --omit=dev
+# (no `npm ci`: mismo problema de @emnapi que el builder — `npm ci` valida el
+# sync del lockfile completo aunque se omitan devDeps).
+COPY --from=builder /app/package.json /app/package-lock.json ./
+RUN npm install --omit=dev --no-audit --no-fund
+
 COPY --from=builder /app/build ./build
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
 
 EXPOSE 3000
 

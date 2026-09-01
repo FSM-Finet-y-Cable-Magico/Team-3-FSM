@@ -96,6 +96,28 @@ Abrir en el navegador: [http://localhost:5173](http://localhost:5173)
 
 ---
 
+## Alternativa: Docker Compose
+
+Levanta Postgres + backend + frontend con un solo comando, contra una base **local y aislada** (no la de Railway). Útil para probar en una máquina sin Node instalado, o sin tocar la base compartida.
+
+```bash
+cp .env.example .env   # el de la raíz del repo — no confundir con fsm/backend/.env.example ni fsm/frontend/.env.example, que son para el flujo manual de arriba
+```
+
+Completar como mínimo `JWT_SECRET` y `SEED_ADMIN_PASSWORD` (cualquier valor sirve, es una base nueva). Cloudinary es opcional.
+
+```bash
+docker compose up --build
+```
+
+Migra y siembra la base automáticamente al arrancar (empresas, roles, categorías, planes y `admin.finet` con la contraseña de `SEED_ADMIN_PASSWORD`) — no hace falta correr `prisma db seed` a mano. El seed es idempotente, así que reiniciar el stack no duplica nada.
+
+Backend en `:3000`, frontend en `:5173`.
+
+> Si cambian `PUBLIC_API_URL` en el `.env` después de un `up` inicial, necesitan repetir con `--build` — se hornea en el build del frontend, un `up -d` sin rebuild reusa la imagen vieja y el navegador sigue apuntando a la URL anterior.
+
+---
+
 ## Credenciales de prueba
 
 Pedir al equipo por el canal privado.

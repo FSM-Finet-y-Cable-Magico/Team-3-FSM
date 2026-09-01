@@ -7,11 +7,17 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fsm}
       POSTGRES_DB: ${POSTGRES_DB:-fsm}
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-fsm}']
+      # -h 127.0.0.1 fuerza a chequear el server real por TCP. Sin esto,
+      # pg_isready puede responder OK contra el server temporal que initdb
+      # levanta en el socket local durante el primer arranque, antes de que
+      # el server definitivo esté arriba — el backend entonces arranca
+      # temprano y su `migrate deploy` muere (restart: unless-stopped lo
+      # recupera, pero queda un crash espurio en los logs).
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-fsm} -d ${POSTGRES_DB:-fsm} -h 127.0.0.1']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -31,7 +37,7 @@ services:
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-changeme123}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?Definí SEED_ADMIN_PASSWORD en tu .env (ver .env.example) — sin default a propósito, ver README}
       PORT: 3000
     ports:
       - '3000:3000'
@@ -39,6 +45,11 @@ services:
   frontend:
     build:
       context: ./fsm/frontend
+      # PUBLIC_API_URL se hornea en el bundle al momento del build (build
+      # arg, no env var de runtime). Si la cambian en el .env, un
+      # `docker compose up -d` reusa la imagen cacheada y el navegador sigue
+      # llamando a la URL vieja (se manifiesta como error de CORS) —
+      # necesitan `docker compose up --build` para que tome efecto.
       args:
         PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:3000}
     restart: unless-stopped
