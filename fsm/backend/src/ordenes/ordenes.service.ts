@@ -2,11 +2,12 @@ import { Injectable, BadRequestException, NotFoundException, ForbiddenException,
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { validarRut } from '../common/utils/rut.util.js';
-import { TIPO_MOVIMIENTO } from '../common/constants/inventario.constants.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
+import { ACCION_A_ESTADO_G1 } from './estado-equipo.constants.js';
+import { FAN_OUT_CIERRE, type FanOutCierre, type EquipoDeclarado } from './fan-out/fan-out-cierre.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
 
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
@@ -32,6 +33,7 @@ export class OrdenesService {
   constructor(
     private prisma: PrismaService,
     @Inject(forwardRef(() => DashboardGateway)) private dashboardGateway: DashboardGateway,
+    @Inject(FAN_OUT_CIERRE) private fanOut: FanOutCierre,
   ) {}
 
   async crearOT(dto: CrearOtDto, userId: number, id_empresa: number) {
@@ -417,6 +419,33 @@ export class OrdenesService {
       }
     }
 
+    // ACUERDO G1↔G3: los equipos individualizables van sobre numero_serie (G3
+    // no lee unidad_equipo). Se mapean a la accion semantica + literal tentativo
+    // de G1 y viajan en el fan-out; G1 aplica la transicion.
+    const conEstadoG1 = (xs: CerrarOtDto['equipos_instalados']): EquipoDeclarado[] =>
+      (xs ?? []).map((e) => ({
+        numero_serie: e.numero_serie,
+        accion: e.accion,
+        estado_g1: ACCION_A_ESTADO_G1[e.accion],
+        motivo: e.motivo,
+        observacion_estado_fisico: e.observacion_estado_fisico,
+      }));
+    const equipos_instalados = conEstadoG1(dto.equipos_instalados);
+    const equipos_retirados = conEstadoG1(dto.equipos_retirados);
+
+    // G3 valida que el material EXISTA en el catálogo de la empresa (input
+    // propio); el SALDO lo valida G1 (ACUERDO G1↔G3). Sin esto, un id malo da
+    // un 500 por FK en vez de un 400 claro.
+    if (dto.materiales.length > 0) {
+      const ids = [...new Set(dto.materiales.map((m) => m.id_tipo_equipo))];
+      const existen = await this.prisma.tipo_equipo.count({
+        where: { id_tipo_equipo: { in: ids }, id_empresa },
+      });
+      if (existen !== ids.length) {
+        throw new BadRequestException('Uno o más materiales no existen en el catálogo de la empresa');
+      }
+    }
+
     await this.prisma.$transaction(async (tx) => {
       await tx.evidencia_foto.createMany({
         data: dto.fotos.map((f) => ({
@@ -427,48 +456,10 @@ export class OrdenesService {
         })),
       });
 
-      for (const material of dto.materiales) {
-        const tipo = await tx.tipo_equipo.findFirst({
-          where: { id_tipo_equipo: material.id_tipo_equipo, id_empresa },
-        });
-        // stock_consumible no tiene id_empresa propio: el aislamiento por
-        // empresa se hereda del tipo_equipo y de la bodega. Mismo criterio
-        // que obtenerMateriales, para que el cierre descuente exactamente
-        // del conjunto de materiales que el selector le mostro al tecnico.
-        const stock = await tx.stock_consumible.findFirst({
-          where: {
-            id_tipo_equipo: material.id_tipo_equipo,
-            tipo_equipo: { id_empresa },
-            OR: [{ bodega: { id_empresa } }, { id_bodega: null }],
-          },
-        });
-        if (!stock || Number(stock.cantidad_disponible) < material.cantidad) {
-          throw new BadRequestException(
-            `Stock insuficiente para ${tipo?.nombre ?? String(material.id_tipo_equipo)}`,
-          );
-        }
-        await tx.stock_consumible.update({
-          where: { id_stock: stock.id_stock },
-          data: { cantidad_disponible: { decrement: material.cantidad } },
-        });
-
-        // RNF-14: cada decremento de stock deja su movimiento de inventario,
-        // en la misma transaccion y en la misma iteracion, para que no exista
-        // ningun camino donde se descuente material sin quedar registrado.
-        await tx.movimiento_inventario.create({
-          data: {
-            id_tipo_equipo: material.id_tipo_equipo,
-            id_empresa_origen: ot.id_empresa,
-            // Puede ser null: la busqueda de stock admite filas sin bodega.
-            id_bodega_origen: stock.id_bodega,
-            id_usuario: userId,
-            tipo_movimiento: TIPO_MOVIMIENTO.SALIDA_OT,
-            cantidad: material.cantidad,
-            referencia_id: id_ot,
-          },
-        });
-      }
-
+      // ACUERDO G1↔G3 (Opcion A): G3 ya NO descuenta stock ni escribe
+      // movimiento_inventario. Solo declara el uso; G1 valida saldo (CU-68) y
+      // descuenta una sola vez (CU-58). Saldo insuficiente es una discrepancia
+      // que G1 registra como ajuste, nunca un rechazo del cierre.
       if (dto.materiales.length > 0) {
         await tx.uso_material_ot.createMany({
           data: dto.materiales.map((m) => ({
@@ -496,6 +487,11 @@ export class OrdenesService {
           id_categoria_falla: categoriaFalla?.id_categoria ?? null,
           categoria_falla_otro: dto.categoria_falla_otro?.trim() || null,
           resuelto_remotamente: dto.resuelto_remotamente ?? false,
+          // Snapshot para la reconciliacion por GET (mismo contenido que el webhook).
+          cierre_equipos:
+            equipos_instalados.length || equipos_retirados.length
+              ? ({ instalados: equipos_instalados, retirados: equipos_retirados } as unknown as Prisma.InputJsonValue)
+              : Prisma.JsonNull,
         },
       });
 
@@ -529,6 +525,31 @@ export class OrdenesService {
         materiales: { include: { tipo_equipo: { select: { nombre: true } } } },
         llamada: true,
       },
+    });
+
+    // Fan-out best-effort: el cierre ya se comprometio arriba. Si esto falla,
+    // G1/G8 reconcilian por GET /api/integraciones/ordenes/:id/cierre.
+    const fecha = (otActualizada?.fecha_completada ?? new Date()).toISOString();
+    await this.fanOut.notificar({
+      clave_idempotencia: `${id_ot}:${fecha}`,
+      id_ot,
+      id_empresa: ot.id_empresa,
+      tipo_ot: ot.tipo_ot,
+      fecha_completada: fecha,
+      resultado_llamada: dto.resultado_llamada,
+      potencia_optica_dbm: dto.potencia_optica_dbm,
+      resuelto_remotamente: dto.resuelto_remotamente ?? false,
+      cliente: otActualizada?.cliente
+        ? { rut: otActualizada.cliente.rut, nombre: otActualizada.cliente.nombre_completo }
+        : null,
+      direccion: otActualizada?.direccion ?? null,
+      categoria_falla: categoriaFalla
+        ? { id_categoria: categoriaFalla.id_categoria, nombre: categoriaFalla.nombre }
+        : null,
+      categoria_falla_otro: dto.categoria_falla_otro?.trim() || null,
+      materiales: dto.materiales.map((m) => ({ id_tipo_equipo: m.id_tipo_equipo, cantidad: m.cantidad })),
+      equipos_instalados,
+      equipos_retirados,
     });
 
     const advertencia_potencia =

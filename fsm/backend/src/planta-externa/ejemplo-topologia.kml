@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>FiNet Litoral - Topologia de ejemplo</name>
+    <description>
+      Formato de referencia para el export de Tomodat. Carpetas por tipo de
+      elemento, cada Placemark con Point + ExtendedData. Coordenadas de ejemplo
+      en el litoral de la Region de Valparaiso.
+    </description>
+
+    <Folder>
+      <name>OLTs</name>
+      <Placemark>
+        <name>OLT-Cartagena</name>
+        <ExtendedData>
+          <Data name="tipo"><value>OLT</value></Data>
+          <Data name="ip"><value>10.20.0.10</value></Data>
+          <Data name="zona"><value>Cartagena</value></Data>
+        </ExtendedData>
+        <Point><coordinates>-71.606,-33.545,0</coordinates></Point>
+      </Placemark>
+      <Placemark>
+        <name>OLT-SanAntonio</name>
+        <ExtendedData>
+          <Data name="tipo"><value>OLT</value></Data>
+          <Data name="ip"><value>10.20.0.11</value></Data>
+          <Data name="zona"><value>San Antonio</value></Data>
+        </ExtendedData>
+        <Point><coordinates>-71.614,-33.593,0</coordinates></Point>
+      </Placemark>
+    </Folder>
+
+    <Folder>
+      <name>Mufas / Emendas</name>
+      <Placemark>
+        <name>MUF-CTG-001</name>
+        <ExtendedData>
+          <Data name="tipo"><value>mufa</value></Data>
+          <Data name="id"><value>MUF-CTG-001</value></Data>
+        </ExtendedData>
+        <Point><coordinates>-71.603,-33.548,0</coordinates></Point>
+      </Placemark>
+      <Placemark>
+        <name>MUF-SA-001</name>
+        <ExtendedData>
+          <Data name="tipo"><value>mufa</value></Data>
+          <Data name="id"><value>MUF-SA-001</value></Data>
+        </ExtendedData>
+        <Point><coordinates>-71.611,-33.596,0</coordinates></Point>
+      </Placemark>
+    </Folder>
+
+    <Folder>
+      <name>Cajas NAP</name>
+      <Placemark>
+        <name>NAP-CTG-01</name>
+        <ExtendedData>
+          <Data name="tipo"><value>caja NAP</value></Data>
+          <Data name="id"><value>NAP-CTG-01</value></Data>
+          <Data name="zona"><value>Cartagena Centro</value></Data>
+          <Data name="capacidad"><value>8</value></Data>
+          <Data name="padre"><value>MUF-CTG-001</value></Data>
+          <Data name="poste"><value>P-1042</value></Data>
+        </ExtendedData>
+        <Point><coordinates>-71.6018,-33.5491,0</coordinates></Point>
+      </Placemark>
+      <Placemark>
+        <name>NAP-CTG-02</name>
+        <ExtendedData>
+          <Data name="tipo"><value>caja NAP</value></Data>
+          <Data name="id"><value>NAP-CTG-02</value></Data>
+          <Data name="zona"><value>Cartagena Playa</value></Data>
+          <Data name="capacidad"><value>16</value></Data>
+          <Data name="padre"><value>MUF-CTG-001</value></Data>
+        </ExtendedData>
+        <Point><coordinates>-71.5995,-33.5522,0</coordinates></Point>
+      </Placemark>
+      <Placemark>
+        <name>NAP-SA-01</name>
+        <ExtendedData>
+          <Data name="tipo"><value>caja NAP</value></Data>
+          <Data name="id"><value>NAP-SA-01</value></Data>
+          <Data name="zona"><value>San Antonio Norte</value></Data>
+          <Data name="capacidad"><value>8</value></Data>
+          <Data name="padre"><value>MUF-SA-001</value></Data>
+        </ExtendedData>
+        <Point><coordinates>-71.6105,-33.5948,0</coordinates></Point>
+      </Placemark>
+    </Folder>
+
+    <Folder>
+      <name>Postes</name>
+      <Placemark>
+        <name>P-1042</name>
+        <ExtendedData>
+          <Data name="tipo"><value>poste</value></Data>
+        </ExtendedData>
+        <Point><coordinates>-71.6018,-33.5491,0</coordinates></Point>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>

@@ -340,6 +340,10 @@ model orden_trabajo {
   observaciones        String?  @db.Text
   obs_cliente_ausente  String?  @db.VarChar(500)
   resuelto_remotamente Boolean  @default(false)
+  // Declaración de equipos individualizables del cierre (ACUERDO G1↔G3): G3
+  // guarda el snapshot { instalados:[], retirados:[] } que le pasó a G1, para
+  // que el GET de reconciliación devuelva exactamente lo mismo que el webhook.
+  cierre_equipos       Json?
   empresa              empresa?         @relation(fields: [id_empresa], references: [id_empresa])
   cliente              cliente?         @relation(fields: [id_cliente], references: [id_cliente])
   tecnico              usuario?         @relation("ot_tecnico", fields: [id_tecnico], references: [id_usuario])
@@ -672,20 +676,55 @@ model monitoreo_ont {
   id_unidad           Int?
   id_cliente          Int?
   id_caja_nap         Int?
+  id_registro_ont     Int?
   potencia_actual_dbm Decimal? @db.Decimal(5, 2)
   timestamp_medicion  DateTime @default(now())
   estado_conexion     String?  @db.VarChar(15)
   unidad              unidad_equipo? @relation(fields: [id_unidad], references: [id_unidad])
   cliente             cliente?       @relation(fields: [id_cliente], references: [id_cliente])
   caja_nap            caja_nap?      @relation(fields: [id_caja_nap], references: [id_caja_nap])
+  registro            registro_ont?  @relation(fields: [id_registro_ont], references: [id_registro_ont])
+
+  @@index([id_registro_ont, timestamp_medicion])
 }
 
 model historial_conexion_ont {
   id_historial_ont BigInt        @id @default(autoincrement())
   id_unidad        Int?
+  id_registro_ont  Int?
   evento           String?       @db.VarChar(15)
   timestamp        DateTime      @default(now())
   unidad           unidad_equipo? @relation(fields: [id_unidad], references: [id_unidad])
+  registro         registro_ont?  @relation(fields: [id_registro_ont], references: [id_registro_ont])
+}
+
+/// Registro de ONT descubiertas desde la fuente de monitoreo (SmartOLT).
+/// Tabla de G3. Es la que da identidad (numero_serie) a una ONT aunque todavia
+/// no este ligada a una unidad_equipo (G1) ni a un cliente (G8).
+///
+/// id_unidad / id_cliente / id_caja_nap son referencias SIN foreign key a
+/// proposito: apuntan a tablas de otros grupos y se completan cuando hay match.
+/// Cuando la reunion defina de quien es el registro de ONT, esta tabla se
+/// mantiene o se reemplaza por el mecanismo acordado sin tocar el resto.
+model registro_ont {
+  id_registro_ont   Int      @id @default(autoincrement())
+  numero_serie      String   @unique @db.VarChar(80)
+  id_externo        String?  @db.VarChar(40)
+  olt_externo       String?  @db.VarChar(40)
+  board             Int?     @db.SmallInt
+  puerto_pon        Int?     @db.SmallInt
+  zona              String?  @db.VarChar(80)
+  odb               String?  @db.VarChar(50)
+  modelo            String?  @db.VarChar(80)
+  nombre_cliente_ext String? @db.VarChar(160)
+  direccion_cliente_ext String? @db.VarChar(200)
+  id_unidad         Int?
+  id_cliente        Int?
+  id_caja_nap       Int?
+  primera_vez       DateTime @default(now())
+  ultima_vez        DateTime @updatedAt
+  monitoreos        monitoreo_ont[]
+  historial         historial_conexion_ont[]
 }
 
 model prospecto {
