@@ -5,6 +5,7 @@ import { parsearKml, type NodoTopologia } from './kml-parser.js';
 export interface ResumenImportKml {
   leidos: number;
   descartados: number;
+  fusionados: number;
   olts: number;
   mufas: number;
   cajas_nap: number;
@@ -22,10 +23,11 @@ export class PlantaExternaService {
   // ---------------------------------------------------------------------------
 
   async importarKml(xml: string, id_empresa: number | null): Promise<ResumenImportKml> {
-    const { nodos, descartados } = parsearKml(xml);
+    const { nodos, descartados, fusionados } = parsearKml(xml);
     const r: ResumenImportKml = {
       leidos: nodos.length,
       descartados,
+      fusionados,
       olts: 0,
       mufas: 0,
       cajas_nap: 0,
@@ -47,7 +49,7 @@ export class PlantaExternaService {
 
     this.logger.log(
       `Import KML: ${r.olts} OLT, ${r.mufas} mufas, ${r.cajas_nap} cajas NAP, ` +
-        `${r.puertos_creados} puertos, ${r.descartados} descartados`,
+        `${r.puertos_creados} puertos, ${r.descartados} descartados, ${r.fusionados} fusionados`,
     );
     return r;
   }

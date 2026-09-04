@@ -32,14 +32,30 @@ export interface NodoTopologia {
 export interface ResultadoParseo {
   nodos: NodoTopologia[];
   descartados: number;
+  /**
+   * Duplicados exactos (mismo tipo, mismo nombre/identificador y mismas
+   * coordenadas — el mismo elemento exportado dos veces) que se colapsaron en
+   * uno solo. No es un error, no se cuenta en `descartados`.
+   */
+  fusionados: number;
 }
 
+// `^nodo\b` y "banco central" son propios del export real de Tomodat: la
+// cabecera de red ahí no se llama "OLT", se llama "NODO <algo>" (ej. "NODO
+// FINET") o directamente el nombre del lugar (ej. "BANCO CENTRAL"). Un "nodo"
+// pelado, sin nada más en el nombre, es demasiado ambiguo para asumir que es
+// un OLT real — se filtra aparte, ver `esNodoAmbiguo`.
 const PALABRAS: Record<Exclude<TipoNodo, 'DESCONOCIDO'>, RegExp> = {
-  OLT: /\bolt\b/i,
+  OLT: /\bolt\b|^nodo\b|^banco central$/i,
   CAJA_NAP: /caja|cto|\bnap\b|atendimento|nap box/i,
   MUFA: /mufa|emenda|\bceo\b|splice|deriva/i,
   POSTE: /poste|pole/i,
 };
+
+/** "nodo" o "NODO" a secas, sin nada más: no alcanza para asumir que es un OLT real. */
+export function esNodoAmbiguo(nombre: string): boolean {
+  return /^nodo$/i.test(nombre.trim());
+}
 
 export function parsearKml(xml: string): ResultadoParseo {
   const parser = new XMLParser({
@@ -75,7 +91,39 @@ export function parsearKml(xml: string): ResultadoParseo {
   };
   recorrer(raiz, textoDe(raiz?.name) ?? null);
 
-  return { nodos, descartados };
+  // Sin ExtendedData (caso real de Tomodat), `identificador` termina siendo el
+  // nombre tal cual, y el nombre no es único: "NAP 1" se repite en cada
+  // barrio. Upsertear directo por ese identificador pisaría cajas distintas
+  // entre sí. Acá se resuelve: duplicado exacto (mismas coordenadas) se
+  // colapsa en uno solo; mismo nombre en coordenadas distintas se desambigua
+  // agregando un contador al identificador.
+  const { finales, fusionados } = desambiguar(nodos);
+
+  return { nodos: finales, descartados, fusionados };
+}
+
+function desambiguar(nodos: NodoTopologia[]): { finales: NodoTopologia[]; fusionados: number } {
+  const vistosExactos = new Set<string>();
+  const contadorPorClave = new Map<string, number>();
+  const finales: NodoTopologia[] = [];
+  let fusionados = 0;
+
+  for (const n of nodos) {
+    const ident = n.identificador ?? n.nombre;
+    const claveExacta = `${n.tipo}|${ident}|${n.latitud?.toFixed(6)}|${n.longitud?.toFixed(6)}`;
+    if (vistosExactos.has(claveExacta)) {
+      fusionados++;
+      continue;
+    }
+    vistosExactos.add(claveExacta);
+
+    const claveTipo = `${n.tipo}|${ident}`;
+    const veces = (contadorPorClave.get(claveTipo) ?? 0) + 1;
+    contadorPorClave.set(claveTipo, veces);
+    finales.push(veces > 1 ? { ...n, identificador: `${ident} (${veces})` } : n);
+  }
+
+  return { finales, fusionados };
 }
 
 function aNodo(pm: any, folderNombre: string | null): NodoTopologia {
@@ -89,15 +137,28 @@ function aNodo(pm: any, folderNombre: string | null): NodoTopologia {
   const pistaTipo =
     atributos['tipo'] ?? atributos['type'] ?? atributos['categoria'] ?? folderNombre ?? nombre;
 
+  const identificadorCrudo =
+    atributos['id'] ??
+    atributos['codigo'] ??
+    atributos['identificador'] ??
+    atributos['tag'] ??
+    nombre;
+
+  // Un `<LineString>` es un tramo de cable (troncal/brazo), no una caja ni
+  // una mufa — aunque su nombre mencione "NAP" o "mufa" (ej. "BRAZO NAP 9-16
+  // DESDE MUFA FCO.RIVEROS", o un segmento entre dos mufas). Sin este freno,
+  // el primer punto de la línea (ver `coordenadas`) se guardaba como si fuera
+  // la ubicación real de una caja/mufa — infraestructura falsa, con
+  // coordenadas de donde arranca el cable, no de donde está la caja.
+  const esPunto = !!pm?.Point;
+
   return {
-    tipo: clasificar(pistaTipo),
+    tipo: esPunto ? clasificar(pistaTipo) : 'DESCONOCIDO',
     nombre,
-    identificador:
-      atributos['id'] ??
-      atributos['codigo'] ??
-      atributos['identificador'] ??
-      atributos['tag'] ??
-      nombre,
+    // 44, no 50: deja lugar para el sufijo " (n)" que agrega `desambiguar`
+    // sin pasarse del `VarChar(50)` de `caja_nap.identificador_unico` /
+    // `mufa.identificador`.
+    identificador: acortar(identificadorCrudo, 44),
     latitud: lat,
     longitud: lon,
     zona: atributos['zona'] ?? atributos['zone'] ?? atributos['region'] ?? null,
@@ -107,12 +168,29 @@ function aNodo(pm: any, folderNombre: string | null): NodoTopologia {
   };
 }
 
+// RUT chileno (ej. 12.345.678-9): el export real de Tomodat mezcla, en el
+// mismo archivo, infraestructura real (cajas NAP, mufas) con marcadores de
+// clientes individuales que alguien tipeó como "DIRECCION / NAPx POSy /
+// NOMBRE / RUT / TELEFONO" en el campo `name`. Cuando ese texto tiene un
+// espacio entre "NAP" y el número ("NAP 21" en vez de "NAP21"), matchea el
+// mismo patrón `\bnap\b` que una caja real — sin este filtro, quedaría el
+// nombre/RUT/teléfono de un cliente guardado como si fuera el identificador
+// de una caja NAP, visible después para cualquier técnico. Se corta acá,
+// antes de clasificar, no después.
+const RUT_CHILENO = /\d{1,2}\.\d{3}\.\d{3}-[\dkK]/;
+
 function clasificar(pista: string | null): TipoNodo {
   if (!pista) return 'DESCONOCIDO';
+  if (RUT_CHILENO.test(pista)) return 'DESCONOCIDO';
+  if (esNodoAmbiguo(pista)) return 'DESCONOCIDO';
   for (const [tipo, re] of Object.entries(PALABRAS)) {
     if (re.test(pista)) return tipo as TipoNodo;
   }
   return 'DESCONOCIDO';
+}
+
+function acortar(texto: string, max: number): string {
+  return texto.length > max ? texto.slice(0, max - 1) + '…' : texto;
 }
 
 function coordenadas(pm: any): [number | null, number | null] {

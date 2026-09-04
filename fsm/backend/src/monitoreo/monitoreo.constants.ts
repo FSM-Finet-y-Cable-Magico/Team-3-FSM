@@ -25,6 +25,7 @@ export function potenciaFueraDeRango(dbm: number | null | undefined): boolean {
 export const ESTADO_CONEXION = {
   ONLINE: 'ONLINE',
   OFFLINE: 'OFFLINE',
+  POWER_FAIL: 'POWER_FAIL',
   LOS: 'LOS',
   DESCONOCIDO: 'DESCONOCIDO',
 } as const;

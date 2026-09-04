@@ -12,8 +12,13 @@
  * de entorno, no código.
  */
 
-/** Estado de conexión normalizado. Cada fuente traduce su vocabulario a esto. */
-export type EstadoConexion = 'ONLINE' | 'OFFLINE' | 'LOS' | 'DESCONOCIDO';
+/**
+ * Estado de conexión normalizado. Cada fuente traduce su vocabulario a esto.
+ * `POWER_FAIL` es distinto de `OFFLINE`: en el export real de SmartOLT es un
+ * estado propio ("Power fail" — el ONT perdió alimentación, no es una caída
+ * de fibra/config) y vale la pena no perder esa distinción en terreno.
+ */
+export type EstadoConexion = 'ONLINE' | 'OFFLINE' | 'POWER_FAIL' | 'LOS' | 'DESCONOCIDO';
 
 /** Un OLT tal como lo reporta la fuente. Alimenta la tabla `olt`. */
 export interface OltInfo {
