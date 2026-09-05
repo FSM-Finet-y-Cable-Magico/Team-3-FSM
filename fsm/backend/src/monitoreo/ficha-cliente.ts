@@ -44,7 +44,10 @@ export function descomponerFicha(
   nombreCrudo: string | null,
   direccionCruda: string | null,
 ): FichaCliente {
-  const dirOriginal = direccionCruda?.trim() || null;
+  // La posición del puerto aparece también pegada adelante de la dirección con
+  // coma o guion ("POS5,LAS PARMAS 498"); ahí no separa campos, solo estorba.
+  const dirOriginal =
+    direccionCruda?.trim().replace(/^\s*(?:POS|PON)\s*\.?\s*\d+\s*[,;/-]\s*/i, '').trim() || null;
   // Una "dirección" que es solo la posición del puerto no sirve de dirección.
   const dirUtil = dirOriginal && !SOLO_POSICION.test(dirOriginal) ? dirOriginal : null;
 
