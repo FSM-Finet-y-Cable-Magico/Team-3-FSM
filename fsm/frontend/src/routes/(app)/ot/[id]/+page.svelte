@@ -158,6 +158,18 @@
     }
   }
 
+  /**
+   * Parte un texto en tramos de texto y de URL para poder renderizar los links
+   * sin usar {@html}: las observaciones incluyen lo que escriben los técnicos
+   * al cerrar una OT, así que meterlas como HTML sería una vía de inyección.
+   */
+  function tramos(texto: string): { url: boolean; valor: string }[] {
+    return texto
+      .split(/(https?:\/\/[^\s]+)/g)
+      .filter((t) => t !== '')
+      .map((t) => ({ url: /^https?:\/\//.test(t), valor: t }));
+  }
+
   function formatFecha(fecha?: string): string {
     if (!fecha) return '-';
     return new Date(fecha).toLocaleString('es-CL', {
@@ -256,7 +268,10 @@
             <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Observaciones</p>
             <!-- whitespace-pre-line: las OT del monitoreo vienen formateadas
                  con saltos de linea y sin esto quedan como un parrafo ilegible -->
-            <p class="text-gray-700 whitespace-pre-line">{ot.observaciones}</p>
+            <p class="text-gray-700 whitespace-pre-line">{#each tramos(ot.observaciones) as t}{#if t.url}<a
+                  href={t.valor} target="_blank" rel="noopener"
+                  class="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer
+                         transition-colors duration-200">{t.valor}</a>{:else}{t.valor}{/if}{/each}</p>
           </div>
         {/if}
         {#if ot.estado === 'PENDIENTE_CLIENTE_AUSENTE' && ot.obs_cliente_ausente}
