@@ -11,12 +11,14 @@ import {
   ArrayMinSize,
   IsInt,
   IsPositive,
+  IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class FotoDto {
   @IsString()
   @IsNotEmpty()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_valid_protocol: true })
   url_cloudinary: string;
 
   @IsString()

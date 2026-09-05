@@ -1,3 +1,4 @@
+import { normalizarPaginacion } from '../common/utils/paginacion.util.js';
 import {
   Injectable,
   BadRequestException,
@@ -283,19 +284,7 @@ export class ClientesService {
   }
 
   async listarClientes(id_empresa: number, page: number = 1, limit: number = 20) {
-    // m10: sin techo, `GET /clientes?limit=100000` devuelve la tabla completa de
-    // clientes de la empresa con sus direcciones incluidas. Mismo clamp y mismo
-    // techo de 100 que quedaron en `listarOT` tras C5 (#27), para que los dos
-    // listados se comporten igual.
-    //
-    // `page` y `limit` llegan del @Query como string, sin ParseIntPipe, asi que
-    // el `Math.trunc` hace ademas de coercion y el `||` cubre el NaN de un valor
-    // no numerico. Se devuelven los valores ya acotados, no los recibidos, para
-    // que el pie de paginacion del frontend cuente sobre lo que de verdad se
-    // consulto.
-    const pageSeguro = Math.max(1, Math.trunc(page) || 1);
-    const limitSeguro = Math.min(100, Math.max(1, Math.trunc(limit) || 20));
-    const skip = (pageSeguro - 1) * limitSeguro;
+    const { page: pageSeguro, limit: limitSeguro, skip } = normalizarPaginacion(page, limit);
 
     const [clientes, total] = await Promise.all([
       this.prisma.cliente.findMany({
