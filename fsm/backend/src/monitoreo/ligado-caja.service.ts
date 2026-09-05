@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { emparejar, RADIO_DEFECTO_M, type StatsLigado } from './ligado-caja.js';
+import {
+  emparejar,
+  referenciaDeCajaEnTexto,
+  RADIO_DEFECTO_M,
+  type StatsLigado,
+} from './ligado-caja.js';
 
 export interface ResumenLigado extends StatsLigado {
   ligadas: number;
@@ -37,16 +42,24 @@ export class LigadoCajaService {
 
     // Se cargan TODAS, no solo las pendientes: las ya ligadas son evidencia
     // fija para la votación del grupo PON (ver `OntParaLigar.id_caja_nap`).
-    const todas = await this.prisma.registro_ont.findMany({
+    const filas = await this.prisma.registro_ont.findMany({
       select: {
         numero_serie: true,
         odb: true,
+        direccion_cliente_ext: true,
         olt_externo: true,
         board: true,
         puerto_pon: true,
         id_caja_nap: true,
       },
     });
+
+    // Cuando el campo de caja viene vacío, se intenta rescatar la referencia
+    // desde la dirección: una parte de los instaladores la anota ahí.
+    const todas = filas.map((f) => ({
+      ...f,
+      odb: f.odb && f.odb.trim() !== '' ? f.odb : referenciaDeCajaEnTexto(f.direccion_cliente_ext),
+    }));
 
     const ya_ligadas = todas.filter((o) => o.id_caja_nap != null).length;
 

@@ -115,6 +115,23 @@ export function clavesDe(nombre: string | null): string[][] {
   return core === full ? [[full]] : [[full], [core]];
 }
 
+/**
+ * Rescata una referencia de caja escrita dentro de un texto libre. Una parte de
+ * los instaladores anota la caja en el campo de direccion en vez del de caja:
+ *
+ *   "NAP55 POS3,CASTRO 4165"              → "NAP55"
+ *   "CORCOLEN 3256 / NAP 115 POS1"        → "NAP 115"
+ *   "PASAJE EL ESTUCO 01564 / NAP95 /POS3" → "NAP95"
+ *
+ * Se corta en el numero: lo que sigue ("POS3", la calle) no es parte del
+ * nombre de la caja. Devuelve null si no hay nada reconocible.
+ */
+export function referenciaDeCajaEnTexto(texto: string | null): string | null {
+  if (!texto) return null;
+  const m = /(NAP|CTO)\s*-?\s*(\d+)/i.exec(texto);
+  return m ? `${m[1].toUpperCase()} ${m[2]}` : null;
+}
+
 interface Punto {
   lat: number;
   lon: number;
