@@ -2,6 +2,7 @@
 import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { MonitoreoService } from './monitoreo.service.js';
 import { DescubrimientoService } from './descubrimiento.service.js';
+import { LigadoCajaService } from './ligado-caja.service.js';
 import { ConsultaLecturasDto } from './dto/consulta-lecturas.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
@@ -19,6 +20,7 @@ export class MonitoreoController {
   constructor(
     private monitoreo: MonitoreoService,
     private descubrimiento: DescubrimientoService,
+    private ligado: LigadoCajaService,
   ) {}
 
   /** Contadores para el dashboard de monitoreo. */
@@ -69,6 +71,18 @@ export class MonitoreoController {
   @Post('ingestar')
   ingestar() {
     return this.monitoreo.ingestarLecturas();
+  }
+
+  /**
+   * Liga las ONT sin caja a su caja NAP, cruzando el nombre que trae la fuente
+   * contra las cajas del KML (Precondición 2 del Incremento 2). Idempotente:
+   * solo toca las que están sin ligar, nunca pisa un enlace ya resuelto.
+   */
+  @Roles('ADMIN')
+  @Post('ligar-cajas')
+  ligarCajas(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.ligado.ligarCajas(id);
   }
 
   /**
