@@ -230,6 +230,8 @@ export class AlertasService {
         id_cliente: true,
         nombre_cliente_ext: true,
         direccion_cliente_ext: true,
+        id_caja_nap: true,
+        caja_confirmada_por: true,
         monitoreos: {
           orderBy: { timestamp_medicion: 'desc' },
           take: 1,
@@ -274,6 +276,8 @@ export class AlertasService {
           direccion: ficha.direccion,
           zona: c.zona,
           caja: c.odb,
+          id_caja_nap: c.id_caja_nap,
+          caja_confirmada: c.caja_confirmada_por != null,
           estado: u?.estado_conexion ?? null,
           potencia_dbm: potencia,
           potencia_fuera_de_rango: potenciaFueraDeRango(potencia),

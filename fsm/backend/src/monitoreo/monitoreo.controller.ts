@@ -5,6 +5,7 @@ import { DescubrimientoService } from './descubrimiento.service.js';
 import { LigadoCajaService } from './ligado-caja.service.js';
 import { AlertasService } from './alertas.service.js';
 import { RevisarAlertaDto } from './dto/revisar-alerta.dto.js';
+import { ConfirmarCajaDto } from './dto/confirmar-caja.dto.js';
 import { ConsultaLecturasDto } from './dto/consulta-lecturas.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
@@ -152,6 +153,26 @@ export class MonitoreoController {
   ligarCajas(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
     const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
     return this.ligado.ligarCajas(id);
+  }
+
+  /**
+   * Registra la caja de una ONT confirmada en terreno (CU-20). Queda marcada
+   * con quién y cuándo, y el ligado automático no la vuelve a tocar.
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
+  @Patch('ont/:sn/caja')
+  confirmarCaja(
+    @CurrentUser() user: UserPayload,
+    @Param('sn') sn: string,
+    @Body() dto: ConfirmarCajaDto,
+  ) {
+    return this.ligado.confirmarCaja(
+      sn,
+      dto.id_caja_nap ?? null,
+      user.userId,
+      user.id_empresa,
+      dto.propagar ?? true,
+    );
   }
 
   /**

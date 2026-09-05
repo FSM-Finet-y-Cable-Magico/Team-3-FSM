@@ -11,8 +11,9 @@
   import { authStore } from '$lib/stores/auth.store';
   import {
     listarAlertas, obtenerResumenAlertas, revisarAlerta, evaluarAlertas, obtenerFacetas,
-    detalleAlerta,
+    detalleAlerta, confirmarCaja, listarCajas,
     type Alerta, type ResumenAlertas, type Facetas, type DetalleAlerta,
+    type Afectado, type CajaOpcion,
   } from '$lib/api/alertas.api';
 
   let resumen = $state<ResumenAlertas | null>(null);
@@ -34,6 +35,12 @@
   // Selección para revisar en lote: con 143 alertas de potencia, marcarlas de a
   // una es inviable.
   let seleccion = $state<Set<number>>(new Set());
+
+  // Confirmación de caja en terreno (CU-20).
+  let confirmando = $state<Afectado | null>(null);
+  let cajasOpciones = $state<CajaOpcion[]>([]);
+  let cajaElegida = $state<string>('');
+  let buscaCaja = $state('');
 
   // Modal de revisión (reemplaza al prompt() del navegador).
   let modalAbierto = $state(false);
@@ -111,7 +118,9 @@
   }
 
   function alTeclado(e: KeyboardEvent) {
-    if (e.key === 'Escape' && modalAbierto) modalAbierto = false;
+    if (e.key !== 'Escape') return;
+    if (modalAbierto) modalAbierto = false;
+    else if (confirmando) confirmando = null;
   }
 
   async function verDetalle(a: Alerta) {
@@ -138,6 +147,49 @@
     const n = a.caja?.identificador_unico ?? a.clave_caja?.split('|')[1] ?? null;
     return n?.replace(/\s*\(\d+\)\s*$/, '').trim() || null;
   }
+
+  async function abrirConfirmacion(f: Afectado) {
+    confirmando = f;
+    cajaElegida = f.id_caja_nap ? String(f.id_caja_nap) : '';
+    buscaCaja = '';
+    if (cajasOpciones.length === 0) {
+      try { cajasOpciones = await listarCajas(token()); }
+      catch (e) { error = e instanceof Error ? e.message : 'Error al cargar las cajas'; }
+    }
+  }
+
+  async function guardarConfirmacion() {
+    if (!confirmando) return;
+    const sn = confirmando.numero_serie;
+    const id = cajaElegida === 'ninguna' ? null : cajaElegida ? Number(cajaElegida) : null;
+    confirmando = null;
+    try {
+      const r = await confirmarCaja(token(), sn, id);
+      if (detalleAbierto != null) {
+        const a = alertas.find((x) => x.id_alerta === detalleAbierto);
+        if (a) { detalleAbierto = null; await verDetalle(a); }
+      }
+      error = '';
+      avisoConfirmacion = r.propagadas > 0
+        ? `Caja confirmada. Se aplicó también a ${r.propagadas} clientes del mismo grupo.`
+        : 'Caja confirmada.';
+      setTimeout(() => (avisoConfirmacion = ''), 5000);
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Error al confirmar la caja';
+    }
+  }
+
+  let avisoConfirmacion = $state('');
+
+  // Las cajas se filtran en el cliente: son ~900, cabe de sobra en memoria y
+  // evita un ida y vuelta por cada tecla.
+  const cajasFiltradas = $derived(
+    (buscaCaja.trim()
+      ? cajasOpciones.filter((c) =>
+          (c.identificador_unico ?? '').toLowerCase().includes(buscaCaja.trim().toLowerCase()))
+      : cajasOpciones
+    ).slice(0, 100)
+  );
 
   function alternar(id: number) {
     const s = new Set(seleccion);
@@ -252,6 +304,12 @@
     {/if}
   </div>
 
+  {#if avisoConfirmacion}
+    <div role="status" class="bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3">
+      {avisoConfirmacion}
+    </div>
+  {/if}
+
   {#if error}
     <div role="alert" class="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">{error}</div>
   {/if}
@@ -352,6 +410,7 @@
                             <th scope="col" class="px-2.5 py-1.5 text-left font-semibold">Cliente</th>
                             <th scope="col" class="px-2.5 py-1.5 text-left font-semibold">Dirección</th>
                             <th scope="col" class="px-2.5 py-1.5 text-left font-semibold">Contacto</th>
+                            <th scope="col" class="px-2.5 py-1.5 text-left font-semibold">Caja</th>
                           </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -381,6 +440,25 @@
                               <td class="px-2.5 py-1.5 text-gray-600">{f.direccion ?? '—'}</td>
                               <td class="px-2.5 py-1.5 text-gray-500 whitespace-nowrap">
                                 {f.telefono ?? f.rut ?? '—'}
+                              </td>
+                              <!-- CU-20: el dato de caja se puede confirmar en terreno -->
+                              <td class="px-2.5 py-1.5 whitespace-nowrap">
+                                {#if f.caja_confirmada}
+                                  <span class="inline-flex items-center gap-1 text-green-700"
+                                        title="Verificada en terreno por una persona">
+                                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                         stroke-width="2.5" aria-hidden="true">
+                                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                    confirmada
+                                  </span>
+                                {:else}
+                                  <button onclick={() => abrirConfirmacion(f)}
+                                    class="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer
+                                           transition-colors duration-200">
+                                    {f.id_caja_nap ? 'confirmar' : 'asignar'}
+                                  </button>
+                                {/if}
                               </td>
                             </tr>
                           {/each}
@@ -535,6 +613,53 @@
         <button onclick={confirmarRevision}
           class="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-700
                  cursor-pointer transition-colors duration-200">Confirmar</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- CU-20: confirmar en terreno de qué caja cuelga un cliente -->
+{#if confirmando}
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <button class="absolute inset-0 bg-gray-900/50 cursor-default" aria-label="Cerrar"
+            onclick={() => confirmando = null}></button>
+    <div role="dialog" aria-modal="true" aria-labelledby="titulo-caja"
+         class="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-5">
+      <h3 id="titulo-caja" class="text-lg font-semibold text-gray-900">Confirmar caja NAP</h3>
+      <p class="text-sm text-gray-600 mt-1">
+        <strong>{confirmando.cliente ?? confirmando.numero_serie}</strong>
+        {#if confirmando.direccion}<span class="text-gray-500"> · {confirmando.direccion}</span>{/if}
+      </p>
+      <p class="text-xs text-gray-500 mt-1">
+        SmartOLT dice <strong>{confirmando.caja ?? 'sin dato'}</strong>. Lo que confirmes queda
+        registrado con tu usuario y el proceso automático no lo vuelve a tocar.
+      </p>
+
+      <label for="busca-caja" class="block text-sm font-medium text-gray-700 mt-4 mb-1">Buscar caja</label>
+      <input id="busca-caja" bind:value={buscaCaja} placeholder="NAP 7, CTO 12…"
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2
+               focus:outline-none focus:ring-2 focus:ring-gray-900" />
+
+      <label for="sel-caja" class="sr-only">Caja</label>
+      <select id="sel-caja" bind:value={cajaElegida} size="7"
+        class="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm font-mono
+               focus:outline-none focus:ring-2 focus:ring-gray-900">
+        <option value="ninguna">— No cuelga de ninguna caja del mapa —</option>
+        {#each cajasFiltradas as c}
+          <option value={String(c.id_caja_nap)}>{c.identificador_unico}</option>
+        {/each}
+      </select>
+      {#if cajasFiltradas.length === 100}
+        <p class="text-xs text-gray-400 mt-1">Mostrando las primeras 100. Afiná la búsqueda.</p>
+      {/if}
+
+      <div class="flex justify-end gap-2 mt-4">
+        <button onclick={() => confirmando = null}
+          class="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium hover:bg-gray-50
+                 cursor-pointer transition-colors duration-200">Cancelar</button>
+        <button onclick={guardarConfirmacion} disabled={!cajaElegida}
+          class="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-700
+                 disabled:opacity-50 cursor-pointer transition-colors duration-200">Confirmar</button>
       </div>
     </div>
   </div>

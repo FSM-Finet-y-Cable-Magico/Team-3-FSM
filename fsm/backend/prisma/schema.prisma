@@ -74,6 +74,7 @@ model usuario {
   // C6 (#19). Listado de usuarios y de tecnicos, siempre acotados por empresa.
   @@index([id_empresa])
   alertas_resueltas    alerta[] @relation("alerta_resuelve")
+  cajas_confirmadas    registro_ont[] @relation("caja_confirmada")
 }
 
 model rol {
@@ -737,6 +738,13 @@ model registro_ont {
   id_unidad         Int?
   id_cliente        Int?
   id_caja_nap       Int?
+  /**
+   * Quién confirmó la caja en terreno. Si está seteado, el enlace lo verificó
+   * una persona y el proceso automático no lo toca nunca — es la diferencia
+   * entre un dato deducido y uno sabido.
+   */
+  caja_confirmada_por Int?
+  caja_confirmada_en  DateTime?
   primera_vez       DateTime @default(now())
   ultima_vez        DateTime @updatedAt
   monitoreos        monitoreo_ont[]
@@ -744,6 +752,7 @@ model registro_ont {
   alertas           alerta[]
 
   empresa           empresa? @relation(fields: [id_empresa], references: [id_empresa])
+  confirmada_por    usuario? @relation("caja_confirmada", fields: [caja_confirmada_por], references: [id_usuario])
 
   @@index([id_empresa])
 }

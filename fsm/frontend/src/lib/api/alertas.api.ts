@@ -88,6 +88,9 @@ export interface Afectado {
   horas_asi: number | null;
   /** Equipo de un cliente dado de baja: no es parte del incidente. */
   inactiva: boolean;
+  /** Caja verificada en terreno por una persona. */
+  caja_confirmada: boolean;
+  id_caja_nap: number | null;
 }
 
 export interface DetalleAlerta {
@@ -100,6 +103,29 @@ export interface DetalleAlerta {
 
 export function detalleAlerta(token: string, id: number) {
   return pedir<DetalleAlerta>(token, `${API_URL}/api/monitoreo/alertas/${id}/detalle`);
+}
+
+/** Cajas de la empresa, para el selector de confirmación. */
+export interface CajaOpcion {
+  id_caja_nap: number;
+  identificador_unico: string | null;
+  latitud: string | null;
+  longitud: string | null;
+}
+
+export function listarCajas(token: string) {
+  return pedir<CajaOpcion[]>(token, `${API_URL}/api/planta-externa/cajas`);
+}
+
+/**
+ * CU-20: registra la caja que un técnico verificó en terreno. `id_caja_nap`
+ * null significa "verifiqué que no cuelga de ninguna caja del mapa".
+ */
+export function confirmarCaja(token: string, numero_serie: string, id_caja_nap: number | null) {
+  return pedir<{ propagadas: number }>(token, `${API_URL}/api/monitoreo/ont/${numero_serie}/caja`, {
+    method: 'PATCH',
+    body: JSON.stringify({ id_caja_nap }),
+  });
 }
 
 export function revisarAlerta(token: string, id: number, observacion?: string) {
