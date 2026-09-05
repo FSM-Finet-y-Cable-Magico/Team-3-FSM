@@ -1,10 +1,14 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { parsearKml, type NodoTopologia } from './kml-parser.js';
+import { parsearKml, type NodoTopologia, type ResumenDescartes } from './kml-parser.js';
 
 export interface ResumenImportKml {
   leidos: number;
-  descartados: number;
+  /**
+   * Desglosado por motivo, no un total suelto: es lo que permite comparar dos
+   * imports y notar que el origen cambió. Ver `MotivoDescarte`.
+   */
+  descartados: ResumenDescartes;
   fusionados: number;
   olts: number;
   mufas: number;
@@ -47,10 +51,23 @@ export class PlantaExternaService {
       r.cajas_nap++;
     }
 
+    const d = r.descartados.por_motivo;
     this.logger.log(
       `Import KML: ${r.olts} OLT, ${r.mufas} mufas, ${r.cajas_nap} cajas NAP, ` +
-        `${r.puertos_creados} puertos, ${r.descartados} descartados, ${r.fusionados} fusionados`,
+        `${r.puertos_creados} puertos, ${r.fusionados} fusionados. ` +
+        `Descartados ${r.descartados.total}: ${d.TRAMO_DE_CABLE} cables, ` +
+        `${d.MARCADOR_DE_CLIENTE} marcadores de cliente, ${d.COORDENADA_INVALIDA} con ` +
+        `coordenada inválida, ${d.NODO_AMBIGUO} nodos ambiguos, ` +
+        `${d.SIN_PALABRA_CLAVE} sin palabra clave reconocible`,
     );
+    // Se avisa aparte porque es el único bucket que puede esconder
+    // infraestructura real: si crece entre imports, algo cambió en el origen.
+    if (d.SIN_PALABRA_CLAVE > 0) {
+      this.logger.warn(
+        `Import KML: ${d.SIN_PALABRA_CLAVE} marcadores quedaron fuera por no decir qué son. ` +
+          `Revisar la muestra en 'descartados.para_revisar' de la respuesta.`,
+      );
+    }
     return r;
   }
 

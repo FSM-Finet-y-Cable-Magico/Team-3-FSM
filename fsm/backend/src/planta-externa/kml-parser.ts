@@ -13,6 +13,24 @@ import { XMLParser } from 'fast-xml-parser';
 
 export type TipoNodo = 'OLT' | 'CAJA_NAP' | 'MUFA' | 'POSTE' | 'DESCONOCIDO';
 
+/**
+ * Por qué un marcador no entró como infraestructura. Se reporta desglosado
+ * porque un total suelto no dice nada: hasta este commit el import respondía
+ * `descartados: 1494` mezclando descartes correctos (cables, clientes) con un
+ * bug que se estaba comiendo 161 cajas, y el número no delataba nada.
+ *
+ * `SIN_PALABRA_CLAVE` es el único que amerita revisión humana: son marcadores
+ * legítimos cuyo nombre no dice qué son ("COLEGIO QUITALMAHUE", "ACCESO SUR
+ * SAM 2 SPLITTER 1X16"). Si ese número crece de golpe entre dos imports,
+ * cambió algo en el origen.
+ */
+export type MotivoDescarte =
+  | 'TRAMO_DE_CABLE'
+  | 'MARCADOR_DE_CLIENTE'
+  | 'COORDENADA_INVALIDA'
+  | 'NODO_AMBIGUO'
+  | 'SIN_PALABRA_CLAVE';
+
 export interface NodoTopologia {
   tipo: TipoNodo;
   nombre: string;
@@ -27,11 +45,25 @@ export interface NodoTopologia {
   padre: string | null;
   /** Todo lo demás que venía en ExtendedData / description. */
   atributos: Record<string, string>;
+  /** Solo cuando `tipo === 'DESCONOCIDO'`: por qué se descartó. */
+  motivo?: MotivoDescarte;
+}
+
+export interface ResumenDescartes {
+  total: number;
+  por_motivo: Record<MotivoDescarte, number>;
+  /**
+   * Muestra de nombres del bucket `SIN_PALABRA_CLAVE`, para que quien importa
+   * pueda juzgar si se está perdiendo infraestructura real. Va acotada y solo
+   * de ese bucket: los otros son descartes ya decididos, y el de clientes no
+   * se muestra nunca — son justo los datos personales que no queremos mover.
+   */
+  para_revisar: string[];
 }
 
 export interface ResultadoParseo {
   nodos: NodoTopologia[];
-  descartados: number;
+  descartados: ResumenDescartes;
   /**
    * Duplicados exactos (mismo tipo, mismo nombre/identificador y mismas
    * coordenadas — el mismo elemento exportado dos veces) que se colapsaron en
@@ -39,6 +71,8 @@ export interface ResultadoParseo {
    */
   fusionados: number;
 }
+
+const MAX_PARA_REVISAR = 25;
 
 // `^nodo\b` y "banco central" son propios del export real de Tomodat: la
 // cabecera de red ahí no se llama "OLT", se llama "NODO <algo>" (ej. "NODO
@@ -97,13 +131,34 @@ export function parsearKml(xml: string): ResultadoParseo {
   if (!raiz) throw new Error('KML sin nodo <Document> ni <kml>');
 
   const nodos: NodoTopologia[] = [];
-  let descartados = 0;
+  const descartados: ResumenDescartes = {
+    total: 0,
+    por_motivo: {
+      TRAMO_DE_CABLE: 0,
+      MARCADOR_DE_CLIENTE: 0,
+      COORDENADA_INVALIDA: 0,
+      NODO_AMBIGUO: 0,
+      SIN_PALABRA_CLAVE: 0,
+    },
+    para_revisar: [],
+  };
 
   const recorrer = (contenedor: any, folderNombre: string | null) => {
     for (const pm of asArray(contenedor?.Placemark)) {
       const nodo = aNodo(pm, folderNombre);
-      if (nodo.tipo === 'DESCONOCIDO') descartados++;
-      else nodos.push(nodo);
+      if (nodo.tipo === 'DESCONOCIDO') {
+        const motivo = nodo.motivo ?? 'SIN_PALABRA_CLAVE';
+        descartados.total++;
+        descartados.por_motivo[motivo]++;
+        if (
+          motivo === 'SIN_PALABRA_CLAVE' &&
+          nodo.nombre &&
+          descartados.para_revisar.length < MAX_PARA_REVISAR &&
+          !descartados.para_revisar.includes(nodo.nombre)
+        ) {
+          descartados.para_revisar.push(nodo.nombre);
+        }
+      } else nodos.push(nodo);
     }
     for (const f of asArray(contenedor?.Folder)) {
       recorrer(f, textoDe(f?.name) ?? folderNombre);
@@ -173,8 +228,24 @@ function aNodo(pm: any, folderNombre: string | null): NodoTopologia {
   const esPunto = !!pm?.Point;
   const ubicable = coordenadaPlausible(lat, lon);
 
+  // El orden define qué reporta cada descarte, y se elige por utilidad: gana
+  // siempre la razón más informativa. Un marcador de cliente que ADEMÁS tiene
+  // la coordenada por defecto es "marcador de cliente" — contarlo como
+  // coordenada inválida escondería ~900 clientes dentro de ese bucket y
+  // dejaría el reporte sin señal. `COORDENADA_INVALIDA` queda entonces para lo
+  // que de otro modo habría entrado como infraestructura, que es lo accionable.
+  const porNombre = clasificar(pistaTipo);
+  const veredicto: { tipo: TipoNodo; motivo?: MotivoDescarte } = !esPunto
+    ? { tipo: 'DESCONOCIDO', motivo: 'TRAMO_DE_CABLE' }
+    : porNombre.motivo === 'MARCADOR_DE_CLIENTE'
+      ? porNombre
+      : !ubicable
+        ? { tipo: 'DESCONOCIDO', motivo: 'COORDENADA_INVALIDA' }
+        : porNombre;
+
   return {
-    tipo: esPunto && ubicable ? clasificar(pistaTipo) : 'DESCONOCIDO',
+    tipo: veredicto.tipo,
+    motivo: veredicto.motivo,
     nombre,
     // 44, no 50: deja lugar para el sufijo " (n)" que agrega `desambiguar`
     // sin pasarse del `VarChar(50)` de `caja_nap.identificador_unico` /
@@ -211,15 +282,16 @@ const RUT_CHILENO = /\d{1,2}\.\d{3}\.\d{3}[-.][\dkK]|\b\d{7,8}\s*-\s*[\dkK]\b/i;
  */
 const POSICION_EN_CAJA = /\bpos\s*\.?\s*\d/i;
 
-function clasificar(pista: string | null): TipoNodo {
-  if (!pista) return 'DESCONOCIDO';
-  if (RUT_CHILENO.test(pista)) return 'DESCONOCIDO';
-  if (POSICION_EN_CAJA.test(pista)) return 'DESCONOCIDO';
-  if (esNodoAmbiguo(pista)) return 'DESCONOCIDO';
-  for (const [tipo, re] of Object.entries(PALABRAS)) {
-    if (re.test(pista)) return tipo as TipoNodo;
+function clasificar(pista: string | null): { tipo: TipoNodo; motivo?: MotivoDescarte } {
+  if (!pista) return { tipo: 'DESCONOCIDO', motivo: 'SIN_PALABRA_CLAVE' };
+  if (RUT_CHILENO.test(pista) || POSICION_EN_CAJA.test(pista)) {
+    return { tipo: 'DESCONOCIDO', motivo: 'MARCADOR_DE_CLIENTE' };
   }
-  return 'DESCONOCIDO';
+  if (esNodoAmbiguo(pista)) return { tipo: 'DESCONOCIDO', motivo: 'NODO_AMBIGUO' };
+  for (const [tipo, re] of Object.entries(PALABRAS)) {
+    if (re.test(pista)) return { tipo: tipo as TipoNodo };
+  }
+  return { tipo: 'DESCONOCIDO', motivo: 'SIN_PALABRA_CLAVE' };
 }
 
 function acortar(texto: string, max: number): string {
