@@ -14,8 +14,8 @@
  *
  * Insertamos justo despues de `/image/upload/` y dejamos el resto intacto.
  * Si la URL no tiene ese separador no es una URL de entrega de Cloudinary
- * -por ejemplo el data URI base64 que el backend devuelve cuando Cloudinary no
- * esta configurado- y se devuelve sin tocar.
+ * -por ejemplo una evidencia histórica en base64- y se devuelve sin tocar.
+ * Los nuevos cierres solo aceptan URLs HTTP(S).
  *
  * Los parametros viven aqui: cambiarlos en un solo lugar cambia todos los usos.
  */
@@ -40,6 +40,13 @@ export interface OpcionesImagen {
  */
 export function urlTransformada(origen: string, opciones: OpcionesImagen): string {
   if (!origen) return origen;
+
+  let url: URL;
+  try { url = new URL(origen); } catch { return origen; }
+  if (!['http:', 'https:'].includes(url.protocol) || url.hostname !== 'res.cloudinary.com') return origen;
+  if (!/^\/[^/]+\/image\/upload\//.test(url.pathname)) return origen;
+  // Una transformación nueva invalidaría la firma de estas URLs antiguas.
+  if (url.pathname.split(SEPARADOR_ENTREGA)[1]?.startsWith('s--')) return origen;
 
   const corte = origen.indexOf(SEPARADOR_ENTREGA);
   if (corte === -1) return origen;

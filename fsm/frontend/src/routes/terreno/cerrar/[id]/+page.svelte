@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Alert from '$lib/components/Alert.svelte';
+  import Spinner from '$lib/components/Spinner.svelte';
   import { goto } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
@@ -6,6 +8,9 @@
   import { authStore } from '$lib/stores/auth.store';
   import * as ordenesApi from '$lib/api/ordenes.api';
   import * as terrenoApi from '$lib/api/terreno.api';
+
+  let destruido = false;
+  const subidas = new Map<string, AbortController>();
 
   let token = '';
   let userId = $state(0);
@@ -92,6 +97,7 @@
         terrenoApi.obtenerMateriales(token),
         ordenesApi.listarCategoriasFalla(token),
       ]);
+      if (destruido) return;
       if (otData.id_tecnico !== userId) {
         errorInit = 'Esta OT está asignada a otro técnico.';
         return;
@@ -117,37 +123,49 @@
     input.value = '';
     errorCierre = '';
 
+    const idSubida = idOT;
     for (const file of archivos) {
-      const placeholderIdx = fotos.length;
+      if (destruido) return;
       const preview = URL.createObjectURL(file);
+      const controller = new AbortController();
+      subidas.set(preview, controller);
       fotos = [...fotos, { url: '', formato: '', tamano_kb: 0, preview, cargando: true }];
       try {
-        const result = await terrenoApi.subirFoto(token, idOT, file);
-        fotos = fotos.map((f, i) =>
-          i === placeholderIdx
-            ? { ...f, url: result.url_cloudinary, formato: result.formato, tamano_kb: result.tamano_kb, cargando: false }
-            : f,
-        );
+        const result = await terrenoApi.subirFoto(token, idSubida, file, controller.signal);
+        if (destruido || controller.signal.aborted) return;
+        fotos = fotos.map(f => f.preview === preview
+          ? { ...f, url: result.url_cloudinary, formato: result.formato, tamano_kb: result.tamano_kb, cargando: false }
+          : f);
       } catch (err) {
         URL.revokeObjectURL(preview);
-        fotos = fotos.filter((_, i) => i !== placeholderIdx);
-        errorCierre = err instanceof Error ? err.message : 'Error al subir foto';
+        if (destruido) return;
+        fotos = fotos.filter(f => f.preview !== preview);
+        if (!controller.signal.aborted) errorCierre = err instanceof Error ? err.message : 'Error al subir foto';
+      } finally {
+        subidas.delete(preview);
       }
     }
   }
 
   function eliminarFoto(i: number) {
     const foto = fotos[i];
-    if (foto) liberarPreview(foto);
-    fotos = fotos.filter((_, idx) => idx !== i);
+    if (!foto) return;
+    subidas.get(foto.preview)?.abort();
+    subidas.delete(foto.preview);
+    liberarPreview(foto);
+    fotos = fotos.filter(f => f.preview !== foto.preview);
   }
 
-  // Sin esto los object URL sobreviven hasta que se cierre la pestana.
-  onDestroy(() => fotos.forEach(liberarPreview));
+  onDestroy(() => {
+    destruido = true;
+    subidas.forEach(controller => controller.abort());
+    subidas.clear();
+    fotos.forEach(liberarPreview);
+  });
 
   function buildDto(): terrenoApi.CerrarOTDto {
     return {
-      fotos: fotos.map((f) => ({ url_cloudinary: f.url, formato: f.formato, tamano_kb: f.tamano_kb })),
+      fotos: fotosListas.map((f) => ({ url_cloudinary: f.url, formato: f.formato, tamano_kb: f.tamano_kb })),
       materiales: materialesSeleccionados.map((m) => ({
         id_tipo_equipo: m.id_tipo_equipo,
         cantidad: cantidades[m.id_tipo_equipo],
@@ -163,6 +181,7 @@
   }
 
   async function cerrarOT(dto?: terrenoApi.CerrarOTDto) {
+    if (subiendoFoto || fotosListas.length === 0) return;
     const payload = dto ?? buildDto();
     if (ot?.tipo_ot === 'REPARACION' && !payload.id_categoria_falla) {
       errorCierre = 'Seleccione la categoría de falla';
@@ -195,14 +214,11 @@
 
 {#if loadingInit}
   <div class="min-h-screen bg-gray-50 flex items-center justify-center">
-    <svg class="animate-spin h-8 w-8 text-blue-500" fill="none" viewBox="0 0 24 24">
-      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-    </svg>
+    <Spinner class="h-8 w-8 text-blue-500" />
   </div>
 {:else if errorInit}
   <div class="min-h-screen bg-gray-50 p-4">
-    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{errorInit}</div>
+    <Alert class="rounded-xl text-sm">{errorInit}</Alert>
     <button onclick={() => goto('/terreno')} class="mt-4 text-blue-600 text-sm">Volver</button>
   </div>
 {:else}
@@ -210,7 +226,7 @@
     <!-- Header -->
     <header class="bg-slate-900 text-white px-4 py-3 sticky top-0 z-10 shadow-lg">
       <div class="flex items-center gap-3">
-        <button onclick={() => goto('/terreno')} class="text-slate-300 p-1">
+        <button aria-label="Volver a terreno" onclick={() => goto('/terreno')} class="text-slate-300 p-1">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
@@ -253,10 +269,7 @@
           <label class="block w-full">
             <div class="border-2 border-dashed border-slate-200 rounded-xl p-6 flex flex-col items-center gap-2 active:bg-slate-50 transition-colors cursor-pointer">
               {#if subiendoFoto}
-                <svg class="animate-spin h-8 w-8 text-blue-400" fill="none" viewBox="0 0 24 24">
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                </svg>
+                <Spinner class="h-8 w-8 text-blue-400" />
                 <span class="text-sm text-slate-500">Subiendo...</span>
               {:else}
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -280,18 +293,15 @@
 
           {#if fotos.length > 0}
             <div class="grid grid-cols-3 gap-2 mt-4">
-              {#each fotos as foto, i}
+              {#each fotos as foto, i (foto.preview)}
                 <div class="relative aspect-square rounded-lg overflow-hidden bg-slate-100">
+                  <img src={foto.preview} alt="evidencia {i + 1}" class="w-full h-full object-cover" />
                   {#if foto.cargando}
-                    <div class="w-full h-full flex items-center justify-center">
-                      <svg class="animate-spin h-6 w-6 text-blue-400" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                      </svg>
+                    <div class="absolute inset-0 flex items-center justify-center bg-white/50">
+                      <Spinner class="h-6 w-6 text-blue-400" />
                     </div>
-                  {:else}
-                    <img src={foto.preview} alt="evidencia {i + 1}" class="w-full h-full object-cover" />
-                    <button
+                  {/if}
+                    <button aria-label="Eliminar evidencia {i + 1}"
                       onclick={() => eliminarFoto(i)}
                       class="absolute top-1 right-1 bg-black/60 rounded-full p-0.5"
                     >
@@ -299,7 +309,6 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
-                  {/if}
                 </div>
               {/each}
             </div>
@@ -307,9 +316,9 @@
         </div>
 
         {#if errorCierre}
-          <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+          <Alert class="rounded-xl text-sm">
             {errorCierre}
-          </div>
+          </Alert>
         {/if}
 
         <button
@@ -503,9 +512,9 @@
         </div>
 
         {#if errorCierre}
-          <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+          <Alert class="rounded-xl text-sm">
             {errorCierre}
-          </div>
+          </Alert>
         {/if}
 
         <div class="flex gap-3">
@@ -524,10 +533,7 @@
             class="flex-1 bg-green-600 active:bg-green-800 text-white font-semibold py-4 rounded-xl text-base disabled:opacity-40 flex items-center justify-center gap-2"
           >
             {#if cerrando}
-              <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-              </svg>
+              <Spinner class="h-5 w-5" />
               Cerrando...
             {:else}
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

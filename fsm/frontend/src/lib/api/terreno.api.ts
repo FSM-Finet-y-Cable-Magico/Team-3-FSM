@@ -51,6 +51,7 @@ export async function subirFoto(
   token: string,
   id_ot: number,
   file: File,
+  signal?: AbortSignal,
 ): Promise<{ url_cloudinary: string; formato: string; tamano_kb: number }> {
   const formData = new FormData();
   formData.append('file', file);
@@ -59,6 +60,7 @@ export async function subirFoto(
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: formData,
+    signal,
   });
   if (res.status >= 400) {
     const data = await res.json().catch(() => ({}));
