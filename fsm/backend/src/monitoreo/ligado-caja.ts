@@ -62,8 +62,26 @@ export interface ResultadoLigado {
   stats: StatsLigado;
 }
 
-/** Radio de vecindad de un splitter PON. Ver cabecera para por qué 800. */
-export const RADIO_DEFECTO_M = 800;
+/**
+ * Radio de vecindad de un splitter PON.
+ *
+ * Era 800 cuando cada ONT se resolvía por su cuenta y un radio grande dejaba
+ * entrar cualquier caja homónima. Con la exclusividad por grupo (una caja la
+ * reclama un solo puerto PON) ese riesgo cae mucho: la caja además tiene que
+ * coincidir en nombre y no haber sido tomada por un grupo que le calzaba
+ * mejor. Medido sobre los datos reales:
+ *
+ *    800m -> 578 ligadas, dispersión 82m mediana / 205m p90
+ *   1200m -> 688 ligadas, dispersión 118m / 504m
+ *   2000m -> 703 ligadas, dispersión 164m / 775m
+ *
+ * La coherencia de número se mantiene en 100% en los tres. Se elige 1200 por
+ * lo que el enlace sirve: el motor de alertas agrupa por la clave de SmartOLT,
+ * no por la caja de Tomodat — esta solo aporta LA UBICACIÓN. Un error de 500m
+ * manda al técnico a la cuadra correcta; no tener dato no lo manda a ninguna
+ * parte. A 2000m la dispersión ya se degrada sin ganar casi cobertura.
+ */
+export const RADIO_DEFECTO_M = 1200;
 
 /**
  * Normaliza un nombre de caja preservando TODOS sus tokens: solo unifica la
@@ -198,73 +216,101 @@ export function emparejar(
   }
 
   const asignaciones = new Map<string, number>();
-  let matchUnico = 0;
-  for (const [sn, c] of candidatas) {
-    if (yaLigadas.has(sn)) continue;
-    if (c.length === 1) {
-      asignaciones.set(sn, c[0].id_caja_nap);
-      matchUnico++;
-    }
+
+  // ---------------------------------------------------------------------------
+  // La unidad de asignación es el GRUPO, no la ONT suelta.
+  //
+  // Un grupo es (olt, placa, puerto PON, nombre de caja): todas esas ONT cuelgan
+  // de la misma caja física, así que tienen que ir todas a la misma caja de
+  // Tomodat o a ninguna.
+  //
+  // Y una caja física alimenta UN puerto PON, así que una caja de Tomodat la
+  // puede reclamar un solo grupo. Sin esa exclusividad, seis grupos distintos
+  // resolvían contra la misma "nap 7" y esa caja terminaba con 24 ONT de 6
+  // puertos en sus 16 puertos — imposible, y además ligados equivocados.
+  // ---------------------------------------------------------------------------
+  interface Grupo {
+    clave: string;
+    pon: string;
+    miembros: OntParaLigar[];
+    candidatas: CajaParaLigar[];
   }
 
-  // Paso 2 — desempate por votacion dentro del grupo PON.
-  const grupos = new Map<string, OntParaLigar[]>();
+  const grupos = new Map<string, Grupo>();
   for (const o of onts) {
-    if (!candidatas.has(o.numero_serie)) continue;
-    const g = `${o.olt_externo}|${o.board}|${o.puerto_pon}`;
-    const lista = grupos.get(g);
-    if (lista) lista.push(o);
-    else grupos.set(g, [o]);
+    if (yaLigadas.has(o.numero_serie)) continue;
+    const cands = candidatas.get(o.numero_serie);
+    if (!cands?.length) continue;
+    const pon = `${o.olt_externo}|${o.board}|${o.puerto_pon}`;
+    const clave = `${pon}|${normalizarNombreCaja(o.odb)}`;
+    const g = grupos.get(clave);
+    if (g) g.miembros.push(o);
+    else grupos.set(clave, { clave, pon, miembros: [o], candidatas: cands });
   }
 
-  let resueltasPorPon = 0;
-  let ambiguasSinResolver = 0;
+  // Las cajas que ya están tomadas por un enlace previo no se pueden reclamar.
+  const cajasTomadas = new Set<number>();
+  for (const o of onts) if (o.id_caja_nap != null) cajasTomadas.add(o.id_caja_nap);
 
-  for (const miembros of grupos.values()) {
-    const conCandidatas = miembros.filter((o) => (candidatas.get(o.numero_serie) ?? []).length > 0);
-    if (conCandidatas.length === 0) continue;
-
-    const puntos = conCandidatas
-      .flatMap((o) => candidatas.get(o.numero_serie) ?? [])
-      .filter(tieneCoords);
-    if (puntos.length === 0) continue;
-
-    // El centro es el punto candidato que deja a mas ONT del grupo con alguna
-    // candidata dentro del radio.
-    let centro: (CajaParaLigar & Punto) | null = null;
+  // El centro de cada puerto PON: el punto candidato que deja a más grupos del
+  // puerto con alguna candidata cerca. Sirve para todos sus grupos.
+  const centroPorPon = new Map<string, CajaParaLigar & Punto>();
+  const gruposPorPon = new Map<string, Grupo[]>();
+  for (const g of grupos.values()) {
+    const l = gruposPorPon.get(g.pon);
+    if (l) l.push(g);
+    else gruposPorPon.set(g.pon, [g]);
+  }
+  for (const [pon, gs] of gruposPorPon) {
+    const puntos = gs.flatMap((g) => g.candidatas).filter(tieneCoords);
+    let mejor: (CajaParaLigar & Punto) | null = null;
     let mejorApoyo = -1;
     for (const p of puntos) {
-      let apoyo = 0;
-      for (const o of conCandidatas) {
-        const cerca = (candidatas.get(o.numero_serie) ?? [])
-          .filter(tieneCoords)
-          .some((x) => metros(x, p) <= radioM);
-        if (cerca) apoyo++;
-      }
+      const apoyo = gs.filter((g) =>
+        g.candidatas.filter(tieneCoords).some((x) => metros(x, p) <= radioM),
+      ).length;
       if (apoyo > mejorApoyo) {
         mejorApoyo = apoyo;
-        centro = p;
+        mejor = p;
       }
     }
-    if (!centro) continue;
-    const ref = centro;
+    if (mejor) centroPorPon.set(pon, mejor);
+  }
 
-    for (const o of conCandidatas) {
-      if (yaLigadas.has(o.numero_serie)) continue;
-      const cands = candidatas.get(o.numero_serie) ?? [];
-      if (cands.length <= 1) continue;
-      const cerca = cands
-        .filter(tieneCoords)
-        .filter((x) => metros(x, ref) <= radioM)
-        .sort((a, b) => metros(a, ref) - metros(b, ref));
-      if (cerca.length >= 1) {
-        asignaciones.set(o.numero_serie, cerca[0].id_caja_nap);
-        resueltasPorPon++;
-      } else {
-        ambiguasSinResolver++;
-      }
+  // Se arman todas las parejas (grupo, caja) viables con su distancia al centro
+  // del puerto, y se asignan de la mejor a la peor. Greedy sobre la distancia:
+  // la pareja más convincente elige primero y bloquea esa caja para el resto.
+  interface Pareja { grupo: Grupo; caja: CajaParaLigar; dist: number }
+  const parejas: Pareja[] = [];
+  for (const g of grupos.values()) {
+    const centro = centroPorPon.get(g.pon);
+    for (const c of g.candidatas) {
+      if (!tieneCoords(c)) continue;
+      const dist = centro ? metros(c, centro) : 0;
+      if (centro && dist > radioM) continue;
+      parejas.push({ grupo: g, caja: c, dist });
     }
   }
+  // A igual distancia gana el grupo más grande: más ONT es más evidencia.
+  parejas.sort((a, b) => a.dist - b.dist || b.grupo.miembros.length - a.grupo.miembros.length);
+
+  const gruposResueltos = new Set<string>();
+  let matchUnico = 0;
+  let resueltasPorPon = 0;
+
+  for (const p of parejas) {
+    if (gruposResueltos.has(p.grupo.clave)) continue;
+    if (cajasTomadas.has(p.caja.id_caja_nap)) continue;
+    gruposResueltos.add(p.grupo.clave);
+    cajasTomadas.add(p.caja.id_caja_nap);
+    for (const o of p.grupo.miembros) asignaciones.set(o.numero_serie, p.caja.id_caja_nap);
+    if (p.grupo.candidatas.length === 1) matchUnico += p.grupo.miembros.length;
+    else resueltasPorPon += p.grupo.miembros.length;
+  }
+
+  const ambiguasSinResolver = [...grupos.values()]
+    .filter((g) => !gruposResueltos.has(g.clave))
+    .reduce((s, g) => s + g.miembros.length, 0);
 
   const sinCajaCandidata = [...candidatas]
     .filter(([sn, c]) => !yaLigadas.has(sn) && c.length === 0).length;
