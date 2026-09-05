@@ -27,6 +27,14 @@ export interface OT {
     nombre_usuario: string;
   } | null;
   direccion?: { direccion_completa: string; comuna: string } | null;
+  /** Caja sobre la que se trabaja, en las OT generadas por el monitoreo. */
+  caja_nap?: {
+    id_caja_nap: number;
+    identificador_unico: string | null;
+    latitud: string | null;
+    longitud: string | null;
+    zona: string | null;
+  } | null;
   historial?: {
     id_historial_ot: number | string;
     estado_anterior?: string | null;

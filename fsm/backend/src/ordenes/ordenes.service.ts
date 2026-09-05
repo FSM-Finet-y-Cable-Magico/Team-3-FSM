@@ -222,6 +222,11 @@ export class OrdenesService {
         tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
         direccion: { select: { direccion_completa: true, comuna: true } },
         categoria_falla: { select: { id_categoria: true, nombre: true, sla_horas: true } },
+        // Las OT generadas por el monitoreo no cuelgan de un cliente sino de
+        // una caja: sin esto la pantalla no tendría qué mostrar en "dónde ir".
+        caja_nap: {
+          select: { id_caja_nap: true, identificador_unico: true, latitud: true, longitud: true, zona: true },
+        },
         historial: { orderBy: { fecha_hora: 'desc' } },
       },
     });

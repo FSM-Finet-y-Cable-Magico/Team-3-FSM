@@ -381,35 +381,57 @@ export class AlertasService {
     const preventiva = alerta.tipo === TIPO_ALERTA.POTENCIA_DEGRADANDOSE;
 
     const nombreCaja = claveCaja.includes('|') ? claveCaja.split('|')[1] : claveCaja;
-    const ubicacion = alerta.caja?.latitud
-      ? `Ubicación: https://www.google.com/maps?q=${alerta.caja.latitud},${alerta.caja.longitud}`
-      : 'Ubicación: la caja no está ubicada en la topología';
+    // Una falla de OLT o de placa se atiende en la cabecera de red, no
+    // recorriendo casas: listar 30 de 428 clientes seria ruido. En esas la OT
+    // dice el equipo y el alcance; la lista de afectados solo va cuando la
+    // accion es efectivamente ir a una caja.
+    const esDeCaja =
+      alerta.tipo === TIPO_ALERTA.FALLA_CAJA_NAP || alerta.tipo === TIPO_ALERTA.POTENCIA_DEGRADANDOSE;
 
-    // Los relevantes primero y con su señal: es lo que el técnico necesita ver
-    // en el papel sin volver al sistema.
+    const bloques: string[] = [`Generada automáticamente desde el monitoreo de red.`, ''];
+
+    if (esDeCaja) {
+      bloques.push(`DÓNDE`, `  Caja ${nombreCaja}`);
+      if (alerta.caja?.latitud) {
+        bloques.push(`  https://www.google.com/maps?q=${alerta.caja.latitud},${alerta.caja.longitud}`);
+      } else {
+        bloques.push(`  (la caja no está ubicada en la topología de Tomodat)`);
+      }
+    } else {
+      bloques.push(`DÓNDE`, `  ${nombreCaja}`, `  Se atiende en la cabecera de red, no en terreno.`);
+    }
+
+    bloques.push('', `QUÉ PASA`, `  ${alerta.mensaje}`);
+
     const relevantes = afectados
       .filter((a) => (preventiva ? a.degradandose || a.potencia_fuera_de_rango : true) && !a.inactiva)
-      .slice(0, 30);
-    const lista = relevantes
-      .map(
-        (a) =>
-          `  · ${a.potencia_dbm ?? 's/señal'} dBm — ${a.cliente ?? a.numero_serie}` +
-          `${a.direccion ? ` — ${a.direccion}` : ''}${a.telefono ? ` — ${a.telefono}` : ''}`,
-      )
-      .join('\n');
+      .slice(0, esDeCaja ? 30 : 0);
 
-    const observaciones =
-      `OT generada automáticamente desde el monitoreo de red.\n\n` +
-      `Motivo: ${alerta.mensaje}\n` +
-      `Caja: ${nombreCaja}\n${ubicacion}\n\n` +
-      `Clientes a revisar (${relevantes.length}${afectados.length > relevantes.length ? ` de ${afectados.length}` : ''}):\n${lista}`;
+    if (relevantes.length) {
+      const de = afectados.length > relevantes.length ? ` (de ${afectados.length} en la caja)` : '';
+      bloques.push('', `CLIENTES A REVISAR — ${relevantes.length}${de}`);
+      for (const a of relevantes) {
+        const senal = a.potencia_dbm != null ? `${a.potencia_dbm} dBm` : 'sin señal';
+        bloques.push(
+          `  ${senal.padEnd(11)} ${a.cliente ?? a.numero_serie}`,
+          `              ${a.direccion ?? 'sin dirección'}${a.telefono ? `  ·  ${a.telefono}` : ''}`,
+        );
+      }
+    } else if (!esDeCaja) {
+      bloques.push('', `ALCANCE`, `  ${alerta.afectados} clientes afectados por esta falla.`);
+    }
+
+    const observaciones = bloques.join('\n');
 
     const ot = await this.prisma.$transaction(async (tx) => {
       const creada = await tx.orden_trabajo.create({
         data: {
           id_empresa,
-          // Sin cliente: la OT es de la caja. Los afectados van arriba.
+          // Sin cliente: la OT es de la caja. Los afectados van en las
+          // observaciones y la caja va en `id_caja_nap`, que es lo que la
+          // pantalla usa para decir a dónde ir.
           id_cliente: null,
+          id_caja_nap: alerta.id_caja_nap,
           tipo_ot: preventiva ? 'PREVENTIVO' : 'REPARACION',
           prioridad: preventiva ? 'MEDIA' : 'ALTA',
           estado: 'PENDIENTE',

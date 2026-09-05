@@ -330,6 +330,7 @@ model caja_nap {
   unidades           unidad_equipo[]
   monitoreo          monitoreo_ont[]
   alertas              alerta[]
+  ordenes              orden_trabajo[]
 }
 
 model orden_trabajo {
@@ -341,6 +342,13 @@ model orden_trabajo {
   id_direccion         Int?
   id_ticket            Int?     @unique
   id_categoria_falla   Int?
+  /**
+   * Caja NAP sobre la que se trabaja. Las OT generadas desde el monitoreo por
+   * una falla de caja no cuelgan de un cliente sino de la caja, y es lo que le
+   * dice al técnico a dónde ir. También lo necesita CU-20 (reservar el puerto
+   * al crear la OT).
+   */
+  id_caja_nap          Int?
   tipo_ot              String   @db.VarChar(20)
   prioridad            String   @db.VarChar(10)
   estado               String   @db.VarChar(25)
@@ -363,6 +371,7 @@ model orden_trabajo {
   direccion            direccion_servicio? @relation(fields: [id_direccion], references: [id_direccion])
   ticket               ticket?          @relation(fields: [id_ticket], references: [id_ticket])
   categoria_falla      categoria_falla? @relation(fields: [id_categoria_falla], references: [id_categoria])
+  caja_nap             caja_nap?        @relation(fields: [id_caja_nap], references: [id_caja_nap])
   historial            historial_ot[]
   materiales           uso_material_ot[]
   fotos                evidencia_foto[]

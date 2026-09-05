@@ -193,20 +193,50 @@
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-        <div>
-          <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Cliente</p>
-          <p class="text-gray-900 font-medium">{ot.cliente?.nombre_completo ?? '-'}</p>
-          <p class="text-gray-500 font-mono text-xs">{ot.cliente?.rut ?? ''}</p>
-        </div>
-        <div>
-          <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Dirección</p>
-          <p class="text-gray-900">
-            {ot.direccion?.direccion_completa ?? ot.cliente?.direcciones?.[0]?.direccion_completa ?? '-'}
-          </p>
-          <p class="text-gray-500 text-xs">
-            {ot.direccion?.comuna ?? ot.cliente?.direcciones?.[0]?.comuna ?? ''}
-          </p>
-        </div>
+        {#if !ot.cliente && ot.caja_nap}
+          <!-- OT del monitoreo: es de una caja, no de un cliente -->
+          <div>
+            <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Caja NAP</p>
+            <p class="text-gray-900 font-medium">
+              {ot.caja_nap.identificador_unico?.replace(/\s*\(\d+\)\s*$/, '') ?? '-'}
+            </p>
+            <p class="text-gray-500 text-xs">Afecta a varios clientes (ver observaciones)</p>
+          </div>
+          <div>
+            <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Dónde ir</p>
+            {#if ot.caja_nap.latitud}
+              <a href={`https://www.google.com/maps?q=${ot.caja_nap.latitud},${ot.caja_nap.longitud}`}
+                 target="_blank" rel="noopener"
+                 class="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 hover:underline
+                        cursor-pointer transition-colors duration-200">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+                Abrir en el mapa
+              </a>
+            {:else}
+              <p class="text-gray-500">La caja no está ubicada en la topología</p>
+            {/if}
+            {#if ot.caja_nap.zona}<p class="text-gray-500 text-xs mt-0.5">{ot.caja_nap.zona}</p>{/if}
+          </div>
+        {:else}
+          <div>
+            <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Cliente</p>
+            <p class="text-gray-900 font-medium">{ot.cliente?.nombre_completo ?? '-'}</p>
+            <p class="text-gray-500 font-mono text-xs">{ot.cliente?.rut ?? ''}</p>
+          </div>
+          <div>
+            <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Dirección</p>
+            <p class="text-gray-900">
+              {ot.direccion?.direccion_completa ?? ot.cliente?.direcciones?.[0]?.direccion_completa ?? '-'}
+            </p>
+            <p class="text-gray-500 text-xs">
+              {ot.direccion?.comuna ?? ot.cliente?.direcciones?.[0]?.comuna ?? ''}
+            </p>
+          </div>
+        {/if}
         <div>
           <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Técnico asignado</p>
           <p class="text-gray-900">{ot.tecnico?.nombre_completo ?? 'Sin asignar'}</p>
@@ -224,7 +254,9 @@
         {#if ot.observaciones}
           <div class="sm:col-span-2">
             <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Observaciones</p>
-            <p class="text-gray-700">{ot.observaciones}</p>
+            <!-- whitespace-pre-line: las OT del monitoreo vienen formateadas
+                 con saltos de linea y sin esto quedan como un parrafo ilegible -->
+            <p class="text-gray-700 whitespace-pre-line">{ot.observaciones}</p>
           </div>
         {/if}
         {#if ot.estado === 'PENDIENTE_CLIENTE_AUSENTE' && ot.obs_cliente_ausente}
