@@ -35,7 +35,7 @@ model empresa {
   intentos_fallidos     intento_fallido[]
   ordenes_ingreso       orden_ingreso[]
   unidades              unidad_equipo[]
-  alertas               alerta[]
+  alertas               alerta_monitoreo[]
   registros_ont         registro_ont[]
   prospectos            prospecto[]
   configuraciones_seo   configuracion_seo[]
@@ -73,7 +73,7 @@ model usuario {
 
   // C6 (#19). Listado de usuarios y de tecnicos, siempre acotados por empresa.
   @@index([id_empresa])
-  alertas_resueltas    alerta[] @relation("alerta_resuelve")
+  alertas_resueltas    alerta_monitoreo[] @relation("alerta_resuelve")
   cajas_confirmadas    registro_ont[] @relation("caja_confirmada")
 }
 
@@ -142,7 +142,7 @@ model cliente {
   // El compuesto con fecha_creacion deja que listarClientes lea la pagina
   // en orden de indice en vez de ordenar la cartera completa del tenant.
   @@index([id_empresa, fecha_creacion])
-  alertas              alerta[]
+  alertas              alerta_monitoreo[]
 }
 
 model direccion_servicio {
@@ -329,7 +329,7 @@ model caja_nap {
   puertos            puerto_nap[]
   unidades           unidad_equipo[]
   monitoreo          monitoreo_ont[]
-  alertas              alerta[]
+  alertas              alerta_monitoreo[]
   ordenes              orden_trabajo[]
 }
 
@@ -392,7 +392,10 @@ model orden_trabajo {
   @@index([id_cliente])
   // Filtro tipo_ot del listado y recuento de REPARACION del dashboard.
   @@index([id_empresa, tipo_ot])
-  alertas_origen       alerta[]
+  alertas_origen       alerta_monitoreo[]
+
+  // FK que consulta el panel para listar las OT de una caja.
+  @@index([id_caja_nap])
 }
 
 model historial_ot {
@@ -759,7 +762,7 @@ model registro_ont {
   ultima_vez        DateTime @updatedAt
   monitoreos        monitoreo_ont[]
   historial         historial_conexion_ont[]
-  alertas           alerta[]
+  alertas           alerta_monitoreo[]
 
   empresa           empresa? @relation(fields: [id_empresa], references: [id_empresa])
   confirmada_por    usuario? @relation("caja_confirmada", fields: [caja_confirmada_por], references: [id_usuario])
@@ -778,7 +781,7 @@ model registro_ont {
  *   - POTENCIA_FUERA_RANGO / SIN_SENAL  -> `id_registro_ont`
  *   - FALLA_CAJA_NAP                    -> `clave_caja`
  */
-model alerta {
+model alerta_monitoreo {
   id_alerta              Int       @id @default(autoincrement())
   id_empresa             Int
   tipo                   String    @db.VarChar(30)

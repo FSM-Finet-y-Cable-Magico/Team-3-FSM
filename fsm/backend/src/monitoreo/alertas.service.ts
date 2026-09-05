@@ -60,7 +60,7 @@ export class AlertasService {
     const idDe = (p: { tipo: string; id_registro_ont: number | null; clave_caja: string | null }) =>
       `${p.tipo}|${p.id_registro_ont ?? ''}|${p.tipo === 'FALLA_CAJA_NAP' ? (p.clave_caja ?? '') : ''}`;
 
-    const abiertas = await this.prisma.alerta.findMany({
+    const abiertas = await this.prisma.alerta_monitoreo.findMany({
       where: { id_empresa, resuelta: false },
       select: { id_alerta: true, tipo: true, id_registro_ont: true, clave_caja: true },
     });
@@ -71,7 +71,7 @@ export class AlertasService {
     // repara, así que la condición sigue cumpliéndose y sin este freno la
     // alerta reaparecería en la corrida siguiente.
     const desde = new Date(ahora.getTime() - SILENCIO_TRAS_REVISION_H * 3600_000);
-    const silenciadas = await this.prisma.alerta.findMany({
+    const silenciadas = await this.prisma.alerta_monitoreo.findMany({
       where: {
         id_empresa,
         resuelta: true,
@@ -84,7 +84,7 @@ export class AlertasService {
 
     const nuevas = propuestas.filter((p) => !abiertasPorId.has(idDe(p)) && !enSilencio.has(idDe(p)));
     if (nuevas.length) {
-      await this.prisma.alerta.createMany({
+      await this.prisma.alerta_monitoreo.createMany({
         data: nuevas.map((p) => ({ ...p, id_empresa })),
       });
     }
@@ -92,7 +92,7 @@ export class AlertasService {
     // Las abiertas que ya no aparecen entre las propuestas: el problema pasó.
     const aCerrar = abiertas.filter((a) => !propuestasPorId.has(idDe(a))).map((a) => a.id_alerta);
     if (aCerrar.length) {
-      await this.prisma.alerta.updateMany({
+      await this.prisma.alerta_monitoreo.updateMany({
         where: { id_alerta: { in: aCerrar } },
         data: {
           resuelta: true,
@@ -121,7 +121,7 @@ export class AlertasService {
 
   /** Zonas y cajas presentes en las alertas abiertas, para poblar los filtros. */
   async facetas(id_empresa: number) {
-    const abiertas = await this.prisma.alerta.findMany({
+    const abiertas = await this.prisma.alerta_monitoreo.findMany({
       where: { id_empresa, resuelta: false },
       select: { clave_caja: true, registro: { select: { zona: true } } },
     });
@@ -148,7 +148,7 @@ export class AlertasService {
     zona?: string,
     caja?: string,
   ) {
-    const filas = await this.prisma.alerta.findMany({
+    const filas = await this.prisma.alerta_monitoreo.findMany({
       where: {
         id_empresa,
         resuelta,
@@ -195,7 +195,7 @@ export class AlertasService {
    * o generar la OT preventiva (CU-16).
    */
   async detalle(id_alerta: number, id_empresa: number) {
-    const alerta = await this.prisma.alerta.findFirst({
+    const alerta = await this.prisma.alerta_monitoreo.findFirst({
       where: { id_alerta, id_empresa },
       include: { caja: { select: { identificador_unico: true, latitud: true, longitud: true } } },
     });
@@ -328,7 +328,7 @@ export class AlertasService {
    * justo lo que el agrupamiento venía a evitar.
    */
   async generarOt(id_alerta: number, id_empresa: number, id_usuario: number) {
-    const alerta = await this.prisma.alerta.findFirst({
+    const alerta = await this.prisma.alerta_monitoreo.findFirst({
       where: { id_alerta, id_empresa },
       include: { caja: { select: { identificador_unico: true, latitud: true, longitud: true } } },
     });
@@ -359,7 +359,7 @@ export class AlertasService {
     }
 
     // ¿Ya hay cuadrilla en camino a esta misma caja?
-    const yaAbierta = await this.prisma.alerta.findFirst({
+    const yaAbierta = await this.prisma.alerta_monitoreo.findFirst({
       where: {
         id_empresa,
         clave_caja: claveCaja,
@@ -370,7 +370,7 @@ export class AlertasService {
     });
     if (yaAbierta?.ot_generada) {
       // Se vincula esta alerta a la OT que ya existe, en vez de duplicarla.
-      await this.prisma.alerta.update({
+      await this.prisma.alerta_monitoreo.update({
         where: { id_alerta },
         data: { id_ot_generada: yaAbierta.ot_generada.id_ot },
       });
@@ -449,7 +449,7 @@ export class AlertasService {
           fecha_hora: new Date(),
         },
       });
-      await tx.alerta.update({
+      await tx.alerta_monitoreo.update({
         where: { id_alerta },
         data: { id_ot_generada: creada.id_ot },
       });
@@ -522,7 +522,7 @@ export class AlertasService {
           fecha_hora: new Date(),
         },
       });
-      await tx.alerta.update({
+      await tx.alerta_monitoreo.update({
         where: { id_alerta: alerta.id_alerta },
         data: { id_ot_generada: creada.id_ot },
       });
@@ -535,10 +535,10 @@ export class AlertasService {
 
   /** CU-52 / CU-08: el jefe técnico marca la alerta como revisada. */
   async revisar(id_alerta: number, id_empresa: number, id_usuario: number, observacion?: string) {
-    const alerta = await this.prisma.alerta.findFirst({ where: { id_alerta, id_empresa } });
+    const alerta = await this.prisma.alerta_monitoreo.findFirst({ where: { id_alerta, id_empresa } });
     if (!alerta) throw new NotFoundException(`Alerta ${id_alerta} no encontrada`);
 
-    return this.prisma.alerta.update({
+    return this.prisma.alerta_monitoreo.update({
       where: { id_alerta },
       data: {
         resuelta: true,
@@ -551,7 +551,7 @@ export class AlertasService {
 
   /** Contadores para la cabecera del panel. */
   async resumen(id_empresa: number) {
-    const abiertas = await this.prisma.alerta.groupBy({
+    const abiertas = await this.prisma.alerta_monitoreo.groupBy({
       by: ['tipo', 'severidad'],
       where: { id_empresa, resuelta: false },
       _count: { _all: true },
