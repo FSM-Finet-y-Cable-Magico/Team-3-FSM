@@ -60,6 +60,14 @@ export class MonitoreoController {
     return this.alertas.listar(id, resueltas === 'true', tipo, limit ? +limit : 100, zona, caja);
   }
 
+  /** Clientes detrás de una alerta agregada, con su estado actual. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('alertas/:id/detalle')
+  detalleAlerta(@CurrentUser() user: UserPayload, @Param('id') id: string, @Query('empresa') empresa?: string) {
+    const idEmpresa = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.alertas.detalle(+id, idEmpresa);
+  }
+
   /** El jefe técnico marca la alerta como revisada (CU-52, sirve a CU-08). */
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Patch('alertas/:id/revisar')

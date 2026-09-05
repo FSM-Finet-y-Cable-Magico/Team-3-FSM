@@ -11,7 +11,8 @@
   import { authStore } from '$lib/stores/auth.store';
   import {
     listarAlertas, obtenerResumenAlertas, revisarAlerta, evaluarAlertas, obtenerFacetas,
-    type Alerta, type ResumenAlertas, type Facetas,
+    detalleAlerta,
+    type Alerta, type ResumenAlertas, type Facetas, type DetalleAlerta,
   } from '$lib/api/alertas.api';
 
   let resumen = $state<ResumenAlertas | null>(null);
@@ -25,6 +26,10 @@
   let filtroCaja = $state('');
   let verResueltas = $state(false);
   let expandida = $state<number | null>(null);
+  // Detalle de afectados de una alerta agregada, cargado a demanda.
+  let detalleAbierto = $state<number | null>(null);
+  let detalle = $state<DetalleAlerta | null>(null);
+  let cargandoDetalle = $state(false);
 
   // Selección para revisar en lote: con 143 alertas de potencia, marcarlas de a
   // una es inviable.
@@ -107,6 +112,26 @@
 
   function alTeclado(e: KeyboardEvent) {
     if (e.key === 'Escape' && modalAbierto) modalAbierto = false;
+  }
+
+  async function verDetalle(a: Alerta) {
+    if (detalleAbierto === a.id_alerta) { detalleAbierto = null; detalle = null; return; }
+    detalleAbierto = a.id_alerta;
+    detalle = null;
+    cargandoDetalle = true;
+    try { detalle = await detalleAlerta(token(), a.id_alerta); }
+    catch (e) { error = e instanceof Error ? e.message : 'Error al cargar el detalle'; }
+    finally { cargandoDetalle = false; }
+  }
+
+  /** Un link al mapa si hay coordenada; si no, null. */
+  function mapa(a: Alerta): string | null {
+    return a.caja?.latitud ? `https://www.google.com/maps?q=${a.caja.latitud},${a.caja.longitud}` : null;
+  }
+
+  /** Nombre de la caja, venga de Tomodat o del nombre que usa SmartOLT. */
+  function nombreCaja(a: Alerta): string | null {
+    return a.caja?.identificador_unico ?? a.clave_caja?.split('|')[1] ?? null;
   }
 
   function alternar(id: number) {
@@ -262,23 +287,35 @@
                     </div>
                     <p class="mt-2 font-semibold text-gray-900">{a.mensaje}</p>
 
-                    {#if a.caja?.latitud}
-                      <a class="inline-flex items-center gap-1.5 mt-2 text-sm text-blue-600 hover:text-blue-800
-                                hover:underline cursor-pointer transition-colors duration-200"
-                         href={`https://www.google.com/maps?q=${a.caja.latitud},${a.caja.longitud}`}
-                         target="_blank" rel="noopener">
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                             stroke-width="2" aria-hidden="true">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    <div class="mt-2 flex items-center gap-3 flex-wrap text-sm">
+                      {#if mapa(a)}
+                        <a class="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800
+                                  hover:underline cursor-pointer transition-colors duration-200"
+                           href={mapa(a)} target="_blank" rel="noopener">
+                          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                               stroke-width="2" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                          </svg>
+                          Ver {nombreCaja(a)} en el mapa
+                        </a>
+                      {:else if nombreCaja(a)}
+                        <span class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+                          Caja {nombreCaja(a)} — sin ubicación en Tomodat
+                        </span>
+                      {/if}
+
+                      <button onclick={() => verDetalle(a)}
+                        class="inline-flex items-center gap-1 text-gray-700 hover:text-gray-900 hover:underline
+                               cursor-pointer transition-colors duration-200 focus:outline-none focus:ring-2
+                               focus:ring-gray-900 rounded">
+                        <svg class="h-4 w-4 transition-transform duration-200 {detalleAbierto === a.id_alerta ? 'rotate-90' : ''}"
+                             viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
                         </svg>
-                        Ver {a.caja.identificador_unico} en el mapa
-                      </a>
-                    {:else if a.tipo === 'FALLA_CAJA_NAP' || a.tipo === 'POTENCIA_DEGRADANDOSE'}
-                      <p class="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 inline-block">
-                        Sin ubicación: la caja no está ligada a la topología de Tomodat
-                      </p>
-                    {/if}
+                        {detalleAbierto === a.id_alerta ? 'Ocultar' : 'Ver'} los clientes
+                      </button>
+                    </div>
                   </div>
                   {#if !a.resuelta}
                     <button onclick={() => abrirModal([a])}
@@ -288,6 +325,54 @@
                   {/if}
                 </div>
               </div>
+
+              <!-- Detalle: quién está afectado y cómo, para decidir si va una OT -->
+              {#if detalleAbierto === a.id_alerta}
+                <div class="border-t bg-gray-50 px-4 py-3">
+                  {#if cargandoDetalle}
+                    <p class="text-sm text-gray-500">Cargando clientes…</p>
+                  {:else if detalle}
+                    <div class="flex gap-4 text-xs text-gray-600 mb-2 flex-wrap">
+                      <span><strong class="text-gray-900">{detalle.total}</strong> clientes en la caja</span>
+                      <span><strong class="text-red-700">{detalle.caidos}</strong> caídos</span>
+                      <span><strong class="text-amber-700">{detalle.degradados}</strong> degradándose</span>
+                    </div>
+                    <div class="overflow-x-auto rounded-lg border bg-white">
+                      <table class="min-w-full text-xs">
+                        <thead class="bg-gray-100 text-gray-600 uppercase tracking-wide">
+                          <tr>
+                            <th scope="col" class="px-2.5 py-1.5 text-left font-semibold">Estado</th>
+                            <th scope="col" class="px-2.5 py-1.5 text-left font-semibold">Señal</th>
+                            <th scope="col" class="px-2.5 py-1.5 text-left font-semibold">Cliente</th>
+                            <th scope="col" class="px-2.5 py-1.5 text-left font-semibold">Dirección</th>
+                            <th scope="col" class="px-2.5 py-1.5 text-left font-semibold">Contacto</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                          {#each detalle.afectados as f}
+                            <tr class:bg-red-50={f.estado && f.estado !== 'ONLINE'}>
+                              <td class="px-2.5 py-1.5 whitespace-nowrap font-medium
+                                         {f.estado && f.estado !== 'ONLINE' ? 'text-red-700' : 'text-green-700'}">
+                                {f.estado ?? '—'}
+                                {#if f.horas_asi != null}<span class="text-gray-500 font-normal"> · {f.horas_asi} h</span>{/if}
+                              </td>
+                              <td class="px-2.5 py-1.5 whitespace-nowrap font-mono
+                                         {f.potencia_fuera_de_rango ? 'text-red-700 font-semibold' : f.degradandose ? 'text-amber-700' : 'text-gray-600'}">
+                                {f.potencia_dbm ?? '—'}{f.potencia_dbm != null ? ' dBm' : ''}
+                              </td>
+                              <td class="px-2.5 py-1.5 text-gray-900">{f.cliente ?? '—'}</td>
+                              <td class="px-2.5 py-1.5 text-gray-600">{f.direccion ?? '—'}</td>
+                              <td class="px-2.5 py-1.5 text-gray-500 whitespace-nowrap">
+                                {f.telefono ?? f.rut ?? '—'}
+                              </td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
             </article>
           {/each}
         </div>
@@ -362,7 +447,25 @@
 
                   <td class="px-3 py-3 whitespace-nowrap text-gray-600">
                     <p>{a.registro?.zona?.replace(/\s+/g, ' ') ?? '—'}</p>
-                    <p class="text-xs text-gray-400 font-mono">{a.registro?.numero_serie ?? ''}</p>
+                    {#if nombreCaja(a)}
+                      {#if mapa(a)}
+                        <a href={mapa(a)} target="_blank" rel="noopener"
+                           class="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline
+                                  cursor-pointer transition-colors duration-200 text-xs mt-0.5">
+                          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                               stroke-width="2" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                          </svg>
+                          {nombreCaja(a)}
+                        </a>
+                      {:else}
+                        <p class="text-xs text-gray-500 mt-0.5" title="La caja no está ubicada en Tomodat">
+                          Caja {nombreCaja(a)}
+                        </p>
+                      {/if}
+                    {/if}
+                    <p class="text-xs text-gray-400 font-mono mt-0.5">{a.registro?.numero_serie ?? ''}</p>
                   </td>
                   <td class="px-3 py-3 whitespace-nowrap text-gray-500 text-xs">{hace(a.creada_en)}</td>
                   <td class="px-3 py-3 text-right whitespace-nowrap">

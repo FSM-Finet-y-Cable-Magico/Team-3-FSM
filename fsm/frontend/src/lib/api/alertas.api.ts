@@ -73,6 +73,33 @@ export function listarAlertas(
   return pedir<Alerta[]>(token, `${API_URL}/api/monitoreo/alertas${qs ? '?' + qs : ''}`);
 }
 
+export interface Afectado {
+  numero_serie: string;
+  cliente: string | null;
+  rut: string | null;
+  telefono: string | null;
+  direccion: string | null;
+  zona: string | null;
+  caja: string | null;
+  estado: string | null;
+  potencia_dbm: number | null;
+  potencia_fuera_de_rango: boolean;
+  degradandose: boolean;
+  horas_asi: number | null;
+}
+
+export interface DetalleAlerta {
+  alerta: Alerta;
+  total: number;
+  caidos: number;
+  degradados: number;
+  afectados: Afectado[];
+}
+
+export function detalleAlerta(token: string, id: number) {
+  return pedir<DetalleAlerta>(token, `${API_URL}/api/monitoreo/alertas/${id}/detalle`);
+}
+
 export function revisarAlerta(token: string, id: number, observacion?: string) {
   return pedir<Alerta>(token, `${API_URL}/api/monitoreo/alertas/${id}/revisar`, {
     method: 'PATCH',

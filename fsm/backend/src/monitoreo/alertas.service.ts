@@ -2,7 +2,12 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizarNombreCaja } from './ligado-caja.js';
 import { evaluar, type EstadoOnt } from './reglas-alerta.js';
-import { SILENCIO_TRAS_REVISION_H, UMBRAL_DESCONEXION_MIN_DEFECTO } from './monitoreo.constants.js';
+import {
+  SILENCIO_TRAS_REVISION_H,
+  UMBRAL_DESCONEXION_MIN_DEFECTO,
+  potenciaEnFranjaPreventiva,
+  potenciaFueraDeRango,
+} from './monitoreo.constants.js';
 
 export interface ResumenEvaluacion {
   ont_evaluadas: number;
@@ -159,6 +164,119 @@ export class AlertasService {
         cliente: { select: { id_cliente: true, nombre_completo: true, rut: true } },
       },
     });
+  }
+
+  /**
+   * Clientes que hay detrás de una alerta agregada, con su estado actual.
+   *
+   * Es lo que le permite al jefe técnico decidir sin salir del panel: ver quién
+   * está afectado, con qué señal y desde cuándo, antes de mandar una cuadrilla
+   * o generar la OT preventiva (CU-16).
+   */
+  async detalle(id_alerta: number, id_empresa: number) {
+    const alerta = await this.prisma.alerta.findFirst({
+      where: { id_alerta, id_empresa },
+      include: { caja: { select: { identificador_unico: true, latitud: true, longitud: true } } },
+    });
+    if (!alerta) throw new NotFoundException(`Alerta ${id_alerta} no encontrada`);
+
+    // Una alerta individual ya trae su cliente; no hay grupo que desplegar.
+    if (!alerta.clave_caja) return { alerta, afectados: [] };
+
+    // `clave_caja` tiene dos formatos según el nivel del agregado:
+    //   caja  → "2/1/7|NAP 6"        (olt/placa/puerto + nombre normalizado)
+    //   placa → "OLT 2 / placa 1"
+    let filtro: { olt: string; board?: number; pon?: number; caja?: string };
+    const mPlaca = /^OLT (.+) \/ placa (.+)$/.exec(alerta.clave_caja);
+    if (mPlaca) {
+      filtro = { olt: mPlaca[1], board: Number(mPlaca[2]) };
+    } else {
+      const [puerto, caja] = alerta.clave_caja.split('|');
+      const [olt, board, pon] = puerto.split('/');
+      filtro = { olt, board: Number(board), pon: Number(pon), caja };
+    }
+
+    const candidatos = await this.prisma.registro_ont.findMany({
+      where: {
+        id_empresa,
+        olt_externo: filtro.olt,
+        ...(filtro.board != null && !Number.isNaN(filtro.board) ? { board: filtro.board } : {}),
+        ...(filtro.pon != null && !Number.isNaN(filtro.pon) ? { puerto_pon: filtro.pon } : {}),
+      },
+      select: {
+        id_registro_ont: true,
+        numero_serie: true,
+        odb: true,
+        zona: true,
+        id_cliente: true,
+        nombre_cliente_ext: true,
+        direccion_cliente_ext: true,
+        monitoreos: {
+          orderBy: { timestamp_medicion: 'desc' },
+          take: 1,
+          select: { estado_conexion: true, potencia_actual_dbm: true, timestamp_medicion: true },
+        },
+      },
+    });
+
+    // `registro_ont.id_cliente` no es una relación de Prisma (apunta a la tabla
+    // que mantiene otro grupo), así que los clientes se traen aparte y
+    // acotados a la empresa — que además es lo que impide leer clientes ajenos.
+    const idsCliente = candidatos.map((c) => c.id_cliente).filter((x): x is number => x != null);
+    const clientes = idsCliente.length
+      ? await this.prisma.cliente.findMany({
+          where: { id_cliente: { in: idsCliente }, id_empresa },
+          select: { id_cliente: true, nombre_completo: true, rut: true, telefono: true },
+        })
+      : [];
+    const clientePorId = new Map(clientes.map((c) => [c.id_cliente, c]));
+
+    // El nombre de caja se compara normalizado: en la fuente convive
+    // "NAP06" con "NAP 6".
+    const delGrupo = filtro.caja
+      ? candidatos.filter((c) => normalizarNombreCaja(c.odb) === filtro.caja)
+      : candidatos;
+
+    const ahora = Date.now();
+    const afectados = delGrupo
+      .map((c) => {
+        const u = c.monitoreos[0];
+        const potencia = u?.potencia_actual_dbm == null ? null : Number(u.potencia_actual_dbm);
+        const caida = u?.estado_conexion != null && u.estado_conexion !== 'ONLINE';
+        const cli = c.id_cliente == null ? null : clientePorId.get(c.id_cliente);
+        return {
+          numero_serie: c.numero_serie,
+          cliente: cli?.nombre_completo ?? c.nombre_cliente_ext,
+          rut: cli?.rut ?? null,
+          telefono: cli?.telefono ?? null,
+          direccion: c.direccion_cliente_ext,
+          zona: c.zona,
+          caja: c.odb,
+          estado: u?.estado_conexion ?? null,
+          potencia_dbm: potencia,
+          potencia_fuera_de_rango: potenciaFueraDeRango(potencia),
+          degradandose: potenciaEnFranjaPreventiva(potencia),
+          desde: u?.timestamp_medicion ?? null,
+          horas_asi:
+            u?.timestamp_medicion && caida
+              ? Math.floor((ahora - u.timestamp_medicion.getTime()) / 3_600_000)
+              : null,
+        };
+      })
+      // Primero lo que está peor: caídos, luego degradados, luego el resto.
+      .sort((a, b) => {
+        const peso = (x: typeof a) =>
+          x.estado && x.estado !== 'ONLINE' ? 0 : x.potencia_fuera_de_rango ? 1 : x.degradandose ? 2 : 3;
+        return peso(a) - peso(b) || (a.potencia_dbm ?? 0) - (b.potencia_dbm ?? 0);
+      });
+
+    return {
+      alerta,
+      total: afectados.length,
+      caidos: afectados.filter((a) => a.estado && a.estado !== 'ONLINE').length,
+      degradados: afectados.filter((a) => a.degradandose).length,
+      afectados,
+    };
   }
 
   /** CU-52 / CU-08: el jefe técnico marca la alerta como revisada. */
