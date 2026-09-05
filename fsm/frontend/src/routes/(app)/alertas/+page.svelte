@@ -129,9 +129,14 @@
     return a.caja?.latitud ? `https://www.google.com/maps?q=${a.caja.latitud},${a.caja.longitud}` : null;
   }
 
-  /** Nombre de la caja, venga de Tomodat o del nombre que usa SmartOLT. */
+  /**
+   * Nombre de la caja, venga de Tomodat o del nombre que usa SmartOLT.
+   * El sufijo " (n)" lo agrega nuestro importador para distinguir cajas
+   * homónimas del KML: es interno, no va en pantalla.
+   */
   function nombreCaja(a: Alerta): string | null {
-    return a.caja?.identificador_unico ?? a.clave_caja?.split('|')[1] ?? null;
+    const n = a.caja?.identificador_unico ?? a.clave_caja?.split('|')[1] ?? null;
+    return n?.replace(/\s*\(\d+\)\s*$/, '').trim() || null;
   }
 
   function alternar(id: number) {
@@ -334,7 +339,8 @@
                   {:else if detalle}
                     <div class="flex gap-4 text-xs text-gray-600 mb-2 flex-wrap">
                       <span><strong class="text-gray-900">{detalle.total}</strong> clientes en la caja</span>
-                      <span><strong class="text-red-700">{detalle.caidos}</strong> caídos</span>
+                      <span><strong class="text-red-700">{detalle.afectados.filter((f) => f.estado && f.estado !== 'ONLINE' && !f.inactiva).length}</strong> caídos</span>
+                      <span><strong class="text-gray-600">{detalle.afectados.filter((f) => f.inactiva).length}</strong> inactivos (bajas)</span>
                       <span><strong class="text-amber-700">{detalle.degradados}</strong> degradándose</span>
                     </div>
                     <div class="overflow-x-auto rounded-lg border bg-white">
@@ -350,11 +356,22 @@
                         </thead>
                         <tbody class="divide-y divide-gray-100">
                           {#each detalle.afectados as f}
-                            <tr class:bg-red-50={f.estado && f.estado !== 'ONLINE'}>
+                            <tr class:bg-red-50={f.estado && f.estado !== 'ONLINE' && !f.inactiva}
+                                class:opacity-60={f.inactiva}>
                               <td class="px-2.5 py-1.5 whitespace-nowrap font-medium
-                                         {f.estado && f.estado !== 'ONLINE' ? 'text-red-700' : 'text-green-700'}">
+                                         {f.inactiva ? 'text-gray-500' : f.estado && f.estado !== 'ONLINE' ? 'text-red-700' : 'text-green-700'}">
                                 {f.estado ?? '—'}
-                                {#if f.horas_asi != null}<span class="text-gray-500 font-normal"> · {f.horas_asi} h</span>{/if}
+                                {#if f.horas_asi != null}
+                                  <span class="text-gray-500 font-normal">
+                                    · {f.horas_asi >= 48 ? `${Math.floor(f.horas_asi / 24)} d` : `${f.horas_asi} h`}
+                                  </span>
+                                {/if}
+                                {#if f.inactiva}
+                                  <span class="ml-1 px-1.5 py-0.5 rounded bg-gray-200 text-gray-600 text-[10px] font-normal"
+                                        title="Caída hace más de una semana: probablemente un cliente dado de baja. No cuenta para el incidente.">
+                                    inactiva
+                                  </span>
+                                {/if}
                               </td>
                               <td class="px-2.5 py-1.5 whitespace-nowrap font-mono
                                          {f.potencia_fuera_de_rango ? 'text-red-700 font-semibold' : f.degradandose ? 'text-amber-700' : 'text-gray-600'}">

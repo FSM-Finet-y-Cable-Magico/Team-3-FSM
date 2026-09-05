@@ -1,8 +1,10 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizarNombreCaja } from './ligado-caja.js';
+import { descomponerFicha } from './ficha-cliente.js';
 import { evaluar, type EstadoOnt } from './reglas-alerta.js';
 import {
+  DIAS_MAX_INCIDENTE,
   SILENCIO_TRAS_REVISION_H,
   UMBRAL_DESCONEXION_MIN_DEFECTO,
   potenciaEnFranjaPreventiva,
@@ -145,7 +147,7 @@ export class AlertasService {
     zona?: string,
     caja?: string,
   ) {
-    return this.prisma.alerta.findMany({
+    const filas = await this.prisma.alerta.findMany({
       where: {
         id_empresa,
         resuelta,
@@ -163,6 +165,23 @@ export class AlertasService {
         caja: { select: { identificador_unico: true, latitud: true, longitud: true } },
         cliente: { select: { id_cliente: true, nombre_completo: true, rut: true } },
       },
+    });
+
+    // La referencia de SmartOLT llega con los campos revueltos en 118 de 940
+    // ONT: todo en el nombre y la posición del puerto en la dirección. Se
+    // desarma acá para que el panel muestre nombre y dirección donde
+    // corresponde. Solo presentación: el dato crudo no se toca.
+    return filas.map((a) => {
+      if (!a.registro) return a;
+      const f = descomponerFicha(a.registro.nombre_cliente_ext, a.registro.direccion_cliente_ext);
+      return {
+        ...a,
+        registro: {
+          ...a.registro,
+          nombre_cliente_ext: f.nombre,
+          direccion_cliente_ext: f.direccion,
+        },
+      };
     });
   }
 
@@ -244,12 +263,15 @@ export class AlertasService {
         const potencia = u?.potencia_actual_dbm == null ? null : Number(u.potencia_actual_dbm);
         const caida = u?.estado_conexion != null && u.estado_conexion !== 'ONLINE';
         const cli = c.id_cliente == null ? null : clientePorId.get(c.id_cliente);
+        // Cuando el cliente no está en nuestra base, la referencia de SmartOLT
+        // viene con todo apelotonado en un campo: se desarma para mostrarla.
+        const ficha = descomponerFicha(c.nombre_cliente_ext, c.direccion_cliente_ext);
         return {
           numero_serie: c.numero_serie,
-          cliente: cli?.nombre_completo ?? c.nombre_cliente_ext,
-          rut: cli?.rut ?? null,
-          telefono: cli?.telefono ?? null,
-          direccion: c.direccion_cliente_ext,
+          cliente: cli?.nombre_completo ?? ficha.nombre,
+          rut: cli?.rut ?? ficha.rut,
+          telefono: cli?.telefono ?? ficha.telefono,
+          direccion: ficha.direccion,
           zona: c.zona,
           caja: c.odb,
           estado: u?.estado_conexion ?? null,
@@ -261,6 +283,14 @@ export class AlertasService {
             u?.timestamp_medicion && caida
               ? Math.floor((ahora - u.timestamp_medicion.getTime()) / 3_600_000)
               : null,
+          // Caída hace más de DIAS_MAX_INCIDENTE: es equipo de un cliente dado
+          // de baja, no parte del incidente. Se muestra igual —forma parte del
+          // padrón de la caja— pero marcado, para que no se confunda con los
+          // que se cayeron hoy.
+          inactiva:
+            !!u?.timestamp_medicion &&
+            caida &&
+            (ahora - u.timestamp_medicion.getTime()) / 86_400_000 > DIAS_MAX_INCIDENTE,
         };
       })
       // Primero lo que está peor: caídos, luego degradados, luego el resto.

@@ -86,6 +86,8 @@ export interface Afectado {
   potencia_fuera_de_rango: boolean;
   degradandose: boolean;
   horas_asi: number | null;
+  /** Equipo de un cliente dado de baja: no es parte del incidente. */
+  inactiva: boolean;
 }
 
 export interface DetalleAlerta {
