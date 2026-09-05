@@ -11,7 +11,7 @@
   import { authStore } from '$lib/stores/auth.store';
   import {
     listarAlertas, obtenerResumenAlertas, revisarAlerta, evaluarAlertas, obtenerFacetas,
-    detalleAlerta, confirmarCaja, listarCajas,
+    detalleAlerta, confirmarCaja, listarCajas, generarOt,
     type Alerta, type ResumenAlertas, type Facetas, type DetalleAlerta,
     type Afectado, type CajaOpcion,
   } from '$lib/api/alertas.api';
@@ -146,6 +146,24 @@
   function nombreCaja(a: Alerta): string | null {
     const n = a.caja?.identificador_unico ?? a.clave_caja?.split('|')[1] ?? null;
     return n?.replace(/\s*\(\d+\)\s*$/, '').trim() || null;
+  }
+
+  let generandoOt = $state<number | null>(null);
+
+  async function despacharOt(a: Alerta) {
+    generandoOt = a.id_alerta;
+    try {
+      const r = await generarOt(token(), a.id_alerta);
+      avisoConfirmacion = r.creada
+        ? `OT #${r.ot.id_ot} (${r.ot.tipo_ot}) creada${r.clientes ? ` con ${r.clientes} clientes precargados` : ''}.`
+        : `${r.motivo ?? 'Ya existía'}: OT #${r.ot.id_ot}.`;
+      setTimeout(() => (avisoConfirmacion = ''), 6000);
+      await cargar();
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Error al generar la OT';
+    } finally {
+      generandoOt = null;
+    }
   }
 
   async function abrirConfirmacion(f: Afectado) {
@@ -380,12 +398,28 @@
                       </button>
                     </div>
                   </div>
-                  {#if !a.resuelta}
-                    <button onclick={() => abrirModal([a])}
-                      class="shrink-0 px-3 py-1.5 rounded-lg border border-gray-300 text-sm font-medium
-                             hover:bg-gray-50 cursor-pointer transition-colors duration-200
-                             focus:outline-none focus:ring-2 focus:ring-gray-900">Revisar</button>
-                  {/if}
+                  <div class="shrink-0 flex items-center gap-2">
+                    {#if a.ot_generada}
+                      <span class="px-2.5 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-800
+                                   text-xs font-medium" title={`${a.ot_generada.tipo_ot} · ${a.ot_generada.estado}`}>
+                        OT #{a.ot_generada.id_ot} despachada
+                      </span>
+                    {:else if !a.resuelta}
+                      <button onclick={() => despacharOt(a)} disabled={generandoOt === a.id_alerta}
+                        class="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium
+                               hover:bg-blue-700 disabled:opacity-50 cursor-pointer
+                               transition-colors duration-200 focus:outline-none focus:ring-2
+                               focus:ring-offset-2 focus:ring-blue-600">
+                        {generandoOt === a.id_alerta ? 'Generando…' : 'Generar OT'}
+                      </button>
+                    {/if}
+                    {#if !a.resuelta}
+                      <button onclick={() => abrirModal([a])}
+                        class="px-3 py-1.5 rounded-lg border border-gray-300 text-sm font-medium
+                               hover:bg-gray-50 cursor-pointer transition-colors duration-200
+                               focus:outline-none focus:ring-2 focus:ring-gray-900">Revisar</button>
+                    {/if}
+                  </div>
                 </div>
               </div>
 

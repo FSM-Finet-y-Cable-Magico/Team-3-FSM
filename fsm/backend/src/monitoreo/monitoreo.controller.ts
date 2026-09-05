@@ -69,6 +69,17 @@ export class MonitoreoController {
     return this.alertas.detalle(+id, idEmpresa);
   }
 
+  /**
+   * CU-16 / CU-21: genera la OT que despacha una alerta agregada. Si la caja ya
+   * tiene una OT abierta, devuelve esa en vez de duplicarla.
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Post('alertas/:id/generar-ot')
+  generarOt(@CurrentUser() user: UserPayload, @Param('id') id: string, @Query('empresa') empresa?: string) {
+    const idEmpresa = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.alertas.generarOt(+id, idEmpresa, user.userId);
+  }
+
   /** El jefe técnico marca la alerta como revisada (CU-52, sirve a CU-08). */
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Patch('alertas/:id/revisar')

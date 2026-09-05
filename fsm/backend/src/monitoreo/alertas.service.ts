@@ -1,10 +1,11 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizarNombreCaja } from './ligado-caja.js';
 import { descomponerFicha } from './ficha-cliente.js';
 import { evaluar, type EstadoOnt } from './reglas-alerta.js';
 import {
   DIAS_MAX_INCIDENTE,
+  TIPO_ALERTA,
   SILENCIO_TRAS_REVISION_H,
   UMBRAL_DESCONEXION_MIN_DEFECTO,
   potenciaEnFranjaPreventiva,
@@ -164,6 +165,7 @@ export class AlertasService {
         registro: { select: { numero_serie: true, zona: true, nombre_cliente_ext: true, direccion_cliente_ext: true } },
         caja: { select: { identificador_unico: true, latitud: true, longitud: true } },
         cliente: { select: { id_cliente: true, nombre_completo: true, rut: true } },
+        ot_generada: { select: { id_ot: true, tipo_ot: true, estado: true } },
       },
     });
 
@@ -311,6 +313,202 @@ export class AlertasService {
       degradados: afectados.filter((a) => a.degradandose).length,
       afectados,
     };
+  }
+
+  /**
+   * CU-16 / CU-21: genera la OT que despacha una alerta agregada.
+   *
+   * La OT es DE LA CAJA, no de un cliente: por eso `id_cliente` va en null y
+   * los afectados se precargan en las observaciones. Es lo que pide la ficha
+   * ("por zona/caja, no por SN") y también cómo se trabaja — una cuadrilla que
+   * va a una caja atiende a todos sus clientes en la misma visita.
+   *
+   * Si la caja ya tiene una OT abierta generada desde otra alerta, no se crea
+   * una segunda: se devuelve la existente. Dos cuadrillas al mismo poste es
+   * justo lo que el agrupamiento venía a evitar.
+   */
+  async generarOt(id_alerta: number, id_empresa: number, id_usuario: number) {
+    const alerta = await this.prisma.alerta.findFirst({
+      where: { id_alerta, id_empresa },
+      include: { caja: { select: { identificador_unico: true, latitud: true, longitud: true } } },
+    });
+    if (!alerta) throw new NotFoundException(`Alerta ${id_alerta} no encontrada`);
+    if (alerta.id_ot_generada) {
+      const ya = await this.prisma.orden_trabajo.findUnique({
+        where: { id_ot: alerta.id_ot_generada },
+      });
+      if (ya) return { ot: ya, creada: false, motivo: 'Esta alerta ya generó una OT' };
+    }
+
+    // Las individuales llevan `clave_caja` para poder filtrarlas por caja, así
+    // que el tipo es lo que decide la forma de la OT, no la presencia de esa
+    // clave: agregada → OT de la caja; individual → OT del cliente.
+    const AGREGADAS: string[] = [
+      TIPO_ALERTA.FALLA_OLT,
+      TIPO_ALERTA.FALLA_PLACA_OLT,
+      TIPO_ALERTA.FALLA_CAJA_NAP,
+      TIPO_ALERTA.POTENCIA_DEGRADANDOSE,
+    ];
+    if (!AGREGADAS.includes(alerta.tipo)) {
+      return this.generarOtDeCliente(alerta, id_empresa, id_usuario);
+    }
+    const claveCaja = alerta.clave_caja;
+    if (!claveCaja) {
+      // No debería pasar: el motor siempre les pone clave a las agregadas.
+      throw new BadRequestException('La alerta agregada no tiene identificada su caja');
+    }
+
+    // ¿Ya hay cuadrilla en camino a esta misma caja?
+    const yaAbierta = await this.prisma.alerta.findFirst({
+      where: {
+        id_empresa,
+        clave_caja: claveCaja,
+        id_ot_generada: { not: null },
+        ot_generada: { estado: { notIn: ['COMPLETADA', 'CANCELADA'] } },
+      },
+      include: { ot_generada: true },
+    });
+    if (yaAbierta?.ot_generada) {
+      // Se vincula esta alerta a la OT que ya existe, en vez de duplicarla.
+      await this.prisma.alerta.update({
+        where: { id_alerta },
+        data: { id_ot_generada: yaAbierta.ot_generada.id_ot },
+      });
+      return { ot: yaAbierta.ot_generada, creada: false, motivo: 'La caja ya tenía una OT abierta' };
+    }
+
+    const { afectados } = await this.detalle(id_alerta, id_empresa);
+    const preventiva = alerta.tipo === TIPO_ALERTA.POTENCIA_DEGRADANDOSE;
+
+    const nombreCaja = claveCaja.includes('|') ? claveCaja.split('|')[1] : claveCaja;
+    const ubicacion = alerta.caja?.latitud
+      ? `Ubicación: https://www.google.com/maps?q=${alerta.caja.latitud},${alerta.caja.longitud}`
+      : 'Ubicación: la caja no está ubicada en la topología';
+
+    // Los relevantes primero y con su señal: es lo que el técnico necesita ver
+    // en el papel sin volver al sistema.
+    const relevantes = afectados
+      .filter((a) => (preventiva ? a.degradandose || a.potencia_fuera_de_rango : true) && !a.inactiva)
+      .slice(0, 30);
+    const lista = relevantes
+      .map(
+        (a) =>
+          `  · ${a.potencia_dbm ?? 's/señal'} dBm — ${a.cliente ?? a.numero_serie}` +
+          `${a.direccion ? ` — ${a.direccion}` : ''}${a.telefono ? ` — ${a.telefono}` : ''}`,
+      )
+      .join('\n');
+
+    const observaciones =
+      `OT generada automáticamente desde el monitoreo de red.\n\n` +
+      `Motivo: ${alerta.mensaje}\n` +
+      `Caja: ${nombreCaja}\n${ubicacion}\n\n` +
+      `Clientes a revisar (${relevantes.length}${afectados.length > relevantes.length ? ` de ${afectados.length}` : ''}):\n${lista}`;
+
+    const ot = await this.prisma.$transaction(async (tx) => {
+      const creada = await tx.orden_trabajo.create({
+        data: {
+          id_empresa,
+          // Sin cliente: la OT es de la caja. Los afectados van arriba.
+          id_cliente: null,
+          tipo_ot: preventiva ? 'PREVENTIVO' : 'REPARACION',
+          prioridad: preventiva ? 'MEDIA' : 'ALTA',
+          estado: 'PENDIENTE',
+          fecha_creacion: new Date(),
+          observaciones,
+        },
+      });
+      await tx.historial_ot.create({
+        data: {
+          id_ot: creada.id_ot,
+          id_usuario,
+          estado_anterior: null,
+          estado_nuevo: 'PENDIENTE',
+          observaciones: `Generada desde la alerta #${id_alerta}`,
+          fecha_hora: new Date(),
+        },
+      });
+      await tx.alerta.update({
+        where: { id_alerta },
+        data: { id_ot_generada: creada.id_ot },
+      });
+      return creada;
+    });
+
+    this.logger.log(
+      `OT ${ot.id_ot} (${ot.tipo_ot}) generada desde la alerta ${id_alerta} — ${relevantes.length} clientes`,
+    );
+    return { ot, creada: true, clientes: relevantes.length };
+  }
+
+  /**
+   * OT de una alerta individual: es un problema de un cliente, así que la OT va
+   * atada a ese cliente como cualquier otra, con su dirección.
+   */
+  private async generarOtDeCliente(
+    alerta: { id_alerta: number; tipo: string; mensaje: string | null; id_registro_ont: number | null },
+    id_empresa: number,
+    id_usuario: number,
+  ) {
+    const registro = alerta.id_registro_ont
+      ? await this.prisma.registro_ont.findUnique({
+          where: { id_registro_ont: alerta.id_registro_ont },
+          select: {
+            numero_serie: true,
+            id_cliente: true,
+            nombre_cliente_ext: true,
+            direccion_cliente_ext: true,
+          },
+        })
+      : null;
+    if (!registro) throw new BadRequestException('La alerta no tiene una ONT asociada');
+
+    // La dirección de servicio solo existe si el cliente está en nuestra base;
+    // si no, la referencia de SmartOLT queda en las observaciones.
+    const direccion = registro.id_cliente
+      ? await this.prisma.direccion_servicio.findFirst({
+          where: { id_cliente: registro.id_cliente, es_principal: true },
+          select: { id_direccion: true },
+        })
+      : null;
+
+    const ficha = descomponerFicha(registro.nombre_cliente_ext, registro.direccion_cliente_ext);
+    const ot = await this.prisma.$transaction(async (tx) => {
+      const creada = await tx.orden_trabajo.create({
+        data: {
+          id_empresa,
+          id_cliente: registro.id_cliente,
+          id_direccion: direccion?.id_direccion ?? null,
+          tipo_ot: 'REPARACION',
+          prioridad: alerta.tipo === TIPO_ALERTA.SIN_SENAL ? 'ALTA' : 'MEDIA',
+          estado: 'PENDIENTE',
+          fecha_creacion: new Date(),
+          observaciones:
+            `OT generada automáticamente desde el monitoreo de red.\n\n` +
+            `Motivo: ${alerta.mensaje}\n` +
+            `ONT: ${registro.numero_serie}\n` +
+            `Cliente (según SmartOLT): ${ficha.nombre ?? 's/d'}\n` +
+            `Dirección (según SmartOLT): ${ficha.direccion ?? 's/d'}`,
+        },
+      });
+      await tx.historial_ot.create({
+        data: {
+          id_ot: creada.id_ot,
+          id_usuario,
+          estado_anterior: null,
+          estado_nuevo: 'PENDIENTE',
+          observaciones: `Generada desde la alerta #${alerta.id_alerta}`,
+          fecha_hora: new Date(),
+        },
+      });
+      await tx.alerta.update({
+        where: { id_alerta: alerta.id_alerta },
+        data: { id_ot_generada: creada.id_ot },
+      });
+      return creada;
+    });
+
+    this.logger.log(`OT ${ot.id_ot} (REPARACION) generada desde la alerta ${alerta.id_alerta}`);
+    return { ot, creada: true, clientes: 1 };
   }
 
   /** CU-52 / CU-08: el jefe técnico marca la alerta como revisada. */

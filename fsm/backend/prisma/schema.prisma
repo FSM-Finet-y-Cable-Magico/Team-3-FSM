@@ -383,6 +383,7 @@ model orden_trabajo {
   @@index([id_cliente])
   // Filtro tipo_ot del listado y recuento de REPARACION del dashboard.
   @@index([id_empresa, tipo_ot])
+  alertas_origen       alerta[]
 }
 
 model historial_ot {
@@ -789,6 +790,13 @@ model alerta {
   /** Cuántos clientes cubre la alerta. 1 en las individuales. */
   afectados              Int       @default(1)
 
+  /**
+   * OT generada desde esta alerta (CU-16 preventiva, CU-21 reparación). Es lo
+   * que permite saber si una caja ya tiene cuadrilla en camino y no duplicar
+   * el despacho.
+   */
+  id_ot_generada         Int?
+
   resuelta               Boolean   @default(false)
   resuelta_por           Int?
   observacion_resolucion String?   @db.Text
@@ -799,6 +807,7 @@ model alerta {
   registro         registro_ont? @relation(fields: [id_registro_ont], references: [id_registro_ont])
   cliente          cliente?      @relation(fields: [id_cliente], references: [id_cliente])
   caja             caja_nap?     @relation(fields: [id_caja_nap], references: [id_caja_nap])
+  ot_generada      orden_trabajo? @relation(fields: [id_ot_generada], references: [id_ot])
   usuario_resuelve usuario?      @relation("alerta_resuelve", fields: [resuelta_por], references: [id_usuario])
 
   // El listado del panel filtra siempre por empresa y por pendientes.

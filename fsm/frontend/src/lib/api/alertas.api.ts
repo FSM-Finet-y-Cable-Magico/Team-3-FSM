@@ -13,6 +13,8 @@ export interface Alerta {
   afectados: number;
   resuelta: boolean;
   creada_en: string;
+  /** OT ya despachada desde esta alerta (CU-16 / CU-21). */
+  ot_generada: { id_ot: number; tipo_ot: string; estado: string } | null;
   resuelta_en: string | null;
   observacion_resolucion: string | null;
   registro: {
@@ -126,6 +128,13 @@ export function confirmarCaja(token: string, numero_serie: string, id_caja_nap: 
     method: 'PATCH',
     body: JSON.stringify({ id_caja_nap }),
   });
+}
+
+/** CU-16 / CU-21: despacha la OT de una alerta. */
+export function generarOt(token: string, id: number) {
+  return pedir<{ ot: { id_ot: number; tipo_ot: string }; creada: boolean; motivo?: string; clientes?: number }>(
+    token, `${API_URL}/api/monitoreo/alertas/${id}/generar-ot`, { method: 'POST' },
+  );
 }
 
 export function revisarAlerta(token: string, id: number, observacion?: string) {
