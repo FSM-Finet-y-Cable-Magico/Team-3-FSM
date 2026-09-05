@@ -45,9 +45,15 @@ export interface ResultadoParseo {
 // FINET") o directamente el nombre del lugar (ej. "BANCO CENTRAL"). Un "nodo"
 // pelado, sin nada más en el nombre, es demasiado ambiguo para asumir que es
 // un OLT real — se filtra aparte, ver `esNodoAmbiguo`.
+// `\bnap(\b|\d)` y no `\bnap\b`: en el export real conviven las dos escrituras,
+// "NAP 318" y "NAP395" pegado. El `\b` final exige que después de "nap" NO
+// venga un carácter de palabra, así que descartaba silenciosamente las 131
+// cajas escritas sin espacio. El `|\d` las recupera sin abrir la puerta a
+// palabras que solo empiezan con "nap" (napoleón, napkin), que siguen sin
+// matchear porque después de "nap" va una letra.
 const PALABRAS: Record<Exclude<TipoNodo, 'DESCONOCIDO'>, RegExp> = {
   OLT: /\bolt\b|^nodo\b|^banco central$/i,
-  CAJA_NAP: /caja|cto|\bnap\b|atendimento|nap box/i,
+  CAJA_NAP: /caja|cto|\bnap(\b|\d)|atendimento|nap box/i,
   MUFA: /mufa|emenda|\bceo\b|splice|deriva/i,
   POSTE: /poste|pole/i,
 };
