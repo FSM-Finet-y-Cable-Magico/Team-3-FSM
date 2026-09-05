@@ -179,9 +179,9 @@ export class PlantaExternaService {
     });
   }
 
-  async detalleCaja(id_caja_nap: number) {
-    const caja = await this.prisma.caja_nap.findUnique({
-      where: { id_caja_nap },
+  async detalleCaja(id_caja_nap: number, id_empresa: number) {
+    const caja = await this.prisma.caja_nap.findFirst({
+      where: { id_caja_nap, OR: [{ id_empresa }, { id_empresa: null }] },
       include: {
         mufa: { select: { id_mufa: true, identificador: true } },
         puertos: {

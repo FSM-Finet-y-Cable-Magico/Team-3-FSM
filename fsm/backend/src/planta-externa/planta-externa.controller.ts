@@ -43,8 +43,9 @@ export class PlantaExternaController {
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
   @Get('cajas/:id')
-  caja(@Param('id') id: string) {
-    return this.planta.detalleCaja(+id);
+  caja(@CurrentUser() user: UserPayload, @Param('id') id: string, @Query('empresa') empresa?: string) {
+    const idEmpresa = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.planta.detalleCaja(+id, idEmpresa);
   }
 
   /** Cajas con coordenadas, para el mapa. */

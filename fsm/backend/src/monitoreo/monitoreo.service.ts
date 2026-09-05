@@ -137,7 +137,7 @@ export class MonitoreoService {
   }
 
   /** Detalle de una ONT por número de serie: última lectura + historial. */
-  async detalleOnt(sn: string) {
+  async detalleOnt(sn: string, id_empresa: number) {
     const registro = await this.prisma.registro_ont.findUnique({
       where: { numero_serie: sn },
       include: {
@@ -145,13 +145,23 @@ export class MonitoreoService {
         historial: { orderBy: { timestamp: 'desc' }, take: 50 },
       },
     });
-    if (!registro) throw new NotFoundException(`ONT ${sn} no vista por el monitoreo`);
+    // Mismo NotFoundException tanto si no existe como si es de otra empresa:
+    // no hay que distinguirle a quien pregunta cuál de los dos casos es.
+    if (!registro || !(await this.perteneceAEmpresa(registro.id_cliente, id_empresa))) {
+      throw new NotFoundException(`ONT ${sn} no vista por el monitoreo`);
+    }
 
     return { ...this.aVista(registro), historial_conexion: registro.historial };
   }
 
   /** Estado de conexión de las ONT de un cliente. Pensado para G8 (CU-49/51). */
-  async estadoCliente(id_cliente: number) {
+  async estadoCliente(id_cliente: number, id_empresa: number) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id_cliente, id_empresa },
+      select: { id_cliente: true },
+    });
+    if (!cliente) throw new NotFoundException(`Cliente ${id_cliente} no encontrado`);
+
     const registros = await this.prisma.registro_ont.findMany({
       where: { id_cliente },
       include: { monitoreos: { orderBy: { timestamp_medicion: 'desc' }, take: 1 } },
@@ -226,5 +236,15 @@ export class MonitoreoService {
     return {
       OR: [{ id_cliente: { in: clientes.map((c) => c.id_cliente) } }, { id_cliente: null }],
     };
+  }
+
+  /** Mismo criterio que `aislarPorEmpresa`, para chequear un registro puntual. */
+  private async perteneceAEmpresa(id_cliente: number | null, id_empresa: number): Promise<boolean> {
+    if (id_cliente == null) return true;
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id_cliente, id_empresa },
+      select: { id_cliente: true },
+    });
+    return cliente != null;
   }
 }

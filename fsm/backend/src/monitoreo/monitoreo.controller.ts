@@ -44,8 +44,9 @@ export class MonitoreoController {
   /** Detalle de una ONT por número de serie: última lectura + historial. */
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
   @Get('ont/:sn')
-  detalle(@Param('sn') sn: string) {
-    return this.monitoreo.detalleOnt(sn);
+  detalle(@CurrentUser() user: UserPayload, @Param('sn') sn: string, @Query('empresa') empresa?: string) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.monitoreo.detalleOnt(sn, id);
   }
 
   /**
@@ -54,8 +55,13 @@ export class MonitoreoController {
    */
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
   @Get('cliente/:id_cliente')
-  porCliente(@Param('id_cliente') idCliente: string) {
-    return this.monitoreo.estadoCliente(+idCliente);
+  porCliente(
+    @CurrentUser() user: UserPayload,
+    @Param('id_cliente') idCliente: string,
+    @Query('empresa') empresa?: string,
+  ) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.monitoreo.estadoCliente(+idCliente, id);
   }
 
   /** Dispara una ingesta manual. Útil para dev y para la demo. */
