@@ -30,20 +30,20 @@ cd fsm/backend
 npm install
 ```
 
-Crear el archivo `fsm/backend/.env` con las variables de entorno. **Pedir las credenciales al equipo por el canal privado (no subirlas nunca al repo):**
+Crear el archivo `fsm/backend/.env` a partir de su ejemplo y usar una base local aislada. Para desarrollo y pruebas, definir valores propios, sin reutilizar credenciales remotas:
 
 ```bash
-DATABASE_URL="pedir al equipo"
-JWT_SECRET="pedir al equipo"
+DATABASE_URL="postgresql://fsm:fsm@127.0.0.1:5432/fsm"
+JWT_SECRET="reemplazar-por-un-secreto-local-propio"
 FRONTEND_URL="http://localhost:5173"
 PORT=3000
-CLOUDINARY_CLOUD_NAME="pedir al equipo"
-CLOUDINARY_API_KEY="pedir al equipo"
-CLOUDINARY_API_SECRET="pedir al equipo"
+CLOUDINARY_CLOUD_NAME=""
+CLOUDINARY_API_KEY=""
+CLOUDINARY_API_SECRET=""
 SEED_ADMIN_PASSWORD=""
 ```
 
-> Las variables de Cloudinary son opcionales para desarrollo local — si se dejan vacías, las fotos se guardan en base64 automáticamente.
+> Cloudinary es opcional para desarrollar las demás funciones. Sin configuración, el backend avisa al arrancar y subir evidencia devuelve 503. El cierre solo admite URLs HTTP(S); no se guardan imágenes en base64. Ver [evidencias y recuperación histórica](docs/evidencias-y-api.md).
 
 > `SEED_ADMIN_PASSWORD` solo hace falta si se va a sembrar la base (ver más abajo). No tiene valor por defecto a propósito.
 
@@ -63,7 +63,9 @@ cp .env.example .env
 
 `.env.example` ya trae el valor para desarrollo local (`PUBLIC_API_URL=http://localhost:3000`), así que no hay que editar nada para levantar el proyecto. Sin este paso el build y `npm run dev` fallan con `"PUBLIC_API_URL" is not exported by "$env/static/public"`.
 
-### 4. Sembrar la base (solo si hace falta)
+### 4. Migrar y sembrar la base local (solo si hace falta)
+
+Comprobar primero que DATABASE_URL apunta a una base local aislada y ejecutar `npx prisma migrate deploy` desde el backend. Consultar los [flujos manual, Docker y despliegue compartido](docs/despliegue.md) antes de operar sobre una base.
 
 Sembrar **requiere definir `SEED_ADMIN_PASSWORD`** en `fsm/backend/.env`: es la contraseña inicial del usuario `admin.finet`. El seed no trae ninguna contraseña por defecto y falla con un error si la variable no está definida, para que ninguna base quede con una credencial conocida.
 
@@ -173,7 +175,19 @@ fsm/
 
 ## Base de datos
 
-La BD está en Railway (compartida entre los 4 grupos del proyecto).  
+El entorno compartido usa Railway (entre los 4 grupos del proyecto); el desarrollo y las pruebas deben usar una base local aislada o dobles en memoria.
 **No ejecutar `prisma db push` ni `prisma migrate dev`** sin coordinar con el equipo — afecta tablas compartidas.
 
 Para cambios de schema, coordinar en el canal del equipo primero.
+
+
+## Arquitectura y validación
+
+[Resultados y límites de la validación del PR consolidado](docs/validacion-consolidado.md).
+
+- [Módulos actuales y objetivo por incremento](docs/arquitectura.md).
+- [Desarrollo local, Docker y despliegue compartido](docs/despliegue.md).
+- [Permisos, evidencias e historial/paginación](docs/evidencias-y-api.md).
+- [Comandos de pruebas del backend](fsm/backend/README.md) y [pruebas de navegador del frontend](fsm/frontend/README.md).
+
+La fuente del esquema es `fsm/backend/prisma/schema.prisma` junto con `prisma/migrations`. `mere_finet.sql` es una referencia histórica no autoritativa. Los 13 índices de #19 ya están versionados; su aplicación debe comprobarse en cada base de destino.
