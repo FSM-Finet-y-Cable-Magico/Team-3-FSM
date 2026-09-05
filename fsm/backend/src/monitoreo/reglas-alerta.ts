@@ -186,6 +186,10 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
   // técnico que va a una caja atiende a todos sus clientes de una vez.
   for (const [clave, miembros] of agrupar(activas, claveDeCaja)) {
     if (cajasCaidas.has(clave) || placasCaidas.has(claveDePlaca(miembros[0]))) continue;
+    // Mismo piso que las demás reglas agregadas: sin un padrón conocido mínimo,
+    // "2 de 2 degradándose" no dice nada — esa caja puede tener 16 clientes en
+    // la calle y solo 2 registrados.
+    if (miembros.length < MIN_ONT_PARA_FALLA_CAJA) continue;
     const degradadas = miembros.filter((m) => potenciaEnFranjaPreventiva(m.potencia_dbm));
     if (degradadas.length < 2) continue; // una sola no justifica mover una cuadrilla
 

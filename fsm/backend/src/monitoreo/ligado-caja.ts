@@ -74,6 +74,10 @@ export const RADIO_DEFECTO_M = 800;
 export function normalizarNombreCaja(nombre: string | null): string | null {
   if (!nombre) return null;
   const s = nombre
+    // El sufijo " (n)" lo agrega nuestro propio importador para distinguir
+    // cajas homónimas del KML; no es parte del nombre real y no debe aparecer
+    // en pantalla ni participar del match.
+    .replace(/\s*\(\d+\)\s*$/, '')
     .toUpperCase()
     // separa fronteras letra↔digito: "NAP06" → "NAP 06", "Z1" → "Z 1"
     .replace(/([A-Z])(\d)/g, '$1 $2')
