@@ -13,6 +13,12 @@ model empresa {
   nombre      String  @db.VarChar(100)
   rut_empresa String? @unique @db.VarChar(12)
   esquema_db  String? @db.VarChar(50)
+  /**
+   * CU-52: minutos sin señal antes de levantar la alerta. Configurable por
+   * empresa, rango válido 10-120 (se valida en el DTO). Null = usar el
+   * default del módulo.
+   */
+  umbral_desconexion_min Int? @db.SmallInt
 
   usuarios              usuario[]
   clientes              cliente[]
@@ -29,6 +35,8 @@ model empresa {
   intentos_fallidos     intento_fallido[]
   ordenes_ingreso       orden_ingreso[]
   unidades              unidad_equipo[]
+  alertas               alerta[]
+  registros_ont         registro_ont[]
   prospectos            prospecto[]
   configuraciones_seo   configuracion_seo[]
   movimientos_origen    movimiento_inventario[] @relation("empresa_origen")
@@ -65,6 +73,7 @@ model usuario {
 
   // C6 (#19). Listado de usuarios y de tecnicos, siempre acotados por empresa.
   @@index([id_empresa])
+  alertas_resueltas    alerta[] @relation("alerta_resuelve")
 }
 
 model rol {
@@ -132,6 +141,7 @@ model cliente {
   // El compuesto con fecha_creacion deja que listarClientes lea la pagina
   // en orden de indice en vez de ordenar la cartera completa del tenant.
   @@index([id_empresa, fecha_creacion])
+  alertas              alerta[]
 }
 
 model direccion_servicio {
@@ -318,6 +328,7 @@ model caja_nap {
   puertos            puerto_nap[]
   unidades           unidad_equipo[]
   monitoreo          monitoreo_ont[]
+  alertas              alerta[]
 }
 
 model orden_trabajo {
@@ -708,6 +719,11 @@ model historial_conexion_ont {
 /// mantiene o se reemplaza por el mecanismo acordado sin tocar el resto.
 model registro_ont {
   id_registro_ont   Int      @id @default(autoincrement())
+  // Empresa dueña de la fuente de monitoreo (las credenciales de SmartOLT son
+  // de una empresa concreta). Se puebla en la ingesta, no se adivina por fila.
+  // Sin esto el motor de alertas no puede insertar: corre en el poller, sin
+  // JWT, y `id_cliente` está en null en casi todas las filas.
+  id_empresa        Int?
   numero_serie      String   @unique @db.VarChar(80)
   id_externo        String?  @db.VarChar(40)
   olt_externo       String?  @db.VarChar(40)
@@ -725,6 +741,59 @@ model registro_ont {
   ultima_vez        DateTime @updatedAt
   monitoreos        monitoreo_ont[]
   historial         historial_conexion_ont[]
+  alertas           alerta[]
+
+  empresa           empresa? @relation(fields: [id_empresa], references: [id_empresa])
+
+  @@index([id_empresa])
+}
+
+/**
+ * Alerta del monitoreo de red. La genera el motor (CU-13 potencia, CU-52/53 sin
+ * señal, CU-17 caja caída) y la revisa un JEFE_TECNICO.
+ *
+ * El sujeto de la alerta depende del tipo, y es EXACTAMENTE UNO — se valida en
+ * el servicio, no con un CHECK en SQL: meter un CHECK crudo en la migración
+ * reabre el mismo dilema que tiene trabado al issue #36 y hace que
+ * `prisma migrate dev` lo vea como drift.
+ *   - POTENCIA_FUERA_RANGO / SIN_SENAL  -> `id_registro_ont`
+ *   - FALLA_CAJA_NAP                    -> `clave_caja`
+ */
+model alerta {
+  id_alerta              Int       @id @default(autoincrement())
+  id_empresa             Int
+  tipo                   String    @db.VarChar(30)
+  severidad              String?   @db.VarChar(15)
+  mensaje                String?   @db.Text
+
+  id_registro_ont        Int?
+  id_cliente             Int?
+  /**
+   * Identidad del grupo de caja SEGÚN SMARTOLT ("2/1/7|NAP 6"): olt, placa,
+   * puerto PON y nombre de caja normalizado. Es lo que agrupa para CU-17 y no
+   * depende de que la caja esté ligada a la topología de Tomodat — por eso el
+   * motor cubre el 91% de las ONT y no el 89% que alcanza el ligado.
+   */
+  clave_caja             String?   @db.VarChar(120)
+  /** La caja de Tomodat, cuando se conoce. Es lo que aporta la ubicación. */
+  id_caja_nap            Int?
+
+  resuelta               Boolean   @default(false)
+  resuelta_por           Int?
+  observacion_resolucion String?   @db.Text
+  creada_en              DateTime  @default(now())
+  resuelta_en            DateTime?
+
+  empresa          empresa       @relation(fields: [id_empresa], references: [id_empresa])
+  registro         registro_ont? @relation(fields: [id_registro_ont], references: [id_registro_ont])
+  cliente          cliente?      @relation(fields: [id_cliente], references: [id_cliente])
+  caja             caja_nap?     @relation(fields: [id_caja_nap], references: [id_caja_nap])
+  usuario_resuelve usuario?      @relation("alerta_resuelve", fields: [resuelta_por], references: [id_usuario])
+
+  // El listado del panel filtra siempre por empresa y por pendientes.
+  @@index([id_empresa, resuelta])
+  // Deduplicación: buscar si ya hay una alerta abierta del mismo tipo y sujeto.
+  @@index([tipo, clave_caja, resuelta])
 }
 
 model prospecto {

@@ -6,6 +6,7 @@ import { MonitoreoPollerService } from './monitoreo-poller.service.js';
 import { DescubrimientoService } from './descubrimiento.service.js';
 import { RegistroOntService } from './registro-ont.service.js';
 import { LigadoCajaService } from './ligado-caja.service.js';
+import { AlertasService } from './alertas.service.js';
 import { FUENTE_MONITOREO, type FuenteMonitoreo } from './fuente/fuente-monitoreo.js';
 import { MockMonitoreo } from './fuente/mock-monitoreo.js';
 import { SmartOltClient } from './fuente/smartolt.client.js';
@@ -49,10 +50,11 @@ const fuenteProvider = {
     fuenteProvider,
     RegistroOntService,
     LigadoCajaService,
+    AlertasService,
     MonitoreoService,
     MonitoreoPollerService,
     DescubrimientoService,
   ],
-  exports: [MonitoreoService],
+  exports: [MonitoreoService, AlertasService],
 })
 export class MonitoreoModule {}

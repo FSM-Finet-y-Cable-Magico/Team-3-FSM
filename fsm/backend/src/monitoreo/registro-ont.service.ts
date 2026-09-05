@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { OntDetalle } from './fuente/fuente-monitoreo.js';
 
@@ -21,7 +22,20 @@ export interface RegistroResuelto {
 export class RegistroOntService {
   private readonly logger = new Logger(RegistroOntService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+  ) {}
+
+  /**
+   * Empresa dueña de las credenciales de la fuente. Las de SmartOLT son de una
+   * empresa concreta, así que TODA la ONT que entra por ahí es de esa empresa —
+   * no se deduce por fila. Configurable por si mañana hay una fuente por
+   * empresa; hoy es una sola.
+   */
+  private get idEmpresaFuente(): number {
+    return Number(this.config.get('MONITOREO_ID_EMPRESA') ?? 1);
+  }
 
   /**
    * Garantiza una fila de `registro_ont` por cada SN. Crea las que falten (con
@@ -38,8 +52,20 @@ export class RegistroOntService {
 
     const faltantes = sns.filter((sn) => !porSn.has(sn));
     for (const sn of faltantes) {
-      const creada = await this.prisma.registro_ont.create({ data: { numero_serie: sn } });
+      const creada = await this.prisma.registro_ont.create({
+        data: { numero_serie: sn, id_empresa: this.idEmpresaFuente },
+      });
       porSn.set(sn, creada);
+    }
+
+    // Backfill: las filas creadas antes de que existiera la columna quedaron en
+    // null y el motor de alertas no las vería.
+    const sinEmpresa = [...porSn.values()].filter((r) => r.id_empresa == null).map((r) => r.numero_serie);
+    if (sinEmpresa.length) {
+      await this.prisma.registro_ont.updateMany({
+        where: { numero_serie: { in: sinEmpresa } },
+        data: { id_empresa: this.idEmpresaFuente },
+      });
     }
     if (faltantes.length) {
       this.logger.log(`registro_ont: ${faltantes.length} ONT nuevas`);

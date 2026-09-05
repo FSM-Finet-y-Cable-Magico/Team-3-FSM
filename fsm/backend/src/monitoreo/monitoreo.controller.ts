@@ -1,8 +1,10 @@
 
-import { Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { MonitoreoService } from './monitoreo.service.js';
 import { DescubrimientoService } from './descubrimiento.service.js';
 import { LigadoCajaService } from './ligado-caja.service.js';
+import { AlertasService } from './alertas.service.js';
+import { RevisarAlertaDto } from './dto/revisar-alerta.dto.js';
 import { ConsultaLecturasDto } from './dto/consulta-lecturas.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
@@ -21,7 +23,56 @@ export class MonitoreoController {
     private monitoreo: MonitoreoService,
     private descubrimiento: DescubrimientoService,
     private ligado: LigadoCajaService,
+    private alertas: AlertasService,
   ) {}
+
+  // --- Alertas (CU-13 / CU-15 / CU-17 / CU-52 / CU-53) -----------------------
+
+  /** Contadores de alertas abiertas, para la cabecera del panel. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('alertas/resumen')
+  resumenAlertas(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.alertas.resumen(id);
+  }
+
+  /** Listado de alertas. Por defecto las pendientes. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('alertas')
+  listarAlertas(
+    @CurrentUser() user: UserPayload,
+    @Query('resueltas') resueltas?: string,
+    @Query('tipo') tipo?: string,
+    @Query('limit') limit?: string,
+    @Query('empresa') empresa?: string,
+  ) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.alertas.listar(id, resueltas === 'true', tipo, limit ? +limit : 100);
+  }
+
+  /** El jefe técnico marca la alerta como revisada (CU-52, sirve a CU-08). */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Patch('alertas/:id/revisar')
+  revisarAlerta(
+    @CurrentUser() user: UserPayload,
+    @Param('id') id: string,
+    @Body() dto: RevisarAlertaDto,
+    @Query('empresa') empresa?: string,
+  ) {
+    const idEmpresa = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.alertas.revisar(+id, idEmpresa, user.userId, dto.observacion);
+  }
+
+  /**
+   * Corre el motor de alertas. Manual acá; en producción lo dispara el poller
+   * después de cada ingesta.
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Post('alertas/evaluar')
+  evaluarAlertas(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.alertas.evaluarEmpresa(id);
+  }
 
   /** Contadores para el dashboard de monitoreo. */
   @Roles('ADMIN', 'JEFE_TECNICO')
