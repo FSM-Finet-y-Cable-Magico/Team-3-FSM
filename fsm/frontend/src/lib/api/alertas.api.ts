@@ -48,11 +48,25 @@ export function obtenerResumenAlertas(token: string) {
   return pedir<ResumenAlertas>(token, `${API_URL}/api/monitoreo/alertas/resumen`);
 }
 
-export function listarAlertas(token: string, opts?: { tipo?: string; resueltas?: boolean; limit?: number }) {
+export interface Facetas {
+  zonas: { valor: string; n: number }[];
+  cajas: { valor: string; n: number }[];
+}
+
+export function obtenerFacetas(token: string) {
+  return pedir<Facetas>(token, `${API_URL}/api/monitoreo/alertas/facetas`);
+}
+
+export function listarAlertas(
+  token: string,
+  opts?: { tipo?: string; resueltas?: boolean; limit?: number; zona?: string; caja?: string },
+) {
   const p = new URLSearchParams();
   if (opts?.tipo) p.set('tipo', opts.tipo);
   if (opts?.resueltas) p.set('resueltas', 'true');
   if (opts?.limit) p.set('limit', String(opts.limit));
+  if (opts?.zona) p.set('zona', opts.zona);
+  if (opts?.caja) p.set('caja', opts.caja);
   const qs = p.toString();
   return pedir<Alerta[]>(token, `${API_URL}/api/monitoreo/alertas${qs ? '?' + qs : ''}`);
 }

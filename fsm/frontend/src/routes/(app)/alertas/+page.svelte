@@ -7,16 +7,19 @@
   import { get } from 'svelte/store';
   import { authStore } from '$lib/stores/auth.store';
   import {
-    listarAlertas, obtenerResumenAlertas, revisarAlerta, evaluarAlertas,
-    type Alerta, type ResumenAlertas,
+    listarAlertas, obtenerResumenAlertas, revisarAlerta, evaluarAlertas, obtenerFacetas,
+    type Alerta, type ResumenAlertas, type Facetas,
   } from '$lib/api/alertas.api';
 
   let resumen = $state<ResumenAlertas | null>(null);
+  let facetas = $state<Facetas | null>(null);
   let alertas = $state<Alerta[]>([]);
   let cargando = $state(true);
   let evaluando = $state(false);
   let error = $state('');
   let filtro = $state<string>('');
+  let filtroZona = $state<string>('');
+  let filtroCaja = $state<string>('');
   let verResueltas = $state(false);
 
   const token = () => get(authStore).token ?? '';
@@ -36,9 +39,16 @@
     cargando = true;
     error = '';
     try {
-      [resumen, alertas] = await Promise.all([
+      [resumen, facetas, alertas] = await Promise.all([
         obtenerResumenAlertas(token()),
-        listarAlertas(token(), { tipo: filtro || undefined, resueltas: verResueltas, limit: 200 }),
+        obtenerFacetas(token()),
+        listarAlertas(token(), {
+          tipo: filtro || undefined,
+          zona: filtroZona || undefined,
+          caja: filtroCaja || undefined,
+          resueltas: verResueltas,
+          limit: 200,
+        }),
       ]);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Error al cargar alertas';
@@ -127,10 +137,40 @@
     </div>
   {/if}
 
-  <label class="inline-flex items-center gap-2 text-sm text-gray-600">
-    <input type="checkbox" bind:checked={verResueltas} onchange={cargar} class="rounded" />
-    Ver resueltas
-  </label>
+  <div class="bg-white rounded-xl border p-3 flex flex-wrap items-end gap-3">
+    <div>
+      <label for="f-zona" class="block text-xs text-gray-500 mb-1">Zona</label>
+      <select id="f-zona" bind:value={filtroZona} onchange={cargar}
+        class="border rounded-lg px-3 py-1.5 text-sm min-w-44">
+        <option value="">Todas</option>
+        {#each facetas?.zonas ?? [] as z}
+          <option value={z.valor}>{z.valor} ({z.n})</option>
+        {/each}
+      </select>
+    </div>
+
+    <div>
+      <label for="f-caja" class="block text-xs text-gray-500 mb-1">Caja NAP</label>
+      <select id="f-caja" bind:value={filtroCaja} onchange={cargar}
+        class="border rounded-lg px-3 py-1.5 text-sm min-w-44">
+        <option value="">Todas</option>
+        {#each facetas?.cajas ?? [] as c}
+          <option value={c.valor}>{c.valor} ({c.n})</option>
+        {/each}
+      </select>
+    </div>
+
+    <label class="inline-flex items-center gap-2 text-sm text-gray-600 pb-1.5">
+      <input type="checkbox" bind:checked={verResueltas} onchange={cargar} class="rounded" />
+      Ver resueltas
+    </label>
+
+    {#if filtro || filtroZona || filtroCaja}
+      <button
+        onclick={() => { filtro = ''; filtroZona = ''; filtroCaja = ''; cargar(); }}
+        class="pb-1.5 text-sm text-blue-600 hover:underline">Limpiar filtros</button>
+    {/if}
+  </div>
 
   {#if error}
     <div class="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">{error}</div>

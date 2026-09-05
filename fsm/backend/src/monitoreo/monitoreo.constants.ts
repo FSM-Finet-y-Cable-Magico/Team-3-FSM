@@ -52,6 +52,28 @@ export const MIN_ONT_PARA_FALLA_CAJA = 5;
 export const UMBRAL_DESCONEXION_MIN_DEFECTO = 30;
 
 /**
+ * Días caída tras los cuales una ONT deja de considerarse un incidente y pasa
+ * a ser equipo inactivo.
+ *
+ * SmartOLT conserva la ONT de un cliente dado de baja: queda OFFLINE para
+ * siempre. Sobre los datos reales de FiNet, 205 de 300 ONT caídas llevan más
+ * de un mes así, y 133 más de seis meses. Sin este techo el panel muestra 278
+ * "incidentes" de los cuales ~200 son bajas comerciales, enterrando los ~70
+ * que sí pasaron hoy.
+ *
+ * Vale para los dos niveles: la ONT inactiva no genera su alerta individual, y
+ * TAMPOCO cuenta en el porcentaje de la caja — ni en el numerador ni en el
+ * denominador. Una caja con 16 ONT de las cuales 10 son bajas viejas no está
+ * "caída al 62%": tiene 6 activas, y lo que importa es cuántas de esas 6 se
+ * cayeron.
+ *
+ * Siete días: algo caído hace más de una semana sin que nadie reaccionara no
+ * es un incidente operativo del día, es otra cosa (una baja, un equipo
+ * retirado, un proceso que falló).
+ */
+export const DIAS_MAX_INCIDENTE = 7;
+
+/**
  * Horas de silencio después de que una PERSONA revisa una alerta.
  *
  * Sin esto el motor la recrea en la siguiente corrida —la condición sigue

@@ -16,6 +16,7 @@
  * permite decirle al técnico a qué esquina ir.
  */
 import {
+  DIAS_MAX_INCIDENTE,
   MIN_ONT_PARA_FALLA_CAJA,
   SEVERIDAD,
   TIPO_ALERTA,
@@ -60,6 +61,17 @@ function estaCaida(o: EstadoOnt): boolean {
 }
 
 /**
+ * Equipo de un cliente dado de baja: sigue en SmartOLT, OFFLINE para siempre.
+ * No es un incidente y no participa de ningún cálculo — ver `DIAS_MAX_INCIDENTE`.
+ */
+function esInactiva(o: EstadoOnt, ahora: Date): boolean {
+  if (!estaCaida(o)) return false;
+  if (!o.sin_senal_desde) return false;
+  const dias = (ahora.getTime() - o.sin_senal_desde.getTime()) / 86_400_000;
+  return dias > DIAS_MAX_INCIDENTE;
+}
+
+/**
  * Evalúa las tres reglas.
  *
  * Cuando una caja se declara caída, sus ONT NO generan además la alerta
@@ -71,9 +83,13 @@ function estaCaida(o: EstadoOnt): boolean {
 export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): AlertaPropuesta[] {
   const propuestas: AlertaPropuesta[] = [];
 
+  // El padrón de trabajo son solo las ONT activas: las de bajas viejas no son
+  // incidente ni cuentan para el porcentaje de la caja.
+  const activas = onts.filter((o) => !esInactiva(o, ahora));
+
   // --- Nivel caja (CU-17 / CU-53) ---
   const porCaja = new Map<string, EstadoOnt[]>();
-  for (const o of onts) {
+  for (const o of activas) {
     const k = claveDeCaja(o);
     if (!k) continue;
     const lista = porCaja.get(k);
@@ -96,7 +112,7 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
       tipo: TIPO_ALERTA.FALLA_CAJA_NAP,
       severidad: SEVERIDAD.CRITICA,
       mensaje:
-        `${caidas} de ${miembros.length} ONT caídas (${pct}%) en ${clave.split('|')[1]} ` +
+        `${caidas} de ${miembros.length} ONT activas caídas (${pct}%) en ${clave.split('|')[1]} ` +
         `(puerto ${clave.split('|')[0]})`,
       id_registro_ont: null,
       id_cliente: null,
@@ -106,7 +122,7 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
   }
 
   // --- Nivel ONT (CU-13 potencia, CU-52 sin señal) ---
-  for (const o of onts) {
+  for (const o of activas) {
     const clave = claveDeCaja(o);
 
     if (potenciaFueraDeRango(o.potencia_dbm)) {

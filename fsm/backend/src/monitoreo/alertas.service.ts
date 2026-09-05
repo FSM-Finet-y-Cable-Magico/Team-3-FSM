@@ -111,10 +111,46 @@ export class AlertasService {
     return resumen;
   }
 
+  /** Zonas y cajas presentes en las alertas abiertas, para poblar los filtros. */
+  async facetas(id_empresa: number) {
+    const abiertas = await this.prisma.alerta.findMany({
+      where: { id_empresa, resuelta: false },
+      select: { clave_caja: true, registro: { select: { zona: true } } },
+    });
+    const zonas = new Map<string, number>();
+    const cajas = new Map<string, number>();
+    for (const a of abiertas) {
+      const z = a.registro?.zona?.replace(/\s+/g, ' ').trim();
+      if (z) zonas.set(z, (zonas.get(z) ?? 0) + 1);
+      // De "2/1/7|NAP 6" al panel le interesa el nombre, no el puerto.
+      const c = a.clave_caja?.split('|')[1];
+      if (c) cajas.set(c, (cajas.get(c) ?? 0) + 1);
+    }
+    const aLista = (m: Map<string, number>) =>
+      [...m].map(([valor, n]) => ({ valor, n })).sort((a, b) => b.n - a.n);
+    return { zonas: aLista(zonas), cajas: aLista(cajas) };
+  }
+
   /** Listado para el panel del jefe técnico (CU-12 / CU-15). */
-  async listar(id_empresa: number, resuelta = false, tipo?: string, limit = 100) {
+  async listar(
+    id_empresa: number,
+    resuelta = false,
+    tipo?: string,
+    limit = 100,
+    zona?: string,
+    caja?: string,
+  ) {
     return this.prisma.alerta.findMany({
-      where: { id_empresa, resuelta, ...(tipo ? { tipo } : {}) },
+      where: {
+        id_empresa,
+        resuelta,
+        ...(tipo ? { tipo } : {}),
+        // `zona` vive en registro_ont, así que filtra por la relación; las
+        // alertas de caja no tienen registro y quedan fuera al filtrar por zona,
+        // que es lo correcto: la caja no pertenece a una sola zona.
+        ...(zona ? { registro: { zona: { contains: zona, mode: 'insensitive' as const } } } : {}),
+        ...(caja ? { clave_caja: { contains: caja, mode: 'insensitive' as const } } : {}),
+      },
       orderBy: [{ severidad: 'asc' }, { creada_en: 'desc' }],
       take: Math.min(200, Math.max(1, limit)),
       include: {

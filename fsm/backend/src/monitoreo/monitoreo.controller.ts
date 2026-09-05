@@ -36,6 +36,14 @@ export class MonitoreoController {
     return this.alertas.resumen(id);
   }
 
+  /** Zonas y cajas con alertas abiertas, para poblar los filtros del panel. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('alertas/facetas')
+  facetasAlertas(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.alertas.facetas(id);
+  }
+
   /** Listado de alertas. Por defecto las pendientes. */
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Get('alertas')
@@ -44,10 +52,12 @@ export class MonitoreoController {
     @Query('resueltas') resueltas?: string,
     @Query('tipo') tipo?: string,
     @Query('limit') limit?: string,
+    @Query('zona') zona?: string,
+    @Query('caja') caja?: string,
     @Query('empresa') empresa?: string,
   ) {
     const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
-    return this.alertas.listar(id, resueltas === 'true', tipo, limit ? +limit : 100);
+    return this.alertas.listar(id, resueltas === 'true', tipo, limit ? +limit : 100, zona, caja);
   }
 
   /** El jefe técnico marca la alerta como revisada (CU-52, sirve a CU-08). */
