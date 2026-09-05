@@ -51,12 +51,26 @@ export interface ResultadoParseo {
 // cajas escritas sin espacio. El `|\d` las recupera sin abrir la puerta a
 // palabras que solo empiezan con "nap" (napoleón, napkin), que siguen sin
 // matchear porque después de "nap" va una letra.
+// `\bcto\b|\bcto\d` y no `cto` suelto: sin los límites de palabra, "cto"
+// matchea DENTRO de nombres propios y comunes — VI(CTO)R, HE(CTO)R,
+// CONDU(CTO)RES, DIRE(CTO)RA — y metía a esas personas en la tabla de cajas.
 const PALABRAS: Record<Exclude<TipoNodo, 'DESCONOCIDO'>, RegExp> = {
   OLT: /\bolt\b|^nodo\b|^banco central$/i,
-  CAJA_NAP: /caja|cto|\bnap(\b|\d)|atendimento|nap box/i,
+  CAJA_NAP: /caja|\bcto(\b|\d)|\bnap(\b|\d)|atendimento|nap box/i,
   MUFA: /mufa|emenda|\bceo\b|splice|deriva/i,
   POSTE: /poste|pole/i,
 };
+
+/**
+ * Chile continental e insular, con holgura. El export real trae marcadores
+ * creados sin ubicar, que quedaron con la coordenada por defecto del editor
+ * (40.749166, -73.967478 — Nueva York). Sin este chequeo entraban como cajas
+ * con ubicación falsa, y encima eran todos marcadores de clientes.
+ */
+function coordenadaPlausible(lat: number | null, lon: number | null): boolean {
+  if (lat == null || lon == null) return true; // sin coordenada es otro caso, no un error
+  return lat <= -17 && lat >= -56 && lon <= -66 && lon >= -110;
+}
 
 /** "nodo" o "NODO" a secas, sin nada más: no alcanza para asumir que es un OLT real. */
 export function esNodoAmbiguo(nombre: string): boolean {
@@ -157,9 +171,10 @@ function aNodo(pm: any, folderNombre: string | null): NodoTopologia {
   // la ubicación real de una caja/mufa — infraestructura falsa, con
   // coordenadas de donde arranca el cable, no de donde está la caja.
   const esPunto = !!pm?.Point;
+  const ubicable = coordenadaPlausible(lat, lon);
 
   return {
-    tipo: esPunto ? clasificar(pistaTipo) : 'DESCONOCIDO',
+    tipo: esPunto && ubicable ? clasificar(pistaTipo) : 'DESCONOCIDO',
     nombre,
     // 44, no 50: deja lugar para el sufijo " (n)" que agrega `desambiguar`
     // sin pasarse del `VarChar(50)` de `caja_nap.identificador_unico` /
@@ -183,11 +198,23 @@ function aNodo(pm: any, folderNombre: string | null): NodoTopologia {
 // nombre/RUT/teléfono de un cliente guardado como si fuera el identificador
 // de una caja NAP, visible después para cualquier técnico. Se corta acá,
 // antes de clasificar, no después.
-const RUT_CHILENO = /\d{1,2}\.\d{3}\.\d{3}-[\dkK]/;
+// Dos escrituras conviven en el export: con puntos (12.345.678-9) y sin ellos
+// (25833051-K). La versión anterior solo cubría la primera, así que 13
+// marcadores de cliente —con nombre, RUT y teléfono— quedaron guardados como
+// identificador de caja NAP.
+const RUT_CHILENO = /\d{1,2}\.\d{3}\.\d{3}[-.][\dkK]|\b\d{7,8}\s*-\s*[\dkK]\b/i;
+
+/**
+ * "POS 4", "POS1": la posición que ocupa un cliente DENTRO de una caja. Es un
+ * dato de la acometida del cliente, nunca del nombre de la caja — su presencia
+ * delata un marcador de cliente aunque no traiga RUT reconocible.
+ */
+const POSICION_EN_CAJA = /\bpos\s*\.?\s*\d/i;
 
 function clasificar(pista: string | null): TipoNodo {
   if (!pista) return 'DESCONOCIDO';
   if (RUT_CHILENO.test(pista)) return 'DESCONOCIDO';
+  if (POSICION_EN_CAJA.test(pista)) return 'DESCONOCIDO';
   if (esNodoAmbiguo(pista)) return 'DESCONOCIDO';
   for (const [tipo, re] of Object.entries(PALABRAS)) {
     if (re.test(pista)) return tipo as TipoNodo;
