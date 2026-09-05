@@ -87,20 +87,54 @@ export const DIAS_MAX_INCIDENTE = 7;
  */
 export const SILENCIO_TRAS_REVISION_H = 24;
 
-/** Tipos de alerta que genera el motor. `alerta.tipo` es VARCHAR(30). */
+/**
+ * Tipos de alerta. `alerta.tipo` es VARCHAR(30).
+ *
+ * Los cuatro primeros son AGREGADOS: describen una causa única que afecta a
+ * muchos clientes. Van de mayor a menor alcance, y se suprimen en cascada — si
+ * la placa entera cayó, no tiene sentido emitir además la alerta de cada una
+ * de sus cajas ni de cada ONT. Un incidente, una alerta.
+ *
+ * Esa jerarquía sale de la topología GPON real:
+ *   OLT → placa → puerto PON → caja NAP → ONT del cliente
+ */
 export const TIPO_ALERTA = {
-  /** CU-13: potencia fuera del rango operativo. */
-  POTENCIA_FUERA_RANGO: 'POTENCIA_FUERA_RANGO',
-  /** CU-52: sin señal por más del umbral de la empresa. */
-  SIN_SENAL: 'SIN_SENAL',
+  /** La OLT completa no responde. */
+  FALLA_OLT: 'FALLA_OLT',
+  /** Una placa de la OLT: afecta a muchas cajas a la vez. */
+  FALLA_PLACA_OLT: 'FALLA_PLACA_OLT',
   /** CU-17 y rama masiva de CU-53: la caja completa. */
   FALLA_CAJA_NAP: 'FALLA_CAJA_NAP',
+  /** CU-52: sin señal por más del umbral de la empresa. */
+  SIN_SENAL: 'SIN_SENAL',
+  /** CU-13: señal demasiado débil. Fibra sucia, doblada o empalme malo. */
+  POTENCIA_BAJA: 'POTENCIA_BAJA',
+  /**
+   * CU-13: demasiada señal. No es una falla de la red sino una instalación mal
+   * calibrada (ONT muy cerca de la OLT, falta atenuador), y satura el receptor.
+   * Se separa de POTENCIA_BAJA porque la acción del técnico es la opuesta.
+   */
+  POTENCIA_ALTA: 'POTENCIA_ALTA',
+  /**
+   * CU-16: todavía dentro del rango operativo pero degradándose. Es el aviso
+   * para agendar una OT PREVENTIVA antes de que el cliente se quede sin
+   * servicio.
+   */
+  POTENCIA_DEGRADANDOSE: 'POTENCIA_DEGRADANDOSE',
 } as const;
+
+/** Porcentaje de una placa caído a partir del cual se culpa a la placa. */
+export const UMBRAL_FALLA_PLACA_PCT = 20;
+/** Y de la OLT completa. */
+export const UMBRAL_FALLA_OLT_PCT = 50;
+/** Padrón activo mínimo para culpar a una placa u OLT, mismo criterio que la caja. */
+export const MIN_ONT_PARA_FALLA_PLACA = 20;
 
 export const SEVERIDAD = {
   CRITICA: 'CRITICA',
   ALTA: 'ALTA',
   MEDIA: 'MEDIA',
+  BAJA: 'BAJA',
 } as const;
 
 /**

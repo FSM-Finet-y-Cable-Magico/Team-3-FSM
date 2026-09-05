@@ -777,6 +777,8 @@ model alerta {
   clave_caja             String?   @db.VarChar(120)
   /** La caja de Tomodat, cuando se conoce. Es lo que aporta la ubicación. */
   id_caja_nap            Int?
+  /** Cuántos clientes cubre la alerta. 1 en las individuales. */
+  afectados              Int       @default(1)
 
   resuelta               Boolean   @default(false)
   resuelta_por           Int?

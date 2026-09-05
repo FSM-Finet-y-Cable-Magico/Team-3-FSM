@@ -4,11 +4,13 @@ import { API_URL } from './config.js';
 
 export interface Alerta {
   id_alerta: number;
-  tipo: 'POTENCIA_FUERA_RANGO' | 'SIN_SENAL' | 'FALLA_CAJA_NAP';
+  tipo: string;
   severidad: string | null;
   mensaje: string | null;
   clave_caja: string | null;
   id_caja_nap: number | null;
+  /** Clientes que cubre la alerta. 1 en las individuales. */
+  afectados: number;
   resuelta: boolean;
   creada_en: string;
   resuelta_en: string | null;
