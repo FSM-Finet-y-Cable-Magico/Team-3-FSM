@@ -88,18 +88,31 @@ export function normalizarNombreCaja(nombre: string | null): string | null {
 }
 
 /**
- * Claves candidatas de un nombre, de mas especifica a menos. La segunda corta
- * despues del primer numero, para tolerar la direccion que SmartOLT pega al
- * nombre ("NAP 11 ROSA ESTER 2971 TORRE C" → "NAP 11").
+ * Niveles de claves candidatas, del mas especifico al menos. Se prueban en
+ * orden y gana el primer nivel con algun match; dentro de un nivel las claves
+ * se unen (son alternativas igual de plausibles, el desempate geografico
+ * decide despues).
+ *
+ * Nivel 1: el nombre completo normalizado.
+ * Nivel 2: cortado despues del primer numero, para tolerar la direccion que
+ *          SmartOLT pega al nombre ("NAP 11 ROSA ESTER 2971 TORRE C" → "NAP 11").
+ *
+ * Caso aparte: en ZONA 7 los instaladores anotan solo el numero ("305"), sin
+ * prefijo. Ahi las alternativas son "NAP 305" y "CTO 305" a la vez.
  */
-export function clavesDe(nombre: string | null): string[] {
+export function clavesDe(nombre: string | null): string[][] {
   const full = normalizarNombreCaja(nombre);
   if (!full) return [];
+
+  if (/^\d+$/.test(full)) {
+    return [[`NAP ${full}`, `CTO ${full}`]];
+  }
+
   const toks = full.split(' ');
   const iNum = toks.findIndex((t) => /^\d+$/.test(t));
-  if (iNum === -1) return [full];
+  if (iNum === -1) return [[full]];
   const core = toks.slice(0, iNum + 1).join(' ');
-  return core === full ? [full] : [full, core];
+  return core === full ? [[full]] : [[full], [core]];
 }
 
 interface Punto {
@@ -153,10 +166,10 @@ export function emparejar(
       continue;
     }
     let hit: CajaParaLigar[] = [];
-    for (const k of clavesDe(o.odb)) {
-      const c = porClave.get(k);
-      if (c?.length) {
-        hit = c;
+    for (const nivel of clavesDe(o.odb)) {
+      const union = nivel.flatMap((k) => porClave.get(k) ?? []);
+      if (union.length) {
+        hit = union;
         break;
       }
     }
