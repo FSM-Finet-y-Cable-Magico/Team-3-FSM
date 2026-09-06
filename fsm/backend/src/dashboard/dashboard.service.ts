@@ -5,11 +5,17 @@ import { PrismaService } from '../prisma/prisma.service.js';
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
+  private async getRangoDiaSantiago(): Promise<{ inicio_dia: Date; fin_dia: Date }> {
+    const [row] = await this.prisma.$queryRaw<[{ inicio_dia: Date; fin_dia: Date }]>`
+      SELECT
+        date_trunc('day', now() AT TIME ZONE 'America/Santiago')::timestamp AS inicio_dia,
+        (date_trunc('day', now() AT TIME ZONE 'America/Santiago')::timestamp + interval '1 day')::timestamp AS fin_dia
+    `;
+    return { inicio_dia: row.inicio_dia, fin_dia: row.fin_dia };
+  }
+
   async indicadoresDelDia(id_empresa: number) {
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    const manana = new Date(hoy);
-    manana.setDate(manana.getDate() + 1);
+    const { inicio_dia, fin_dia } = await this.getRangoDiaSantiago();
     const hace30Dias = new Date();
     hace30Dias.setDate(hace30Dias.getDate() - 30);
 
@@ -22,6 +28,8 @@ export class DashboardService {
       resueltasRemoto,
       clientesConReparacionesRecurrentes,
       cargaTecnicosRaw,
+      completadasHoy,
+      tiempoPromedioCierre,
     ] = await Promise.all([
       this.prisma.orden_trabajo.groupBy({
         by: ['estado'],
@@ -50,7 +58,7 @@ export class DashboardService {
         where: {
           id_empresa,
           estado: 'COMPLETADA',
-          fecha_completada: { gte: hoy, lt: manana },
+          fecha_completada: { gte: inicio_dia, lt: fin_dia },
         },
         orderBy: { fecha_completada: 'desc' },
         take: 5,
@@ -69,7 +77,7 @@ export class DashboardService {
           id_empresa,
           estado: 'COMPLETADA',
           resuelto_remotamente: true,
-          fecha_completada: { gte: hoy, lt: manana },
+          fecha_completada: { gte: inicio_dia, lt: fin_dia },
         },
       }),
 
@@ -97,6 +105,23 @@ export class DashboardService {
         },
         _count: { id_ot: true },
       }),
+
+      this.prisma.orden_trabajo.count({
+        where: {
+          id_empresa,
+          estado: 'COMPLETADA',
+          fecha_completada: { gte: inicio_dia, lt: fin_dia },
+        },
+      }),
+
+      this.prisma.$queryRaw<[{ horas_promedio: number | null }]>`
+        SELECT AVG(EXTRACT(EPOCH FROM (fecha_completada - fecha_creacion)) / 3600) AS horas_promedio
+        FROM orden_trabajo
+        WHERE id_empresa = ${id_empresa}
+          AND estado = 'COMPLETADA'
+          AND fecha_completada >= ${inicio_dia}
+          AND fecha_completada < ${fin_dia}
+      `,
     ]);
 
     const ot_por_estado = {
@@ -121,8 +146,6 @@ export class DashboardService {
       cargaPorTecnico.set(row.id_tecnico, carga);
     }
 
-    // Los técnicos sin OT no aparecen en el groupBy: se recorre tecnicosRaw,
-    // no el conteo, para que sigan saliendo con 0 y en_curso false.
     const tecnicos = tecnicosRaw.map((t) => {
       const carga = cargaPorTecnico.get(t.id_usuario);
       return {
@@ -143,6 +166,8 @@ export class DashboardService {
       ultimas_completadas: ultimasCompletadas,
       total_clientes_activos: totalClientes,
       resueltas_remotamente_hoy: resueltasRemoto,
+      ot_completadas_hoy: completadasHoy,
+      tiempo_promedio_cierre: tiempoPromedioCierre[0]?.horas_promedio ?? null,
       fecha_actualizacion: new Date(),
     };
   }
