@@ -282,22 +282,42 @@ export class ClientesService {
     });
   }
 
-  async listarClientes(id_empresa: number, page: number = 1, limit: number = 20) {
-    const skip = (page - 1) * limit;
+  async listarClientes(
+    id_empresa: number,
+    page: number = 1,
+    limit: number = 20,
+    nombre?: string,
+    rut?: string,
+    telefono?: string,
+    direccion?: string,
+  ) {
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeLimit = Math.max(1, Number(limit) || 20);
+    const skip = (safePage - 1) * safeLimit;
+
+    const where: Record<string, unknown> = {
+      id_empresa,
+      ...(nombre && { nombre_completo: { contains: nombre, mode: 'insensitive' as const } }),
+      ...(rut && { rut: { contains: rut } }),
+      ...(telefono && { telefono: { contains: telefono } }),
+      ...(direccion && {
+        direcciones: { some: { direccion_completa: { contains: direccion, mode: 'insensitive' as const } } },
+      }),
+    };
 
     const [clientes, total] = await Promise.all([
       this.prisma.cliente.findMany({
-        where: { id_empresa },
+        where,
         orderBy: { fecha_creacion: 'desc' },
         skip,
-        take: limit,
+        take: safeLimit,
         include: {
           direcciones: {
             where: { es_principal: true },
           },
         },
       }),
-      this.prisma.cliente.count({ where: { id_empresa } }),
+      this.prisma.cliente.count({ where }),
     ]);
 
     return { data: clientes, total, page, limit };

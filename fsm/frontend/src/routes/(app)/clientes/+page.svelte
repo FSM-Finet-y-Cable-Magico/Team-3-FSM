@@ -25,13 +25,12 @@
   let loading = $state(true);
   let errorMsg = $state('');
 
-  let rutBusqueda = $state('');
+  let nombreFiltro = $state('');
+  let rutFiltro = $state('');
   let rutValido = $state(false);
+  let telefonoFiltro = $state('');
+  let direccionFiltro = $state('');
   let buscando = $state(false);
-  let busquedaError = $state('');
-
-  let clienteEncontrado: clientesApi.ClienteConHistorial | null = $state(null);
-  let showFicha = $state(false);
 
   onMount(() => {
     authStore.checkAuth();
@@ -52,10 +51,37 @@
   });
 
   async function cargarClientes() {
+    page = 1;
+    buscando = true;
     loading = true;
     errorMsg = '';
     try {
-      const result = await clientesApi.listarClientes(token, page, limit);
+      const result = await clientesApi.listarClientes(token, page, limit, {
+        nombre: nombreFiltro || undefined,
+        rut: rutFiltro || undefined,
+        telefono: telefonoFiltro || undefined,
+        direccion: direccionFiltro || undefined,
+      });
+      clientes = result.data;
+      total = result.total;
+    } catch (err) {
+      errorMsg = err instanceof Error ? err.message : 'Error al cargar clientes';
+    } finally {
+      buscando = false;
+      loading = false;
+    }
+  }
+
+  async function cargarPagina() {
+    loading = true;
+    errorMsg = '';
+    try {
+      const result = await clientesApi.listarClientes(token, page, limit, {
+        nombre: nombreFiltro || undefined,
+        rut: rutFiltro || undefined,
+        telefono: telefonoFiltro || undefined,
+        direccion: direccionFiltro || undefined,
+      });
       clientes = result.data;
       total = result.total;
     } catch (err) {
@@ -66,34 +92,8 @@
   }
 
   function handleRutChange({ rut, valido }: { rut: string; valido: boolean }) {
-    rutBusqueda = rut;
+    rutFiltro = rut;
     rutValido = valido;
-  }
-
-  async function buscarPorRut() {
-    if (!rutValido || !rutBusqueda) {
-      busquedaError = 'Ingrese un RUT válido';
-      return;
-    }
-    buscando = true;
-    busquedaError = '';
-    clienteEncontrado = null;
-    try {
-      clienteEncontrado = await clientesApi.buscarPorRut(token, rutBusqueda);
-      showFicha = true;
-    } catch (err) {
-      busquedaError = err instanceof Error ? err.message : 'Error al buscar';
-    } finally {
-      buscando = false;
-    }
-  }
-
-  function cerrarFicha() {
-    showFicha = false;
-    clienteEncontrado = null;
-    rutBusqueda = '';
-    rutValido = false;
-    busquedaError = '';
   }
 
   const estadoConfig: Record<string, { bg: string; text: string }> = {
@@ -129,15 +129,28 @@
   {/if}
 </div>
 
-<!-- Búsqueda por RUT -->
+<!-- Búsqueda por múltiples criterios -->
 <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 mb-6">
-  <p class="text-sm font-medium text-slate-700 mb-3">Búsqueda rápida por RUT</p>
-  <div class="flex items-end gap-3">
-    <div class="flex-1">
+  <p class="text-sm font-medium text-slate-700 mb-3">Búsqueda de clientes</p>
+  <div class="flex flex-wrap items-end gap-3">
+    <div class="flex-1 min-w-[180px]">
+      <label class="block text-xs font-medium text-gray-500 mb-1">Nombre</label>
+      <input type="text" bind:value={nombreFiltro} placeholder="Nombre parcial..." class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+    </div>
+    <div class="flex-1 min-w-[180px]">
+      <label class="block text-xs font-medium text-gray-500 mb-1">RUT</label>
       <RutInput onchange={handleRutChange} />
     </div>
+    <div class="flex-1 min-w-[180px]">
+      <label class="block text-xs font-medium text-gray-500 mb-1">Teléfono</label>
+      <input type="text" bind:value={telefonoFiltro} placeholder="Teléfono parcial..." class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+    </div>
+    <div class="flex-1 min-w-[180px]">
+      <label class="block text-xs font-medium text-gray-500 mb-1">Dirección</label>
+      <input type="text" bind:value={direccionFiltro} placeholder="Dirección parcial..." class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+    </div>
     <button
-      onclick={buscarPorRut}
+      onclick={cargarClientes}
       disabled={buscando}
       class="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-5 rounded-xl transition-all disabled:opacity-50 text-sm"
     >
@@ -154,45 +167,7 @@
       {buscando ? 'Buscando...' : 'Buscar'}
     </button>
   </div>
-  {#if busquedaError}
-    <p class="text-red-500 text-sm mt-2">{busquedaError}</p>
-  {/if}
 </div>
-
-<!-- Ficha del cliente encontrado -->
-{#if showFicha && clienteEncontrado}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 mb-6">
-    <div class="flex items-start justify-between">
-      <div>
-        <div class="flex items-center gap-2 mb-1">
-          <h3 class="font-semibold text-slate-800">{clienteEncontrado.cliente.nombre_completo}</h3>
-          {#if clienteEncontrado.cliente.es_conflictivo}
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">
-              CONFLICTIVO
-            </span>
-          {/if}
-        </div>
-        <p class="text-slate-500 font-mono text-sm">{clienteEncontrado.cliente.rut}</p>
-        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-2 {estadoClase(clienteEncontrado.cliente.estado)}">
-          {clienteEncontrado.cliente.estado}
-        </span>
-      </div>
-      <button onclick={cerrarFicha} class="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    </div>
-    <div class="mt-4 pt-4 border-t border-slate-100 flex gap-3">
-      <button
-        onclick={() => goto(`/clientes/${clienteEncontrado!.cliente.rut}`)}
-        class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-4 rounded-xl transition-colors"
-      >
-        Ver ficha completa
-      </button>
-    </div>
-  </div>
-{/if}
 
 {#if errorMsg}
   <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm">{errorMsg}</div>
@@ -267,7 +242,7 @@
         </span>
         <div class="flex items-center gap-2">
           <button
-            onclick={() => { page = Math.max(1, page - 1); cargarClientes(); }}
+            onclick={() => { page = Math.max(1, page - 1); cargarPagina(); }}
             disabled={page <= 1}
             class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
@@ -277,7 +252,7 @@
             {page}
           </span>
           <button
-            onclick={() => { page++; cargarClientes(); }}
+            onclick={() => { page++; cargarPagina(); }}
             disabled={page * limit >= total}
             class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >

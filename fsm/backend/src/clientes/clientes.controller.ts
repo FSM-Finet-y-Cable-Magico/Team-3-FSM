@@ -15,10 +15,22 @@ export class ClientesController {
   @Get()
   listarClientes(
     @CurrentUser() user: { id_empresa: number },
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('nombre') nombre?: string,
+    @Query('rut') rut?: string,
+    @Query('telefono') telefono?: string,
+    @Query('direccion') direccion?: string,
   ) {
-    return this.clientesService.listarClientes(user.id_empresa, page ?? 1, limit ?? 20);
+    return this.clientesService.listarClientes(
+      user.id_empresa,
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+      nombre,
+      rut,
+      telefono,
+      direccion,
+    );
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO')
