@@ -5,6 +5,7 @@
   import { authStore } from '$lib/stores/auth.store';
   import * as historialApi from '$lib/api/historial.api';
   import { urlMiniaturaEvidencia } from '$lib/utils/cloudinary';
+  import { potenciaEnRango } from '$lib/utils/potencia';
   import EstadoBadge from './EstadoBadge.svelte';
 
   interface Props {
@@ -47,9 +48,6 @@
     if (potenciaEnRango(potencia)) return { borde: 'ring-1 ring-green-300', fondo: 'bg-green-100', texto: 'text-green-600' };
     return { borde: 'ring-1 ring-red-300', fondo: 'bg-red-100', texto: 'text-red-600' };
   });
-
-  const potenciaEnRango = (p: number | null | undefined) =>
-    p !== null && p !== undefined && p >= -24 && p <= -19;
 </script>
 
 {#if loading}

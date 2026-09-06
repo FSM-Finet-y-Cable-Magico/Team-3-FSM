@@ -282,24 +282,27 @@
               <p class="text-sm text-gray-500">Sin órdenes de trabajo registradas</p>
             {:else}
               <div class="space-y-3">
-                {#each historialOT as ot}
-<a href="/ot/{ot.id_ot}" class="block border-b border-gray-100 pb-3 last:border-0 hover:bg-gray-50 rounded-lg px-2 -mx-2 transition-colors">
-                      <div class="flex items-center justify-between">
-                        <span class="text-sm font-medium">{ot.tipo_ot}</span>
-                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {estadoColor(ot.estado)}">
-                          {ot.estado}
-                        </span>
-                      </div>
-                      <p class="text-xs text-gray-500 mt-1">
-                        Prioridad: {ot.prioridad}
-                      </p>
-                      <p class="text-xs text-gray-400">
-                        {new Date(ot.fecha_creacion).toLocaleDateString('es-CL')}
-                        {#if ot.fecha_completada}
-                          &rarr; {new Date(ot.fecha_completada).toLocaleDateString('es-CL')}
-                        {/if}
-                      </p>
-                    </a>
+                {#each historialOT as ot (ot.id_ot)}
+                  <a
+                    href="/ot/{ot.id_ot}"
+                    class="block border-b border-gray-100 pb-3 last:border-0 hover:bg-gray-50 rounded-lg px-2 -mx-2 transition-colors"
+                  >
+                    <div class="flex items-center justify-between">
+                      <span class="text-sm font-medium">{ot.tipo_ot}</span>
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {estadoColor(ot.estado)}">
+                        {ot.estado}
+                      </span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">
+                      Prioridad: {ot.prioridad}
+                    </p>
+                    <p class="text-xs text-gray-400">
+                      {new Date(ot.fecha_creacion).toLocaleDateString('es-CL')}
+                      {#if ot.fecha_completada}
+                        &rarr; {new Date(ot.fecha_completada).toLocaleDateString('es-CL')}
+                      {/if}
+                    </p>
+                  </a>
                 {/each}
               </div>
             {/if}
