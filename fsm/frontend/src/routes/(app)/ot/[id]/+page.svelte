@@ -419,6 +419,74 @@
       </div>
     {/if}
 
+    <!-- Galería de fotos -->
+    {#if ot.fotos && ot.fotos.length > 0}
+      <div class="bg-white rounded-xl shadow p-6">
+        <h3 class="font-semibold text-gray-700 mb-4">Galería de evidencia</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {#each ot.fotos as foto}
+            <img
+              src={foto.url_cloudinary}
+              alt={foto.formato}
+              class="w-full h-48 object-cover rounded-lg shadow-sm"
+            />
+          {/each}
+        </div>
+      </div>
+    {:else}
+      <div class="bg-white rounded-xl shadow p-6">
+        <h3 class="font-semibold text-gray-700 mb-2">Galería de evidencia</h3>
+        <p class="text-sm text-gray-400">Sin fotografías de evidencia registradas.</p>
+      </div>
+    {/if}
+
+    <!-- Materiales utilizados -->
+    <div class="bg-white rounded-xl shadow p-6">
+      <h3 class="font-semibold text-gray-700 mb-4">Materiales utilizados</h3>
+      {#if ot.materiales && ot.materiales.length > 0}
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-200">
+              <th class="text-left py-2 px-3 text-gray-600 font-medium">Equipo</th>
+              <th class="text-left py-2 px-3 text-gray-600 font-medium">Categoría</th>
+              <th class="text-right py-2 px-3 text-gray-600 font-medium">Cantidad</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each ot.materiales as mat}
+              <tr class="border-b border-gray-100">
+                <td class="py-2 px-3 text-gray-900">{mat.tipo_equipo?.nombre ?? '-'}</td>
+                <td class="py-2 px-3 text-gray-500">{mat.tipo_equipo?.categoria ?? '-'}</td>
+                <td class="py-2 px-3 text-right text-gray-900">{mat.cantidad}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {:else}
+        <p class="text-sm text-gray-400">Sin materiales registrados.</p>
+      {/if}
+    </div>
+
+    <!-- Potencia óptica medida -->
+    {#if ot.potencia_optica_dbm !== null && ot.potencia_optica_dbm !== undefined}
+      <div class="bg-white rounded-xl shadow p-6">
+        <h3 class="font-semibold text-gray-700 mb-4">Potencia óptica medida</h3>
+        <p class="text-2xl font-bold {ot.potencia_optica_dbm < -24 ? 'text-red-600' : ot.potencia_optica_dbm > -19 ? 'text-amber-600' : 'text-green-600'}">
+          {ot.potencia_optica_dbm} dBm
+        </p>
+        {#if ot.potencia_optica_dbm < -24}
+          <p class="text-xs text-red-500 mt-1">Potencia baja (por debajo de -24 dBm)</p>
+        {:else if ot.potencia_optica_dbm > -19}
+          <p class="text-xs text-amber-500 mt-1">Potencia alta (por encima de -19 dBm)</p>
+        {/if}
+      </div>
+    {:else}
+      <div class="bg-white rounded-xl shadow p-6">
+        <h3 class="font-semibold text-gray-700 mb-4">Potencia óptica medida</h3>
+        <p class="text-sm text-gray-400">Sin medición de potencia óptica registrada.</p>
+      </div>
+    {/if}
+
     <!-- Historial -->
     {#if ot.historial && ot.historial.length > 0}
       <div class="bg-white rounded-xl shadow p-6">

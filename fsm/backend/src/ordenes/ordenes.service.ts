@@ -265,6 +265,9 @@ export class OrdenesService {
         // mas", este `take` hay que revisarlo y probablemente convertirlo en un
         // endpoint aparte y paginado.
         historial: { orderBy: { fecha_hora: 'desc' }, take: 20 },
+        fotos: { select: { url_cloudinary: true, formato: true } },
+        materiales: { include: { tipo_equipo: { select: { nombre: true, categoria: true } } } },
+        llamada: true,
       },
     });
 

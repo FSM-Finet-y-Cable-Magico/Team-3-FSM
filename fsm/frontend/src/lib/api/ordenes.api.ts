@@ -34,6 +34,10 @@ export interface OT {
     fecha_hora: string;
     observaciones?: string | null;
   }[];
+  fotos?: { url_cloudinary: string; formato: string }[];
+  materiales?: { id_tipo_equipo: number; cantidad: number; tipo_equipo?: { nombre: string; categoria: string } }[];
+  llamada?: { resultado: string; observaciones?: string | null } | null;
+  potencia_optica_dbm?: number | null;
 }
 
 export interface Tecnico {
