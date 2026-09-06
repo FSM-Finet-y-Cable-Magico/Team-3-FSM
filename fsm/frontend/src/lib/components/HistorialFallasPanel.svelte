@@ -1,8 +1,10 @@
 <script lang="ts">
+  import Spinner from '$lib/components/Spinner.svelte';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { authStore } from '$lib/stores/auth.store';
   import * as historialApi from '$lib/api/historial.api';
+  import { urlMiniaturaEvidencia } from '$lib/utils/cloudinary';
   import EstadoBadge from './EstadoBadge.svelte';
 
   interface Props {
@@ -39,16 +41,20 @@
     return new Date(f).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
   }
 
+  const estiloPotencia = $derived.by(() => {
+    const potencia = data?.estadisticas.potencia_promedio_dbm;
+    if (potencia == null) return { borde: '', fondo: 'bg-slate-100', texto: 'text-slate-400' };
+    if (potenciaEnRango(potencia)) return { borde: 'ring-1 ring-green-300', fondo: 'bg-green-100', texto: 'text-green-600' };
+    return { borde: 'ring-1 ring-red-300', fondo: 'bg-red-100', texto: 'text-red-600' };
+  });
+
   const potenciaEnRango = (p: number | null | undefined) =>
     p !== null && p !== undefined && p >= -24 && p <= -19;
 </script>
 
 {#if loading}
   <div class="flex items-center gap-2 py-4 text-slate-400 text-sm">
-    <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-    </svg>
+    <Spinner class="h-4 w-4" />
     Cargando historial...
   </div>
 {:else if error}
@@ -157,15 +163,9 @@
       </div>
 
       <div class="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3
-        {data.estadisticas.potencia_promedio_dbm !== null
-          ? potenciaEnRango(data.estadisticas.potencia_promedio_dbm) ? 'ring-1 ring-green-300' : 'ring-1 ring-red-300'
-          : ''}">
-        <div class="{data.estadisticas.potencia_promedio_dbm !== null
-          ? potenciaEnRango(data.estadisticas.potencia_promedio_dbm) ? 'bg-green-100' : 'bg-red-100'
-          : 'bg-slate-100'} rounded-lg p-2">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 {data.estadisticas.potencia_promedio_dbm !== null
-            ? potenciaEnRango(data.estadisticas.potencia_promedio_dbm) ? 'text-green-600' : 'text-red-600'
-            : 'text-slate-400'}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        {estiloPotencia.borde}">
+        <div class="{estiloPotencia.fondo} rounded-lg p-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 {estiloPotencia.texto}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
           </svg>
         </div>
@@ -284,8 +284,9 @@
                           <div class="flex gap-2 flex-wrap">
                             {#each ot.fotos.slice(0, 3) as foto}
                               <img
-                                src={foto.url_cloudinary}
+                                src={urlMiniaturaEvidencia(foto.url_cloudinary)}
                                 alt="evidencia"
+                                loading="lazy"
                                 class="h-16 w-16 object-cover rounded-lg border border-slate-200"
                               />
                             {/each}

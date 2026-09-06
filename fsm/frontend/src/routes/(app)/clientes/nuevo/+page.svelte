@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { crearTemporizador } from '$lib/utils/temporizador';
+  const programar = crearTemporizador();
+  import Alert from '$lib/components/Alert.svelte';
+  import Spinner from '$lib/components/Spinner.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
@@ -91,7 +95,7 @@
 
       const cliente = await clientesApi.registrarCliente(token, dto);
       successMsg = 'Cliente registrado correctamente';
-      setTimeout(() => goto(`/clientes/${cliente.rut}`), 500);
+      programar(() => goto(`/clientes/${cliente.rut}`), 500);
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : 'Error al registrar';
     } finally {
@@ -136,7 +140,7 @@
         </div>
 
         {#if errorMsg}
-          <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">{errorMsg}</div>
+          <Alert class="rounded-lg mb-4 text-sm">{errorMsg}</Alert>
         {/if}
         {#if successMsg}
           <div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">{successMsg}</div>
@@ -149,10 +153,7 @@
             class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center"
           >
             {#if loading}
-              <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-              </svg>
+              <Spinner class="-ml-1 mr-2 h-4 w-4 text-white" />
             {/if}
             {loading ? 'Registrando...' : 'Registrar cliente'}
           </button>
