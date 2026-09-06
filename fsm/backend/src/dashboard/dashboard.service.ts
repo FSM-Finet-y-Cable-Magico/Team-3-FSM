@@ -1,21 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
-  private async getRangoDiaSantiago(): Promise<{ inicio_dia: Date; fin_dia: Date }> {
-    const [row] = await this.prisma.$queryRaw<[{ inicio_dia: Date; fin_dia: Date }]>`
-      SELECT
-        date_trunc('day', now() AT TIME ZONE 'America/Santiago')::timestamp AS inicio_dia,
-        (date_trunc('day', now() AT TIME ZONE 'America/Santiago')::timestamp + interval '1 day')::timestamp AS fin_dia
-    `;
-    return { inicio_dia: row.inicio_dia, fin_dia: row.fin_dia };
-  }
-
   async indicadoresDelDia(id_empresa: number) {
-    const { inicio_dia, fin_dia } = await this.getRangoDiaSantiago();
+    // La jornada se resuelve con el mismo helper que usa la vista de terreno
+    // (CU-11): devuelve instantes, no hora de pared, asi que la ventana no se
+    // corre contra `fecha_completada`, que es un timestamp sin zona en UTC.
+    // Calcularla en SQL con AT TIME ZONE daba medianoche de Santiago como texto
+    // sin zona, y el dashboard terminaba contando de 21:00 a 21:00.
+    const { desde: inicio_dia, hasta: fin_dia } = rangoDiaOperacion();
     const hace30Dias = new Date();
     hace30Dias.setDate(hace30Dias.getDate() - 30);
 
@@ -114,8 +111,12 @@ export class DashboardService {
         },
       }),
 
+      // El ::float8 no es decorativo: EXTRACT(EPOCH ...) devuelve numeric, que
+      // Prisma mapea a Decimal y se serializa a JSON como string. La vista hace
+      // .toFixed() sobre este valor y reventaba el dashboard entero apenas se
+      // cerraba la primera OT del dia.
       this.prisma.$queryRaw<[{ horas_promedio: number | null }]>`
-        SELECT AVG(EXTRACT(EPOCH FROM (fecha_completada - fecha_creacion)) / 3600) AS horas_promedio
+        SELECT AVG(EXTRACT(EPOCH FROM (fecha_completada - fecha_creacion)) / 3600)::float8 AS horas_promedio
         FROM orden_trabajo
         WHERE id_empresa = ${id_empresa}
           AND estado = 'COMPLETADA'
@@ -146,6 +147,8 @@ export class DashboardService {
       cargaPorTecnico.set(row.id_tecnico, carga);
     }
 
+    // Los técnicos sin OT no aparecen en el groupBy: se recorre tecnicosRaw,
+    // no el conteo, para que sigan saliendo con 0 y en_curso false.
     const tecnicos = tecnicosRaw.map((t) => {
       const carga = cargaPorTecnico.get(t.id_usuario);
       return {

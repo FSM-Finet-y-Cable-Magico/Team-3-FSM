@@ -210,13 +210,14 @@
         clickable={true}
         href="/ot?estado=EN_CURSO"
       />
+      <!-- Sin enlace a proposito: la tarjeta cuenta solo las de hoy y /ot todavia
+           no lee searchParams, asi que el destino mostraba el listado completo.
+           Cuando /ot filtre por URL, apuntar al dia, no a todas las COMPLETADA. -->
       <StatCard
         titulo="Completadas Hoy"
         valor={indicadores.ot_completadas_hoy}
         color="green"
         icono={ICONO_CHECK}
-        clickable={true}
-        href="/ot?estado=COMPLETADA"
       />
       <StatCard
         titulo="OT Criticas"
@@ -228,8 +229,8 @@
       />
     </div>
 
-    <!-- Fila 2: 2 cards secundarias -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <!-- Fila 2: 4 cards secundarias -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <StatCard
         titulo="Clientes Activos"
         valor={indicadores.total_clientes_activos}
@@ -256,8 +257,8 @@
       />
       <StatCard
         titulo="Tiempo Promedio Cierre"
-        valor={indicadores.tiempo_promedio_cierre !== null ? `${indicadores.tiempo_promedio_cierre.toFixed(1)} h` : '-'}
-        subtitulo={indicadores.tiempo_promedio_cierre !== null ? 'prom. por OT' : 'sin datos'}
+        valor={indicadores.tiempo_promedio_cierre != null ? `${indicadores.tiempo_promedio_cierre.toFixed(1)} h` : '-'}
+        subtitulo={indicadores.tiempo_promedio_cierre != null ? 'prom. por OT' : 'sin datos'}
         color="blue"
         icono={ICONO_HOURGLASS}
       />
