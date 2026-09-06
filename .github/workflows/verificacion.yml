@@ -73,6 +73,17 @@ jobs:
     defaults:
       run:
         working-directory: fsm/frontend
+    # `src/lib/api/config.ts` importa PUBLIC_API_URL de `$env/static/public`,
+    # que incrusta el valor en el bundle AL COMPILAR y por lo tanto exige que
+    # exista ya en `check` y en `build`. En los PC de cada uno sale del `.env`,
+    # que esta gitignoreado, asi que en CI no hay ninguno y sin esto el build
+    # muere con: "PUBLIC_API_URL" is not exported by "virtual:env/static/public".
+    #
+    # El valor es un marcador de posicion a proposito: CI solo compila y revisa
+    # tipos, nunca le pega al backend. El valor real de cada ambiente lo pone
+    # Vercel en su propio build.
+    env:
+      PUBLIC_API_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
 
