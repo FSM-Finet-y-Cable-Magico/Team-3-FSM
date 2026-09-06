@@ -66,7 +66,18 @@ const prisma = {
   historial_ot: { create: jest.fn(async (_args: Prisma.historial_otCreateArgs) => ({})) },
   log_auditoria: { create: jest.fn(async (_args: Prisma.log_auditoriaCreateArgs) => ({})) },
   llamada_cortes: { create: jest.fn(async (_args: Prisma.llamada_cortesCreateArgs) => ({})) },
-  tipo_equipo: { findFirst: jest.fn(async () => ({ nombre: 'Cable' })) },
+  tipo_equipo: {
+    findFirst: jest.fn(async () => ({ nombre: 'Cable' })),
+    // La rama de monitoreo agrego al cierre una validacion de que el material
+    // exista en el catalogo de la empresa (ACUERDO G1-G3: G3 valida existencia,
+    // G1 valida saldo). Devolver el largo de `where.id_tipo_equipo.in` simula
+    // "todos los ids existen", que es el caso feliz que ejercitan estos tests;
+    // un doble que devolviera 0 haria fallar el cierre con 400, no con 500.
+    count: jest.fn(async (args: Prisma.tipo_equipoCountArgs = {}) => {
+      const ids = (args.where?.id_tipo_equipo as { in?: number[] })?.in;
+      return ids ? ids.length : 1;
+    }),
+  },
   stock_consumible: {
     findFirst: jest.fn(async () => ({ id_stock: 1, id_bodega: null, cantidad_disponible: 10 })),
     update: jest.fn(async (_args: Prisma.stock_consumibleUpdateArgs) => ({})),
