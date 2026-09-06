@@ -15,10 +15,12 @@ export interface ClienteFicha {
     comuna: string;
     ciudad?: string;
   };
-  contrato_activo?: {
+  contratos_activos?: Array<{
     id_contrato: number;
-    plan: { nombre_comercial: string; velocidad_mbps: number };
-  };
+    fecha_inicio: string;
+    estado: string;
+    plan: { nombre_comercial: string; precio_mensual: number; velocidad_mbps: number };
+  }>;
   unidad_instalada?: {
     numero_serie: string;
     modelo: string;

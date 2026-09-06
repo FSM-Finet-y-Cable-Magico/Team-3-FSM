@@ -98,7 +98,6 @@ export class ClientesService {
         contratos: {
           where: { estado: 'ACTIVO' },
           include: { plan: true },
-          take: 1,
         },
       },
     });
@@ -145,7 +144,7 @@ export class ClientesService {
         obs_conflictivo: cliente.obs_conflictivo,
         fecha_creacion: cliente.fecha_creacion,
         direccion_principal: cliente.direcciones[0] ?? null,
-        contrato_activo: cliente.contratos[0] ?? null,
+        contratos_activos: cliente.contratos,
       },
       historial_ot,
       alerta_reparaciones_30_dias: {
@@ -167,6 +166,10 @@ export class ClientesService {
       include: {
         direcciones: {
           where: { es_principal: true },
+        },
+        contratos: {
+          where: { estado: 'ACTIVO' },
+          include: { plan: true },
         },
       },
     });

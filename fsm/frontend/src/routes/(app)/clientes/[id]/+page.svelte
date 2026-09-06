@@ -213,10 +213,38 @@
                     <p class="text-sm text-gray-500">{cliente.direccion_principal.comuna}{cliente.direccion_principal.ciudad ? ', ' + cliente.direccion_principal.ciudad : ''}</p>
                   </div>
                 {/if}
-                {#if cliente.contrato_activo}
-                  <div>
-                    <span class="text-xs text-gray-500 uppercase">Plan contratado</span>
-                    <p class="text-sm">{cliente.contrato_activo.plan.nombre_comercial} ({cliente.contrato_activo.plan.velocidad_mbps} Mbps)</p>
+                {#if cliente.contratos_activos && cliente.contratos_activos.length > 0}
+                  <details class="mt-4">
+                    <summary class="cursor-pointer text-sm font-medium text-blue-600 hover:text-blue-800">
+                      Servicios activos ({cliente.contratos_activos.length})
+                    </summary>
+                    <div class="mt-2 space-y-3">
+                      {#each cliente.contratos_activos as servicio}
+                        <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                          <div class="flex items-center justify-between">
+                            <span class="text-sm font-semibold text-gray-800">{servicio.plan.nombre_comercial}</span>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {estadoColor(servicio.estado)}">
+                              {servicio.estado}
+                            </span>
+                          </div>
+                          <div class="mt-2 grid grid-cols-2 gap-2 text-sm text-gray-600">
+                            <span>{servicio.plan.velocidad_mbps} Mbps</span>
+                            <span class="text-right font-medium">
+                              {servicio.plan.precio_mensual !== null && servicio.plan.precio_mensual !== undefined
+                                ? new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(Number(servicio.plan.precio_mensual))
+                                : 'N/A'}
+                            </span>
+                          </div>
+                          <p class="text-xs text-gray-400 mt-1">
+                            Inicio: {new Date(servicio.fecha_inicio).toLocaleDateString('es-CL')}
+                          </p>
+                        </div>
+                      {/each}
+                    </div>
+                  </details>
+                {:else}
+                  <div class="mt-4">
+                    <p class="text-sm text-gray-500">Sin servicios activos</p>
                   </div>
                 {/if}
                 {#if cliente.unidad_instalada}
