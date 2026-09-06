@@ -19,7 +19,11 @@ export interface ClienteFicha {
     id_contrato: number;
     fecha_inicio: string;
     estado: string;
-    plan: { nombre_comercial: string; precio_mensual: number; velocidad_mbps: number };
+    plan: {
+      nombre_comercial: string;
+      precio_mensual: number;
+      velocidad_mbps: number | null;
+    } | null;
   }>;
   unidad_instalada?: {
     numero_serie: string;

@@ -138,6 +138,19 @@
     return map[estado] ?? 'bg-gray-100 text-gray-800';
   }
 
+  function formatearFechaISO(fecha: string): string {
+    // Llega como YYYY-MM-DD. Se arma en hora local porque new Date(iso) lo
+    // interpretaria como UTC y en Chile mostraria el dia anterior.
+    const [anio, mes, dia] = fecha.split('-').map(Number);
+    if (!anio || !mes || !dia) return fecha;
+    return new Date(anio, mes - 1, dia).toLocaleDateString('es-CL');
+  }
+
+  function formatearPrecio(valor: number | null | undefined): string {
+    if (valor === null || valor === undefined || Number.isNaN(valor)) return 'N/A';
+    return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(valor);
+  }
+
 </script>
     {#if loading}
       <div class="text-center py-8 text-gray-500">Cargando...</div>
@@ -219,24 +232,23 @@
                       Servicios activos ({cliente.contratos_activos.length})
                     </summary>
                     <div class="mt-2 space-y-3">
-                      {#each cliente.contratos_activos as servicio}
+                      {#each cliente.contratos_activos as servicio (servicio.id_contrato)}
                         <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                          <div class="flex items-center justify-between">
+                          {#if servicio.plan}
                             <span class="text-sm font-semibold text-gray-800">{servicio.plan.nombre_comercial}</span>
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {estadoColor(servicio.estado)}">
-                              {servicio.estado}
-                            </span>
-                          </div>
-                          <div class="mt-2 grid grid-cols-2 gap-2 text-sm text-gray-600">
-                            <span>{servicio.plan.velocidad_mbps} Mbps</span>
-                            <span class="text-right font-medium">
-                              {servicio.plan.precio_mensual !== null && servicio.plan.precio_mensual !== undefined
-                                ? new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(Number(servicio.plan.precio_mensual))
-                                : 'N/A'}
-                            </span>
-                          </div>
+                            <div class="mt-2 grid grid-cols-2 gap-2 text-sm text-gray-600">
+                              <span>
+                                {servicio.plan.velocidad_mbps !== null
+                                  ? servicio.plan.velocidad_mbps + ' Mbps'
+                                  : 'Velocidad no definida'}
+                              </span>
+                              <span class="text-right font-medium">{formatearPrecio(servicio.plan.precio_mensual)}</span>
+                            </div>
+                          {:else}
+                            <span class="text-sm font-semibold text-gray-500 italic">Plan no asignado</span>
+                          {/if}
                           <p class="text-xs text-gray-400 mt-1">
-                            Inicio: {new Date(servicio.fecha_inicio).toLocaleDateString('es-CL')}
+                            Inicio: {formatearFechaISO(servicio.fecha_inicio)}
                           </p>
                         </div>
                       {/each}
