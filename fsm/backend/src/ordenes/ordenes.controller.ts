@@ -8,12 +8,9 @@ import {
   Query,
   UseInterceptors,
   UploadedFile,
-  BadRequestException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { v2 as cloudinary } from 'cloudinary';
 import { OrdenesService } from './ordenes.service.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
@@ -23,27 +20,17 @@ import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 
-interface UserPayload {
-  userId: number;
-  id_empresa: number;
-  rol: string;
-}
+import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 
 // Sin @UseGuards: JwtAuthGuard y RolesGuard son APP_GUARD globales.
 @Controller('ordenes')
 export class OrdenesController {
-  constructor(private ordenesService: OrdenesService) {
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET,
-    });
-  }
+  constructor(private ordenesService: OrdenesService) {}
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
   @Get()
   listarOT(
-    @CurrentUser() user: UserPayload,
+    @CurrentUser() user: UsuarioAutenticado,
     @Query('estado') estado?: string,
     @Query('tipo_ot') tipo_ot?: string,
     @Query('prioridad') prioridad?: string,
@@ -79,19 +66,19 @@ export class OrdenesController {
 
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Get('tecnicos')
-  listarTecnicos(@CurrentUser() user: UserPayload) {
+  listarTecnicos(@CurrentUser() user: UsuarioAutenticado) {
     return this.ordenesService.listarTecnicos(user.id_empresa);
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
   @Get('historial-fallas/:id_cliente')
-  historialFallas(@Param('id_cliente') idCliente: string, @CurrentUser() user: UserPayload) {
+  historialFallas(@Param('id_cliente') idCliente: string, @CurrentUser() user: UsuarioAutenticado) {
     return this.ordenesService.historialFallas(+idCliente, user.id_empresa);
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
   @Get('materiales')
-  obtenerMateriales(@CurrentUser() user: UserPayload) {
+  obtenerMateriales(@CurrentUser() user: UsuarioAutenticado) {
     return this.ordenesService.obtenerMateriales(user.id_empresa);
   }
 
@@ -103,13 +90,13 @@ export class OrdenesController {
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
   @Get(':id')
-  obtenerOT(@Param('id') id: string, @CurrentUser() user: UserPayload) {
-    return this.ordenesService.obtenerOT(+id, user.id_empresa);
+  obtenerOT(@Param('id') id: string, @CurrentUser() user: UsuarioAutenticado) {
+    return this.ordenesService.obtenerOT(+id, user);
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Post()
-  crearOT(@Body() dto: CrearOtDto, @CurrentUser() user: UserPayload) {
+  crearOT(@Body() dto: CrearOtDto, @CurrentUser() user: UsuarioAutenticado) {
     return this.ordenesService.crearOT(dto, user.userId, user.id_empresa);
   }
 
@@ -118,7 +105,7 @@ export class OrdenesController {
   asignarTecnico(
     @Param('id') id: string,
     @Body() dto: AsignarTecnicoDto,
-    @CurrentUser() user: UserPayload,
+    @CurrentUser() user: UsuarioAutenticado,
   ) {
     return this.ordenesService.asignarTecnico(+id, dto, user.userId, user.id_empresa);
   }
@@ -129,40 +116,9 @@ export class OrdenesController {
   async subirFoto(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
-    @CurrentUser() user: UserPayload,
+    @CurrentUser() user: UsuarioAutenticado,
   ) {
-    if (!file) throw new BadRequestException('No se recibió ningún archivo');
-
-    const ot = await this.ordenesService.obtenerOT(+id, user.id_empresa);
-    if (ot.id_tecnico !== user.userId) {
-      throw new ForbiddenException('Solo el técnico asignado puede subir evidencias a esta OT');
-    }
-
-    const dataUri = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
-    const formato = this.formatoDesdeMime(file.mimetype);
-    const tamano_kb = Math.round(file.size / 1024);
-    const cloudinaryConfigurado =
-      process.env.CLOUDINARY_CLOUD_NAME &&
-      process.env.CLOUDINARY_API_KEY &&
-      process.env.CLOUDINARY_API_SECRET;
-
-    if (!cloudinaryConfigurado) {
-      return {
-        url_cloudinary: dataUri,
-        formato,
-        tamano_kb,
-      };
-    }
-
-    const result = await cloudinary.uploader.upload(dataUri, {
-      folder: 'fsm_evidencias',
-      resource_type: 'image',
-    });
-    return {
-      url_cloudinary: result.secure_url,
-      formato: result.format,
-      tamano_kb: Math.round(result.bytes / 1024),
-    };
+    return this.ordenesService.subirFoto(+id, file, user);
   }
 
   @Roles('TECNICO')
@@ -170,9 +126,9 @@ export class OrdenesController {
   cerrarOT(
     @Param('id') id: string,
     @Body() dto: CerrarOtDto,
-    @CurrentUser() user: UserPayload,
+    @CurrentUser() user: UsuarioAutenticado,
   ) {
-    return this.ordenesService.cerrarOT(+id, dto, user.userId, user.id_empresa);
+    return this.ordenesService.cerrarOT(+id, dto, user);
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
@@ -180,20 +136,8 @@ export class OrdenesController {
   async actualizarEstado(
     @Param('id') id: string,
     @Body() dto: ActualizarEstadoDto,
-    @CurrentUser() user: UserPayload,
+    @CurrentUser() user: UsuarioAutenticado,
   ) {
-    if (user.rol === 'TECNICO') {
-      const ot = await this.ordenesService.obtenerOT(+id, user.id_empresa);
-      const idTecnico = (ot as Record<string, unknown>).id_tecnico;
-      if (idTecnico !== user.userId) {
-        throw new ForbiddenException('Solo puedes actualizar OT asignadas a ti');
-      }
-    }
-    return this.ordenesService.actualizarEstado(+id, dto, user.userId, user.id_empresa);
-  }
-
-  private formatoDesdeMime(mimetype: string) {
-    const formato = mimetype.split('/')[1] ?? 'img';
-    return formato === 'jpeg' ? 'jpg' : formato.slice(0, 5);
+    return this.ordenesService.actualizarEstado(+id, dto, user);
   }
 }

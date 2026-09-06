@@ -27,7 +27,7 @@ export class ClientesController {
     return this.clientesService.listarPlanes(user.id_empresa);
   }
 
-  @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
+  @Roles('ADMIN', 'JEFE_TECNICO')
   @Get('rut/:rut')
   consultarPorRut(
     @Param('rut') rut: string,

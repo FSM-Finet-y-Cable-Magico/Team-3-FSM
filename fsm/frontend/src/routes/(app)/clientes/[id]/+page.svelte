@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Alert from '$lib/components/Alert.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
@@ -37,8 +38,12 @@
     authStore.checkAuth();
     const state = get(authStore);
 
-    if (!state.isAuthenticated || !['ADMIN', 'JEFE_TECNICO', 'TECNICO'].includes(state.usuario?.rol ?? '')) {
-      goto('/dashboard');
+    if (!state.isAuthenticated) {
+      goto('/login');
+      return;
+    }
+    if (!['ADMIN', 'JEFE_TECNICO'].includes(state.usuario?.rol ?? '')) {
+      goto(state.usuario?.rol === 'TECNICO' ? '/terreno' : '/dashboard');
       return;
     }
 
@@ -137,7 +142,7 @@
     {#if loading}
       <div class="text-center py-8 text-gray-500">Cargando...</div>
     {:else if errorMsg}
-      <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{errorMsg}</div>
+      <Alert class="rounded-lg">{errorMsg}</Alert>
       <a href="/clientes" class="text-blue-600 hover:text-blue-800 text-sm mt-4 inline-block">&larr; Volver a clientes</a>
     {:else if cliente}
       <a href="/clientes" class="text-blue-600 hover:text-blue-800 text-sm mb-4 inline-block">&larr; Volver a clientes</a>
@@ -246,7 +251,7 @@
                 <InputField label="Ciudad" bind:value={editCiudad} />
 
                 {#if editError}
-                  <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">{editError}</div>
+                  <Alert class="rounded-lg text-sm">{editError}</Alert>
                 {/if}
 
                 <div class="flex gap-3">
@@ -341,7 +346,7 @@
       </div>
 
       {#if conflictivoError}
-        <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">{conflictivoError}</div>
+        <Alert class="rounded-lg mb-4 text-sm">{conflictivoError}</Alert>
       {/if}
 
       <div class="flex gap-3">

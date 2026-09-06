@@ -1,3 +1,4 @@
+import { normalizarPaginacion } from '../common/utils/paginacion.util.js';
 import {
   Injectable,
   BadRequestException,
@@ -283,14 +284,14 @@ export class ClientesService {
   }
 
   async listarClientes(id_empresa: number, page: number = 1, limit: number = 20) {
-    const skip = (page - 1) * limit;
+    const { page: pageSeguro, limit: limitSeguro, skip } = normalizarPaginacion(page, limit);
 
     const [clientes, total] = await Promise.all([
       this.prisma.cliente.findMany({
         where: { id_empresa },
         orderBy: { fecha_creacion: 'desc' },
         skip,
-        take: limit,
+        take: limitSeguro,
         include: {
           direcciones: {
             where: { es_principal: true },
@@ -300,7 +301,7 @@ export class ClientesService {
       this.prisma.cliente.count({ where: { id_empresa } }),
     ]);
 
-    return { data: clientes, total, page, limit };
+    return { data: clientes, total, page: pageSeguro, limit: limitSeguro };
   }
 
   async listarPlanes(id_empresa: number) {
