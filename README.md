@@ -43,7 +43,7 @@ CLOUDINARY_API_SECRET=""
 SEED_ADMIN_PASSWORD=""
 ```
 
-> Cloudinary es opcional para desarrollar las demás funciones. Sin configuración, el backend avisa al arrancar y subir evidencia devuelve 503. El cierre solo admite URLs HTTP(S); no se guardan imágenes en base64. Ver [evidencias y recuperación histórica](docs/evidencias-y-api.md).
+> Cloudinary es obligatorio para subir evidencia y completar el flujo de cierre de OT, también en desarrollo local: el cierre exige al menos una foto con URL HTTP(S). Configurar sus tres variables para probar ese flujo. Es opcional para las demás funciones; sin configuración, el backend arranca y la subida devuelve 503. No se guardan imágenes en base64. Ver [evidencias y recuperación histórica](docs/evidencias-y-api.md).
 
 > `SEED_ADMIN_PASSWORD` solo hace falta si se va a sembrar la base (ver más abajo). No tiene valor por defecto a propósito.
 
@@ -106,7 +106,7 @@ Levanta Postgres + backend + frontend con un solo comando, contra una base **loc
 cp .env.example .env   # el de la raíz del repo — no confundir con fsm/backend/.env.example ni fsm/frontend/.env.example, que son para el flujo manual de arriba
 ```
 
-Completar como mínimo `JWT_SECRET` y `SEED_ADMIN_PASSWORD` (cualquier valor sirve, es una base nueva). Cloudinary es opcional.
+Completar como mínimo `JWT_SECRET` y `SEED_ADMIN_PASSWORD` (cualquier valor sirve, es una base nueva). Para probar la subida de evidencia y el cierre completo de OT también se deben completar las tres variables de Cloudinary. Es opcional para las demás funciones.
 
 ```bash
 docker compose up --build

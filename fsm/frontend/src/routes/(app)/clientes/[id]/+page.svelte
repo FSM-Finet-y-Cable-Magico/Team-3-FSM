@@ -38,8 +38,12 @@
     authStore.checkAuth();
     const state = get(authStore);
 
-    if (!state.isAuthenticated || !['ADMIN', 'JEFE_TECNICO', 'TECNICO'].includes(state.usuario?.rol ?? '')) {
-      goto('/dashboard');
+    if (!state.isAuthenticated) {
+      goto('/login');
+      return;
+    }
+    if (!['ADMIN', 'JEFE_TECNICO'].includes(state.usuario?.rol ?? '')) {
+      goto(state.usuario?.rol === 'TECNICO' ? '/terreno' : '/dashboard');
       return;
     }
 

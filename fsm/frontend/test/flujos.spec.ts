@@ -33,8 +33,8 @@ async function preparar(page: Page) {
       const token = ['e30', Buffer.from(JSON.stringify(payload)).toString('base64'), 'prueba'].join('.');
       return responder({ token, rol, id_empresa: 1, cambiar_password: false });
     }
+    if (ruta === '/api/clientes' || ruta.startsWith('/api/clientes/')) registro.clientes++;
     if (ruta === '/api/clientes') {
-      registro.clientes++;
       const pageNumber = Number(url.searchParams.get('page') || 1), limit = Number(url.searchParams.get('limit') || 20);
       const todos = Array.from({ length: 21 }, (_, i) => ({ ...cliente, id_cliente: i + 1, nombre_completo: 'Cliente ' + (i + 1) }));
       return responder({ data: todos.slice((pageNumber-1)*limit,pageNumber*limit), total: 21, page: pageNumber, limit });
@@ -177,3 +177,76 @@ test('navegar entre dos cierres desmonta el anterior aunque comparta la ruta', a
   const estado = await urls(page); expect(estado.creadas).toHaveLength(1); expect(estado.liberadas).toContain(estado.creadas[0]);
   await registro.pendientes[0].fulfill({ json: { url_cloudinary: remota, formato: 'png', tamano_kb: 1 } }).catch(() => undefined);
 });
+
+test('sin sesión no se montan las vistas de Clientes antes de redirigir', async ({ page }) => {
+  const registro = await preparar(page);
+  for (const ruta of ['/clientes', '/clientes/12345678-5', '/clientes/nuevo']) {
+    await page.goto(ruta);
+    await expect(page).toHaveURL(/\/login$/);
+  }
+  expect(registro.clientes).toBe(0);
+});
+
+for (const respuestaRecibida of [false, true]) {
+  test(`cancelar la segunda foto continúa el lote (${respuestaRecibida ? 'respuesta ya recibida' : 'petición pendiente'})`, async ({ page }) => {
+    const registro = await preparar(page);
+    await login(page);
+    await page.goto('/terreno/cerrar/1');
+    if (respuestaRecibida) {
+      await page.evaluate(() => {
+        const original = window.fetch;
+        let subidas = 0;
+        window.fetch = async (...args) => {
+          const res = await original(...args);
+          if (!String(args[0]).endsWith('/foto') || ++subidas !== 2) return res;
+          const leerJson = res.json.bind(res);
+          res.json = async () => {
+            const datos = await leerJson();
+            // Retiene el JSON ya leído: abortar ahora no rechaza fetch,
+            // aunque la foto todavía aparece en subida en la interfaz.
+            await new Promise<void>(resolve => {
+              Object.assign(window, { entregarFotoDePrueba: resolve });
+            });
+            return datos;
+          };
+          return res;
+        };
+      });
+    } else {
+      await page.route('**/api/ordenes/1/foto', async route => {
+        if (registro.fotos === 1) registro.modo = 'pendiente';
+        await route.fallback();
+      });
+    }
+    await page.locator('input[type=file]').setInputFiles([
+      archivo,
+      { ...archivo, name: 'segunda.png' },
+      { ...archivo, name: 'tercera.png' },
+      { ...archivo, name: 'cuarta.png' },
+    ]);
+    await expect(page.locator('img[src^="blob:"]')).toHaveCount(2);
+    if (respuestaRecibida) {
+      await expect.poll(() => page.evaluate(() => typeof (window as unknown as { entregarFotoDePrueba?: () => void }).entregarFotoDePrueba)).toBe('function');
+    } else {
+      await expect.poll(() => registro.pendientes.length).toBe(1);
+      registro.modo = 'ok';
+    }
+    await page.getByRole('button', { name: 'Eliminar evidencia 2' }).click();
+    if (respuestaRecibida) {
+      await page.evaluate(() => (window as unknown as { entregarFotoDePrueba: () => void }).entregarFotoDePrueba());
+    }
+    await expect.poll(() => registro.fotos).toBe(4);
+    await expect(page.locator('img[src^="blob:"]')).toHaveCount(3);
+    await expect(page.getByRole('button', { name: 'Siguiente', exact: true })).toBeEnabled();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    const estado = await urls(page);
+    expect(estado.creadas).toHaveLength(4);
+    expect(estado.liberadas).toContain(estado.creadas[1]);
+    const visibles = await page.locator('img[src^="blob:"]').evaluateAll(imgs => imgs.map(img => img.getAttribute('src')));
+    expect(visibles).toEqual([estado.creadas[0], estado.creadas[2], estado.creadas[3]]);
+    await page.getByRole('button', { name: 'Volver a terreno' }).click();
+    await expect(page).toHaveURL(/\/terreno$/);
+    expect((await urls(page)).liberadas).toEqual(expect.arrayContaining(estado.creadas));
+    if (!respuestaRecibida) await registro.pendientes[0].abort().catch(() => undefined);
+  });
+}

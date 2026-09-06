@@ -158,7 +158,9 @@
       {@render children?.()}
     </main>
   </div>
+{:else if accesoClientesDenegado}
+  <p role="alert" class="p-8 text-center text-slate-600">No tienes acceso a esta sección.</p>
 {:else}
-  {@render children?.()}
+  <p role="status" class="p-8 text-center text-slate-600">Verificando sesión...</p>
 {/if}
 

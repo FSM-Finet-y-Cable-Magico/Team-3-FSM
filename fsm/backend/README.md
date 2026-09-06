@@ -22,4 +22,4 @@ Cubren permisos por rol/asignación/empresa, login público, handlers sin roles,
 
 ## Ejecución local
 
-npm run start:dev requiere una base local aislada y JWT_SECRET propios. Sin Cloudinary el arranque permanece disponible y las subidas devuelven 503. Leer [evidencias](../../docs/evidencias-y-api.md) para el contrato y el saneamiento histórico pendiente.
+npm run start:dev requiere una base local aislada y JWT_SECRET propios. Cloudinary es obligatorio para subir evidencia y completar el flujo de cierre de OT, que exige al menos una foto; configurar sus tres variables también para probar ese flujo en local. Sin Cloudinary el arranque y las demás funciones permanecen disponibles, pero las subidas devuelven 503. Leer [evidencias](../../docs/evidencias-y-api.md) para el contrato y el saneamiento histórico pendiente.

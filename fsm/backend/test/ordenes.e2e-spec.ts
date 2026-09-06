@@ -49,9 +49,14 @@ const prisma = {
       if (typeof data.estado === 'string') row.estado = data.estado;
       return row;
     }),
+    findMany: jest.fn(async (_args: Prisma.orden_trabajoFindManyArgs) => []),
     count: jest.fn(async () => 1),
   },
   cliente: {
+    findFirst: jest.fn(async ({ where }: Prisma.clienteFindFirstArgs = {}) =>
+      where?.rut === '12345678-5' && where?.id_empresa === 1
+        ? { id_cliente: 1, rut: '12345678-5', nombre_completo: 'Cliente de prueba', direcciones: [], contratos: [] }
+        : null),
     findMany: jest.fn(async ({ where, skip = 0, take }: Prisma.clienteFindManyArgs = {}) =>
       clientes.filter(c => c.id_empresa === where?.id_empresa).slice(skip, take === undefined ? undefined : skip + take)),
     count: jest.fn(async ({ where }: Prisma.clienteCountArgs = {}) => clientes.filter(c => c.id_empresa === where?.id_empresa).length),
@@ -134,7 +139,7 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
     await request(app.getHttpServer()).post('/api/auth/login')
       .send({ nombre_usuario: 'prueba.usuario', password: 'Prueba123!' }).expect(201);
   });
-  it.each(['/dashboard', '/clientes', '/ordenes', '/dashboard/empresas', '/auth/usuarios'])
+  it.each(['/dashboard', '/clientes', '/clientes/rut/12345678-5', '/ordenes', '/dashboard/empresas', '/auth/usuarios'])
     ('GET %s sin token responde 401 antes de evaluar roles', async ruta => {
       await request(app.getHttpServer()).get('/api' + ruta).expect(401);
     });
@@ -157,9 +162,25 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
       .send({ nueva_password: 'Nueva1234!', confirmar_password: 'Nueva1234!' }).expect(201);
   });
   it('TECNICO no accede a clientes ni empresas administrativas', async () => {
-    for (const ruta of ['/clientes', '/dashboard/empresas', '/auth/usuarios']) {
+    for (const ruta of ['/clientes', '/clientes/rut/12345678-5', '/dashboard/empresas', '/auth/usuarios']) {
       await request(app.getHttpServer()).get('/api' + ruta).auth(token(), { type: 'bearer' }).expect(403);
     }
+  });
+  it('TECNICO no consulta la ficha ni su historial en persistencia', async () => {
+    await request(app.getHttpServer()).get('/api/clientes/rut/12345678-5')
+      .auth(token(), { type: 'bearer' }).expect(403);
+    expect(prisma.cliente.findFirst).not.toHaveBeenCalled();
+    expect(prisma.orden_trabajo.findMany).not.toHaveBeenCalled();
+  });
+  it.each(['ADMIN', 'JEFE_TECNICO'])('%s consulta la ficha por RUT solo en su empresa', async rol => {
+    const res = await request(app.getHttpServer()).get('/api/clientes/rut/12345678-5')
+      .auth(token(rol), { type: 'bearer' }).expect(200);
+    expect(res.body.cliente).toMatchObject({ id_cliente: 1, rut: '12345678-5' });
+    await request(app.getHttpServer()).get('/api/clientes/rut/12345678-5')
+      .auth(token(rol, 2), { type: 'bearer' }).expect(404);
+    expect(prisma.cliente.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: { rut: '12345678-5', id_empresa: 2 },
+    }));
   });
   it.each(['ADMIN', 'JEFE_TECNICO', 'TECNICO'])('%s consulta OT propia y nunca otra empresa', async rol => {
     await get(1, rol).expect(200);

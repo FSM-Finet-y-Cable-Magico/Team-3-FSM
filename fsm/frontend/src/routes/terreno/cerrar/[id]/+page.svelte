@@ -132,7 +132,12 @@
       fotos = [...fotos, { url: '', formato: '', tamano_kb: 0, preview, cargando: true }];
       try {
         const result = await terrenoApi.subirFoto(token, idSubida, file, controller.signal);
-        if (destruido || controller.signal.aborted) return;
+        if (destruido) return;
+        if (controller.signal.aborted) {
+          URL.revokeObjectURL(preview);
+          fotos = fotos.filter(f => f.preview !== preview);
+          continue;
+        }
         fotos = fotos.map(f => f.preview === preview
           ? { ...f, url: result.url_cloudinary, formato: result.formato, tamano_kb: result.tamano_kb, cargando: false }
           : f);
