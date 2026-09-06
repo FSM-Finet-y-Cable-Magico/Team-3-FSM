@@ -12,6 +12,7 @@ import {
   IsInt,
   IsPositive,
   Matches,
+  IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ACCION_EQUIPO, type AccionEquipo } from '../estado-equipo.constants.js';
@@ -19,6 +20,7 @@ import { ACCION_EQUIPO, type AccionEquipo } from '../estado-equipo.constants.js'
 export class FotoDto {
   @IsString()
   @IsNotEmpty()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_valid_protocol: true })
   url_cloudinary: string;
 
   @IsString()

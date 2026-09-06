@@ -24,3 +24,6 @@ vite.config.ts.timestamp-*
 
 # Claude e.e
 .claude/
+# Pruebas de navegador
+/test-results/
+/playwright-report/

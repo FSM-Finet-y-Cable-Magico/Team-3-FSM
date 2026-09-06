@@ -89,7 +89,11 @@ const MAX_PARA_REVISAR = 25;
 // matchea DENTRO de nombres propios y comunes — VI(CTO)R, HE(CTO)R,
 // CONDU(CTO)RES, DIRE(CTO)RA — y metía a esas personas en la tabla de cajas.
 const PALABRAS: Record<Exclude<TipoNodo, 'DESCONOCIDO'>, RegExp> = {
-  OLT: /\bolt\b|^nodo\b|^banco central$/i,
+  // El plural importa: `pistaTipo` prefiere el nombre de la CARPETA sobre el
+  // del marcador, y una carpeta se llama "OLTs" con la misma naturalidad que
+  // "OLT". Con `\bolt\b` la "s" pegada rompe el límite de palabra y se
+  // descartaba, en silencio, todo lo que colgara de esa carpeta.
+  OLT: /\bolts?\b|^nodos?\b|^banco central$/i,
   CAJA_NAP: /caja|\bcto(\b|\d)|\bnap(\b|\d)|atendimento|nap box/i,
   MUFA: /mufa|emenda|\bceo\b|splice|deriva/i,
   POSTE: /poste|pole/i,

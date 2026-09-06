@@ -1,4 +1,8 @@
 <script lang="ts">
+  import Paginacion from '$lib/components/Paginacion.svelte';
+  import Alert from '$lib/components/Alert.svelte';
+  import Spinner from '$lib/components/Spinner.svelte';
+  import Cargando from '$lib/components/Cargando.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
@@ -41,8 +45,8 @@
       goto('/login');
       return;
     }
-    if (!['ADMIN', 'JEFE_TECNICO', 'TECNICO'].includes(state.usuario?.rol ?? '')) {
-      goto('/dashboard');
+    if (!['ADMIN', 'JEFE_TECNICO'].includes(state.usuario?.rol ?? '')) {
+      goto(state.usuario?.rol === 'TECNICO' ? '/terreno' : '/dashboard');
       return;
     }
 
@@ -142,10 +146,7 @@
       class="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-5 rounded-xl transition-all disabled:opacity-50 text-sm"
     >
       {#if buscando}
-        <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-        </svg>
+        <Spinner class="h-4 w-4" />
       {:else}
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -195,18 +196,12 @@
 {/if}
 
 {#if errorMsg}
-  <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm">{errorMsg}</div>
+  <Alert class="rounded-xl mb-5 text-sm">{errorMsg}</Alert>
 {/if}
 
 <!-- Tabla de clientes -->
 {#if loading}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center">
-    <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24">
-      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-    </svg>
-    <p class="text-slate-400 text-sm">Cargando clientes...</p>
-  </div>
+  <Cargando mensaje="Cargando clientes..." class="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center" spinnerClass="h-8 w-8 text-blue-500 mx-auto mb-3" mensajeClass="text-slate-400 text-sm" />
 {:else}
   <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
     <table class="min-w-full divide-y divide-slate-100">
@@ -260,31 +255,6 @@
       </tbody>
     </table>
 
-    {#if total > limit}
-      <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-        <span class="text-sm text-slate-500">
-          Mostrando {(page - 1) * limit + 1}–{Math.min(page * limit, total)} de <strong>{total}</strong> clientes
-        </span>
-        <div class="flex items-center gap-2">
-          <button
-            onclick={() => { page = Math.max(1, page - 1); cargarClientes(); }}
-            disabled={page <= 1}
-            class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            ← Anterior
-          </button>
-          <span class="px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg">
-            {page}
-          </span>
-          <button
-            onclick={() => { page++; cargarClientes(); }}
-            disabled={page * limit >= total}
-            class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            Siguiente →
-          </button>
-        </div>
-      </div>
-    {/if}
+    <Paginacion {page} {limit} {total} entidad="clientes" onchange={(nuevaPagina) => { page = nuevaPagina; cargarClientes(); }} />
   </div>
 {/if}

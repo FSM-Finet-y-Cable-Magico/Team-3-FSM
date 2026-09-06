@@ -1,3 +1,7 @@
+// En ESM, Jest no inyecta los globals: hay que importarlos. Este archivo se
+// escribio antes de que el runner soportara ESM, asi que nunca llego a
+// ejecutarse y el `jest` global pasaba desapercibido.
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RegistroOntService } from './registro-ont.service.js';
@@ -20,8 +24,8 @@ describe('MonitoreoService.ingestarLecturas', () => {
   let lecturas: LecturaOnt[];
 
   beforeEach(async () => {
-    monitoreoCreateMany = jest.fn().mockResolvedValue({ count: 1 });
-    historialCreateMany = jest.fn().mockResolvedValue({ count: 1 });
+    monitoreoCreateMany = jest.fn(async () => ({ count: 1 }));
+    historialCreateMany = jest.fn(async () => ({ count: 1 }));
 
     const prismaMock = {
       monitoreo_ont: { createMany: monitoreoCreateMany },
@@ -31,7 +35,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
 
     const fuenteMock: FuenteMonitoreo = {
       nombre: 'test',
-      listarOlts: jest.fn(),
+      listarOlts: jest.fn(async () => []),
       listarOntDetalles: jest.fn(async () => []),
       listarLecturas: jest.fn(async () => lecturas),
     };

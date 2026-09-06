@@ -4,6 +4,7 @@ import { ClientesModule } from '../clientes/clientes.module.js';
 import { DashboardModule } from '../dashboard/dashboard.module.js';
 import { OrdenesController } from './ordenes.controller.js';
 import { OrdenesService } from './ordenes.service.js';
+import { CloudinaryModule } from '../cloudinary/cloudinary.module.js';
 import { FAN_OUT_CIERRE, type FanOutCierre } from './fan-out/fan-out-cierre.js';
 import { WebhookFanOut } from './fan-out/webhook-fan-out.js';
 import { NoOpFanOut } from './fan-out/noop-fan-out.js';
@@ -37,7 +38,7 @@ const fanOutProvider = {
 };
 
 @Module({
-  imports: [ClientesModule, forwardRef(() => DashboardModule)],
+  imports: [ClientesModule, CloudinaryModule, forwardRef(() => DashboardModule)],
   controllers: [OrdenesController],
   providers: [OrdenesService, fanOutProvider],
   exports: [OrdenesService],

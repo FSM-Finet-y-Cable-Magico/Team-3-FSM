@@ -50,8 +50,31 @@ describe('parsearKml', () => {
       latitud: -33.541,
     });
 
-    // El placemark sin tipo ni carpeta reconocible se descarta.
-    expect(descartados).toBe(1);
+    // El placemark suelto se descarta. `descartados` dejo de ser un numero
+    // cuando el parser empezo a rendir cuentas de POR QUE descarta cada cosa:
+    // sin el motivo, un import que perdia 161 cajas por un bug de regex se veia
+    // igual que uno que descartaba basura de verdad.
+    expect(descartados.total).toBe(1);
+    // "Algo raro" esta en 0,0 — el Golfo de Guinea, no Chile. Que caiga en
+    // COORDENADA_INVALIDA y no en SIN_PALABRA_CLAVE es la parte que importa:
+    // es el balde de lo accionable, lo que habria entrado como infraestructura.
+    expect(descartados.por_motivo.COORDENADA_INVALIDA).toBe(1);
+  });
+
+  it('clasifica aunque la carpeta venga en plural', () => {
+    // `pistaTipo` prefiere el nombre de la carpeta sobre el del marcador, y una
+    // carpeta se llama "OLTs" con la misma naturalidad que "OLT".
+    const { nodos } = parsearKml(KML);
+    expect(nodos.filter((n) => n.tipo === 'OLT')).toHaveLength(1);
+  });
+
+  it('no confunde "nodo" a secas con una OLT', () => {
+    // Un marcador llamado solo "nodo" no dice de que es nodo: se descarta como
+    // ambiguo en vez de inventar una OLT.
+    const solo = KML.replace('<name>OLT-A</name>', '<name>nodo</name>')
+      .replace('<name>OLTs</name>', '<name>nodo</name>');
+    const { descartados } = parsearKml(solo);
+    expect(descartados.por_motivo.NODO_AMBIGUO).toBe(1);
   });
 
   it('rechaza XML inválido', () => {

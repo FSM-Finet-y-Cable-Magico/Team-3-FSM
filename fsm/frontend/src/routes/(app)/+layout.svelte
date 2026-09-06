@@ -20,6 +20,9 @@
     usuario = state.usuario;
   });
 
+  const accesoClientesDenegado = $derived.by(() => usuario?.rol === 'TECNICO' && $page.url.pathname.startsWith('/clientes'));
+  $effect(() => { if (accesoClientesDenegado) goto('/terreno'); });
+
   function cerrarSesion() {
     authStore.logout();
   }
@@ -33,7 +36,7 @@
 
   const navLinks = $derived([
     { href: '/dashboard', label: 'Dashboard', icon: ICON_HOME, roles: ['ADMIN', 'JEFE_TECNICO', 'TECNICO'] },
-    { href: '/clientes', label: 'Clientes', icon: ICON_USERS, roles: ['ADMIN', 'JEFE_TECNICO', 'TECNICO'] },
+    { href: '/clientes', label: 'Clientes', icon: ICON_USERS, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/ot', label: 'Ordenes de Trabajo', icon: ICON_CLIP, roles: ['ADMIN', 'JEFE_TECNICO', 'TECNICO'] },
     { href: '/alertas', label: 'Alertas de Red', icon: ICON_ALERTA, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/usuarios', label: 'Usuarios', icon: ICON_GROUP, roles: ['ADMIN'] },
@@ -52,7 +55,7 @@
   let { children } = $props();
 </script>
 
-{#if isAuthenticated && usuario}
+{#if isAuthenticated && usuario && !accesoClientesDenegado}
   <div class="min-h-screen bg-slate-50">
     <!-- Navbar -->
     <nav class="bg-slate-900 shadow-lg sticky top-0 z-50">
@@ -95,7 +98,7 @@
             </div>
             <button
               onclick={cerrarSesion}
-              class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-red-600 transition-all duration-150 border border-slate-700 hover:border-red-600"
+              class="nav-logout"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -158,6 +161,9 @@
       {@render children?.()}
     </main>
   </div>
+{:else if accesoClientesDenegado}
+  <p role="alert" class="p-8 text-center text-slate-600">No tienes acceso a esta sección.</p>
 {:else}
-  {@render children?.()}
+  <p role="status" class="p-8 text-center text-slate-600">Verificando sesión...</p>
 {/if}
+

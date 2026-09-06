@@ -1,3 +1,7 @@
+-- REFERENCIA HISTÓRICA NO AUTORITATIVA. No usar para crear/actualizar bases.
+-- Fuente vigente: fsm/backend/prisma/schema.prisma y prisma/migrations/.
+-- Este DDL puede divergir del esquema actual (por ejemplo es_password_temporal).
+
 CREATE TABLE empresa (
     id_empresa                     SERIAL         PRIMARY KEY,
     nombre                         VARCHAR(100)   NOT NULL,

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import Alert from '$lib/components/Alert.svelte';
+  import Spinner from '$lib/components/Spinner.svelte';
+  import Cargando from '$lib/components/Cargando.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
@@ -9,7 +12,6 @@
 
   let token = '';
   let nombreTecnico = $state('');
-  let userId = $state(0);
   let historialClienteId = $state<number | null>(null);
 
   let ots = $state<ordenesApi.OT[]>([]);
@@ -58,7 +60,6 @@
 
     token = state.token ?? '';
     nombreTecnico = state.usuario?.nombre_usuario ?? '';
-    userId = state.usuario?.userId ?? 0;
     cargarOTs();
   });
 
@@ -161,9 +162,9 @@
 
   <main class="flex-1 px-4 py-5 space-y-4">
     {#if errorMsg}
-      <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+      <Alert class="rounded-xl text-sm">
         {errorMsg}
-      </div>
+      </Alert>
     {/if}
 
     <!-- Resumen del día -->
@@ -184,13 +185,7 @@
 
     <!-- Lista de OT -->
     {#if loading}
-      <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
-        <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-        </svg>
-        <p class="text-slate-400 text-sm">Cargando órdenes...</p>
-      </div>
+      <Cargando mensaje="Cargando órdenes..." class="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center" spinnerClass="h-8 w-8 text-blue-500 mx-auto mb-3" mensajeClass="text-slate-400 text-sm" />
     {:else if ots.length === 0}
       <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
         <svg class="w-12 h-12 text-slate-200 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -261,10 +256,7 @@
                   class="w-full bg-blue-600 active:bg-blue-800 text-white font-semibold py-4 rounded-xl text-base transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {#if iniciando === ot.id_ot}
-                    <svg class="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                    </svg>
+                    <Spinner class="h-5 w-5" />
                     Iniciando...
                   {:else}
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Alert from '$lib/components/Alert.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
@@ -187,7 +188,7 @@
 {#if loading}
   <div class="text-center py-12 text-gray-500">Cargando orden de trabajo...</div>
 {:else if errorMsg}
-  <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">{errorMsg}</div>
+  <Alert class="rounded-lg">{errorMsg}</Alert>
 {:else if ot}
   <div class="max-w-3xl mx-auto space-y-5">
     <div class="flex items-center gap-3">
