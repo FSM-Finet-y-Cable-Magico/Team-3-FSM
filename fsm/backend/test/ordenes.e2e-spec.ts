@@ -41,7 +41,18 @@ const prisma = {
       if (select) return { id_tecnico: row.id_tecnico };
       const historyArgs = include?.historial;
       const take = typeof historyArgs === 'object' ? historyArgs.take : undefined;
-      return { ...row, historial: [...historial].reverse().slice(0, take), cliente: { nombre_completo: 'Cliente de prueba' } };
+      // Prisma SIEMPRE devuelve el array cuando la relacion va en `include`,
+      // nunca undefined. El doble tiene que modelar eso: si omite `materiales`
+      // o `fotos`, el servicio hace .map sobre undefined y todo
+      // GET /ordenes/:id responde 500 solo dentro del arnes.
+      return {
+        ...row,
+        historial: [...historial].reverse().slice(0, take),
+        cliente: { nombre_completo: 'Cliente de prueba' },
+        materiales: [],
+        fotos: [],
+        llamada: null,
+      };
     }),
     findUnique: jest.fn(async ({ where }: Prisma.orden_trabajoFindUniqueArgs) => ordenes.find(o => o.id_ot === where.id_ot)),
     update: jest.fn(async ({ where, data }: Prisma.orden_trabajoUpdateArgs) => {
