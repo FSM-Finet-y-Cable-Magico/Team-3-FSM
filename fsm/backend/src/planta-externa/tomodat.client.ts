@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
-import { request as httpsRequest, Agent } from 'node:https';
-import type { PeerCertificate, TLSSocket } from 'node:tls';
+import { request as httpsRequest } from 'node:https';
+import { connect as tlsConnect } from 'node:tls';
+import type { PeerCertificate } from 'node:tls';
 
 /**
  * Cliente de la API del TOMODAT2 (el sistema donde FiNet dibuja su planta).
@@ -205,40 +206,85 @@ export class TomodatClient {
     return json as T;
   }
 
+  /**
+   * Emite la peticion, pero solo despues de comprobar CON QUIEN se esta
+   * hablando.
+   *
+   * El orden es lo unico que importa aca. La version anterior de este metodo
+   * armaba la peticion con el header `Authorization` y comparaba la huella
+   * dentro del callback de respuesta: para cuando comparaba, el token ya habia
+   * viajado y el otro extremo ya habia contestado. Con `rejectUnauthorized:
+   * false` eso equivale a mandarle un token con permiso de borrar clientes a
+   * quien sea que conteste en esa IP.
+   *
+   * Ahora el handshake se hace por separado: se abre el socket TLS, se compara
+   * la huella, y recien si coincide se emite la peticion SOBRE ESE MISMO
+   * socket. Que sea el mismo importa; verificar en una conexion y usar otra
+   * dejaria una ventana entre las dos.
+   */
   private pedir(ruta: string): Promise<{ cuerpo: string; status: number }> {
-    const url = `${this.base}${ruta}`;
+    const url = new URL(`${this.base}${ruta}`);
     return new Promise((resolve, reject) => {
-      const req = httpsRequest(
-        url,
-        {
-          method: 'GET',
-          headers: { Authorization: this.token, Accept: 'application/json' },
-          timeout: TIMEOUT_MS,
-          // La verificación estándar se apaga porque el certificado está
-          // vencido, y se reemplaza por la comparación de huella de abajo.
-          // Las dos cosas van juntas: una sin la otra no sirve.
-          agent: new Agent({ rejectUnauthorized: false }),
-        },
-        (res) => {
-          const cert = (res.socket as TLSSocket).getPeerCertificate?.();
-          const problema = this.certificadoInesperado(cert);
-          if (problema) {
-            res.destroy();
-            req.destroy();
-            return reject(new ErrorTomodat(problema));
-          }
-          let cuerpo = '';
-          res.setEncoding('utf8');
-          res.on('data', (c: string) => (cuerpo += c));
-          res.on('end', () => resolve({ cuerpo, status: res.statusCode ?? 0 }));
-        },
-      );
-      req.on('timeout', () => {
-        req.destroy();
-        reject(new ErrorTomodat(`Tomodat no respondió en ${TIMEOUT_MS}ms`));
+      let resuelto = false;
+      const fallar = (e: ErrorTomodat) => {
+        if (resuelto) return;
+        resuelto = true;
+        reject(e);
+      };
+
+      const socket = tlsConnect({
+        host: url.hostname,
+        port: Number(url.port || 443),
+        servername: url.hostname,
+        // Se apaga la verificacion estandar porque el certificado de Tomodat
+        // esta vencido, y se reemplaza por la comparacion de huella de abajo.
+        // Las dos cosas van juntas: una sin la otra no sirve de nada.
+        rejectUnauthorized: false,
       });
-      req.on('error', (e) => reject(new ErrorTomodat(`Tomodat: ${e.message}`)));
-      req.end();
+      socket.setTimeout(TIMEOUT_MS);
+      socket.on('timeout', () => {
+        socket.destroy();
+        fallar(new ErrorTomodat(`Tomodat no respondio en ${TIMEOUT_MS}ms`));
+      });
+      socket.on('error', (e) => fallar(new ErrorTomodat(`Tomodat: ${e.message}`)));
+
+      socket.once('secureConnect', () => {
+        const problema = this.certificadoInesperado(socket.getPeerCertificate());
+        if (problema) {
+          // Cortar ANTES de escribir nada: el token no llego a salir.
+          socket.destroy();
+          return fallar(new ErrorTomodat(problema));
+        }
+
+        const req = httpsRequest(
+          url,
+          {
+            method: 'GET',
+            headers: { Authorization: this.token, Accept: 'application/json' },
+            timeout: TIMEOUT_MS,
+            // Sin pool: se reusa exactamente el socket ya verificado.
+            agent: false,
+            createConnection: () => socket,
+            // `https.request` vuelve a mirar `socket.authorized` y rechazaria
+            // por la expiracion, aunque el handshake ya ocurrio y la huella ya
+            // se comparo. Hay que repetirselo aca; lo que protege la identidad
+            // en este cliente es el pin de arriba, no esta bandera.
+            rejectUnauthorized: false,
+          },
+          (res) => {
+            let cuerpo = '';
+            res.setEncoding('utf8');
+            res.on('data', (c: string) => (cuerpo += c));
+            res.on('end', () => {
+              if (resuelto) return;
+              resuelto = true;
+              resolve({ cuerpo, status: res.statusCode ?? 0 });
+            });
+          },
+        );
+        req.on('error', (e) => fallar(new ErrorTomodat(`Tomodat: ${e.message}`)));
+        req.end();
+      });
     });
   }
 
