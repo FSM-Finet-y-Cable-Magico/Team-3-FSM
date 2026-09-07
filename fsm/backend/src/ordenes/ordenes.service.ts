@@ -23,6 +23,8 @@ const TRANSICIONES_VALIDAS: Record<string, string[]> = {
 
 const PRIORIDAD_ORDEN: Record<string, number> = { CRITICA: 0, ALTA: 1, MEDIA: 2, BAJA: 3 };
 
+const MAX_EVIDENCIAS_DETALLE = 50;
+
 const OT_INCLUDE = {
   cliente: { select: { id_cliente: true, nombre_completo: true, rut: true, es_conflictivo: true } },
   tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
@@ -265,11 +267,37 @@ export class OrdenesService {
         // mas", este `take` hay que revisarlo y probablemente convertirlo en un
         // endpoint aparte y paginado.
         historial: { orderBy: { fecha_hora: 'desc' }, take: 20 },
+        // El cierre no limita cuantas fotos ni materiales acepta, asi que la
+        // lectura del detalle tampoco tiene cota natural. Mismo criterio que el
+        // historial de aca arriba: un techo holgado para el caso real (3 a 5
+        // fotos por OT) que evita arrastrar una OT anomala entera.
+        fotos: {
+          select: { id_foto: true, url_cloudinary: true, formato: true },
+          orderBy: { fecha_subida: 'asc' },
+          take: MAX_EVIDENCIAS_DETALLE,
+        },
+        materiales: {
+          include: { tipo_equipo: { select: { nombre: true, categoria: true } } },
+          take: MAX_EVIDENCIAS_DETALLE,
+        },
+        llamada: true,
       },
     });
 
     if (!ot) throw new NotFoundException('OT no encontrada');
-    return ot;
+
+    // potencia_optica_dbm y cantidad son Decimal: se serializan como string y
+    // llegarian al front como "3.00" o "-21.50". Se normalizan a numero aqui
+    // para que el tipo declarado en la vista sea el que realmente recibe.
+    return {
+      ...ot,
+      potencia_optica_dbm:
+        ot.potencia_optica_dbm === null ? null : Number(ot.potencia_optica_dbm),
+      materiales: ot.materiales.map((material) => ({
+        ...material,
+        cantidad: Number(material.cantidad),
+      })),
+    };
   }
 
   async listarTecnicos(id_empresa: number) {

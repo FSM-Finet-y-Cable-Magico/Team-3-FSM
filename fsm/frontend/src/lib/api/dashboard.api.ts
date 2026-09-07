@@ -26,6 +26,8 @@ export interface IndicadoresDashboard {
   }[];
   total_clientes_activos: number;
   resueltas_remotamente_hoy: number;
+  ot_completadas_hoy: number;
+  tiempo_promedio_cierre: number | null;
   fecha_actualizacion: string;
 }
 
