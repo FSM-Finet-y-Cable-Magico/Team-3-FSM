@@ -121,10 +121,24 @@ export class MonitoreoService {
   // Consultas — para el dashboard de G3 y para G8 (CU-49 estado del cliente)
   // ---------------------------------------------------------------------------
 
-  /** Una fila por ONT registrada, con su última lectura. */
+  /**
+   * Una fila por ONT registrada, con su última lectura.
+   *
+   * El aislamiento sale de `registro_ont.id_empresa`, que la ingesta puebla a
+   * partir de la empresa dueña de la fuente. Antes se derivaba de la lista de
+   * clientes de la empresa, con un `OR: [{ id_cliente: { in: [...] } }, { id_cliente: null }]`
+   * — y eso era una fuga: `id_cliente` está en null en casi todas las filas
+   * ingestadas (SmartOLT no lo trae; se resuelve después, si es que), así que
+   * la rama del `null` dejaba ver TODAS las ONT de la otra empresa, incluido
+   * `nombre_cliente_ext`, que en 118 de 940 filas trae nombre, RUT, teléfono y
+   * dirección del cliente.
+   *
+   * Si `id_empresa` fuera null en alguna fila vieja, queda invisible en vez de
+   * visible para todos, que es el lado correcto en el que fallar.
+   */
   async lecturasRecientes(id_empresa: number, page = 1, limit = 50) {
     const registros = await this.prisma.registro_ont.findMany({
-      where: await this.aislarPorEmpresa(id_empresa),
+      where: { id_empresa },
       orderBy: { numero_serie: 'asc' },
       skip: (page - 1) * limit,
       take: limit,
@@ -147,7 +161,7 @@ export class MonitoreoService {
     });
     // Mismo NotFoundException tanto si no existe como si es de otra empresa:
     // no hay que distinguirle a quien pregunta cuál de los dos casos es.
-    if (!registro || !(await this.perteneceAEmpresa(registro.id_cliente, id_empresa))) {
+    if (!registro || registro.id_empresa !== id_empresa) {
       throw new NotFoundException(`ONT ${sn} no vista por el monitoreo`);
     }
 
@@ -228,23 +242,4 @@ export class MonitoreoService {
    * con `id_bodega IS NULL`: se incluyen también las ONT sin cliente resuelto
    * (no son dato de otro tenant). Cuando toda ONT tenga cliente, pasa a estricto.
    */
-  private async aislarPorEmpresa(id_empresa: number) {
-    const clientes = await this.prisma.cliente.findMany({
-      where: { id_empresa },
-      select: { id_cliente: true },
-    });
-    return {
-      OR: [{ id_cliente: { in: clientes.map((c) => c.id_cliente) } }, { id_cliente: null }],
-    };
-  }
-
-  /** Mismo criterio que `aislarPorEmpresa`, para chequear un registro puntual. */
-  private async perteneceAEmpresa(id_cliente: number | null, id_empresa: number): Promise<boolean> {
-    if (id_cliente == null) return true;
-    const cliente = await this.prisma.cliente.findFirst({
-      where: { id_cliente, id_empresa },
-      select: { id_cliente: true },
-    });
-    return cliente != null;
-  }
 }

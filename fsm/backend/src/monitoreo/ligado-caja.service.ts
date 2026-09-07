@@ -130,6 +130,11 @@ export class LigadoCajaService {
     // Se cargan TODAS, no solo las pendientes: las ya ligadas son evidencia
     // fija para la votación del grupo PON (ver `OntParaLigar.id_caja_nap`).
     const filas = await this.prisma.registro_ont.findMany({
+      // Las cajas ya venian filtradas por empresa, pero las ONT no: sin este
+      // filtro el algoritmo podia ligar una ONT de la otra empresa a una caja
+      // de esta (escribiendole un id_caja_nap ajeno) y, peor, esa ONT tomaba
+      // la caja por exclusividad y se la quitaba a la que si correspondia.
+      where: { id_empresa },
       select: {
         numero_serie: true,
         odb: true,

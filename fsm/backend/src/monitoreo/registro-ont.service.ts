@@ -95,7 +95,11 @@ export class RegistroOntService {
 
     const sns = detalles.map((d) => d.sn);
     const unidades = await this.prisma.unidad_equipo.findMany({
-      where: { numero_serie: { in: sns } },
+      // `numero_serie` es unico global, asi que un serial pertenece a una sola
+      // empresa. Sin acotar por la empresa dueña de la fuente, un serial que la
+      // OLT de una reporta pero que esta registrado en la otra escribiria su
+      // id_cliente / id_caja_nap dentro de nuestro registro_ont.
+      where: { numero_serie: { in: sns }, id_empresa: this.idEmpresaFuente },
       select: {
         numero_serie: true,
         id_unidad: true,
