@@ -63,6 +63,10 @@ describe('detalle de OT para la vista', () => {
         { provide: PrismaService, useValue: { orden_trabajo: { findFirst } } },
         { provide: CloudinaryService, useValue: {} },
         { provide: DashboardGateway, useValue: {} },
+        // El cierre notifica el uso de material a G1 (ver ACUERDO G1-G3 en
+        // `cerrarOT`), asi que OrdenesService depende del fan-out aunque estas
+        // pruebas solo lean el detalle. Se dobla para poder construirlo.
+        { provide: FAN_OUT_CIERRE, useValue: { nombre: 'doble', notificar: async () => {} } },
       ],
     }).compile();
     service = moduleRef.get(OrdenesService);
