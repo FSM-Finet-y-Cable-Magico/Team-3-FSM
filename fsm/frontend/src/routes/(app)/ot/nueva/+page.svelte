@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Alert from '$lib/components/Alert.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
@@ -196,12 +197,12 @@
         </div>
 
         {#if clienteEncontrado.cliente.es_conflictivo}
-          <div class="mt-3 bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
+          <Alert class="mt-3 text-sm rounded-lg">
             Este cliente está marcado como conflictivo.
             {#if tipoOT === 'INSTALACION'}
               No se pueden crear OT de instalación para clientes conflictivos.
             {/if}
-          </div>
+          </Alert>
         {/if}
       </div>
 
@@ -301,9 +302,9 @@
         </div>
 
         {#if crearError}
-          <div class="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+          <Alert class="mt-4 rounded-lg text-sm">
             {crearError}
-          </div>
+          </Alert>
         {/if}
 
         <div class="flex gap-3 mt-6">

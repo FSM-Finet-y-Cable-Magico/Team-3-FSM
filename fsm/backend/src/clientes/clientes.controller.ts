@@ -22,15 +22,14 @@ export class ClientesController {
     @Query('telefono') telefono?: string,
     @Query('direccion') direccion?: string,
   ) {
-    return this.clientesService.listarClientes(
-      user.id_empresa,
-      page ? parseInt(page, 10) : 1,
-      limit ? parseInt(limit, 10) : 20,
+    // page y limit se pasan crudos: normalizarPaginacion en el servicio ya
+    // recorta el rango y descarta lo que no sea un numero utilizable.
+    return this.clientesService.listarClientes(user.id_empresa, page, limit, {
       nombre,
       rut,
       telefono,
       direccion,
-    );
+    });
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO')
@@ -39,7 +38,7 @@ export class ClientesController {
     return this.clientesService.listarPlanes(user.id_empresa);
   }
 
-  @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
+  @Roles('ADMIN', 'JEFE_TECNICO')
   @Get('rut/:rut')
   consultarPorRut(
     @Param('rut') rut: string,

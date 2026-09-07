@@ -1,5 +1,6 @@
+import { normalizarPaginacion } from '../common/utils/paginacion.util.js';
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
-import { Prisma } from '../../generated/prisma/client.js';
+import { Prisma, type orden_trabajo } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { validarRut } from '../common/utils/rut.util.js';
 import { TIPO_MOVIMIENTO } from '../common/constants/inventario.constants.js';
@@ -7,6 +8,8 @@ import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
+import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
+import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
 
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
@@ -31,6 +34,7 @@ const OT_INCLUDE = {
 export class OrdenesService {
   constructor(
     private prisma: PrismaService,
+    private cloudinary: CloudinaryService,
     @Inject(forwardRef(() => DashboardGateway)) private dashboardGateway: DashboardGateway,
   ) {}
 
@@ -124,8 +128,7 @@ export class OrdenesService {
       limit?: number;
     },
   ) {
-    const page = Math.max(1, Math.trunc(filtros.page ?? 1) || 1);
-    const limit = Math.min(100, Math.max(1, Math.trunc(filtros.limit ?? 20) || 20));
+    const { page, limit, skip } = normalizarPaginacion(filtros.page, filtros.limit);
 
     // PRECEDENCIA: `dia_desde`/`dia_hasta` (vista de terreno) mandan sobre
     // `estado`. Si llegaran los dos, `estado` se ignora por completo: ni entra
@@ -182,7 +185,7 @@ export class OrdenesService {
     );
 
     const idsPagina = await this.prisma.$queryRaw<{ id_ot: number }[]>(
-      Prisma.sql`SELECT id_ot FROM orden_trabajo WHERE ${where} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${(page - 1) * limit}`,
+      Prisma.sql`SELECT id_ot FROM orden_trabajo WHERE ${where} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${skip}`,
     );
     const ids = idsPagina.map((r) => r.id_ot);
 
@@ -202,9 +205,43 @@ export class OrdenesService {
     return { data, total, page, limit };
   }
 
-  async obtenerOT(id_ot: number, id_empresa: number) {
+  private asegurarAcceso<T extends Pick<orden_trabajo, 'id_tecnico'>>(
+    ot: T | null,
+    user: UsuarioAutenticado,
+    soloTecnico = false,
+  ): T {
+    if (!ot) throw new NotFoundException('OT no encontrada');
+    const rolesPermitidos = soloTecnico ? ['TECNICO'] : ['ADMIN', 'JEFE_TECNICO', 'TECNICO'];
+    if (!rolesPermitidos.includes(user.rol)) {
+      throw new ForbiddenException('No tienes permiso para realizar esta acción.');
+    }
+    if (user.rol === 'TECNICO' && ot.id_tecnico !== user.userId) {
+      throw new ForbiddenException('No tienes permiso para ver esta OT.');
+    }
+    return ot;
+  }
+
+  private async comprobarAcceso(id_ot: number, user: UsuarioAutenticado, soloTecnico = false) {
     const ot = await this.prisma.orden_trabajo.findFirst({
-      where: { id_ot, id_empresa },
+      where: { id_ot, id_empresa: user.id_empresa },
+      select: { id_tecnico: true },
+    });
+    return this.asegurarAcceso(ot, user, soloTecnico);
+  }
+
+  async subirFoto(id_ot: number, file: Express.Multer.File | undefined, user: UsuarioAutenticado) {
+    await this.comprobarAcceso(id_ot, user, true);
+    return this.cloudinary.subirEvidencia(file);
+  }
+
+  async obtenerOT(id_ot: number, user: UsuarioAutenticado) {
+    await this.comprobarAcceso(id_ot, user);
+    return this.obtenerDetalle(id_ot, user.id_empresa, user.rol === 'TECNICO' ? user.userId : undefined);
+  }
+
+  private async obtenerDetalle(id_ot: number, id_empresa: number, id_tecnico?: number) {
+    const ot = await this.prisma.orden_trabajo.findFirst({
+      where: { id_ot, id_empresa, ...(id_tecnico !== undefined && { id_tecnico }) },
       include: {
         cliente: {
           select: {
@@ -220,7 +257,14 @@ export class OrdenesService {
         tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
         direccion: { select: { direccion_completa: true, comuna: true } },
         categoria_falla: { select: { id_categoria: true, nombre: true, sla_horas: true } },
-        historial: { orderBy: { fecha_hora: 'desc' } },
+        // M14: sin `take` una OT muy manipulada arrastra su historial entero en
+        // cada lectura del detalle. Se acotan las 20 transiciones mas recientes,
+        // el mismo techo que ya usan `historialFallas` aca abajo y el historial
+        // de OT de clientes.service. Alcanza porque la vista de detalle solo
+        // itera el timeline, sin paginar; si alguna vez se le agrega un "ver
+        // mas", este `take` hay que revisarlo y probablemente convertirlo en un
+        // endpoint aparte y paginado.
+        historial: { orderBy: { fecha_hora: 'desc' }, take: 20 },
       },
     });
 
@@ -309,17 +353,15 @@ export class OrdenesService {
       });
     });
 
-    return this.obtenerOT(id_ot, id_empresa);
+    return this.obtenerDetalle(id_ot, id_empresa);
   }
 
-  async actualizarEstado(
-    id_ot: number,
-    dto: ActualizarEstadoDto,
-    userId: number,
-    id_empresa: number,
-  ) {
-    const ot = await this.prisma.orden_trabajo.findFirst({ where: { id_ot, id_empresa } });
-    if (!ot) throw new NotFoundException('OT no encontrada');
+  async actualizarEstado(id_ot: number, dto: ActualizarEstadoDto, user: UsuarioAutenticado) {
+    const { userId, id_empresa } = user;
+    const ot = this.asegurarAcceso(
+      await this.prisma.orden_trabajo.findFirst({ where: { id_ot, id_empresa } }),
+      user,
+    );
 
     const transicionesValidas = TRANSICIONES_VALIDAS[ot.estado] ?? [];
     if (!transicionesValidas.includes(dto.estado)) {
@@ -379,20 +421,20 @@ export class OrdenesService {
       });
     });
 
-    const resultado = await this.obtenerOT(id_ot, id_empresa);
+    const resultado = await this.obtenerOT(id_ot, user);
     this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
     return resultado;
   }
 
-  async cerrarOT(id_ot: number, dto: CerrarOtDto, userId: number, id_empresa: number) {
-    const ot = await this.prisma.orden_trabajo.findFirst({ where: { id_ot, id_empresa } });
-    if (!ot) throw new NotFoundException('OT no encontrada');
+  async cerrarOT(id_ot: number, dto: CerrarOtDto, user: UsuarioAutenticado) {
+    const { userId, id_empresa } = user;
+    const ot = this.asegurarAcceso(
+      await this.prisma.orden_trabajo.findFirst({ where: { id_ot, id_empresa } }),
+      user,
+      true,
+    );
     if (ot.estado !== 'EN_CURSO') {
       throw new BadRequestException('Solo se pueden cerrar OT en estado EN_CURSO');
-    }
-
-    if (ot.id_tecnico !== userId) {
-      throw new ForbiddenException('Solo el tÃ©cnico asignado puede cerrar esta OT');
     }
 
     let categoriaFalla: { id_categoria: number; nombre: string; sla_horas: number | null } | null = null;

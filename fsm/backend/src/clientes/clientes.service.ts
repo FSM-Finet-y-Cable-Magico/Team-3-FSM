@@ -1,14 +1,24 @@
+import { normalizarPaginacion } from '../common/utils/paginacion.util.js';
 import {
   Injectable,
   BadRequestException,
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { validarRut } from '../common/utils/rut.util.js';
 import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
 import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
+
+/** Criterios de la busqueda de clientes (RF-54). Todos opcionales y combinables. */
+export interface FiltrosClientes {
+  nombre?: string;
+  rut?: string;
+  telefono?: string;
+  direccion?: string;
+}
 
 @Injectable()
 export class ClientesService {
@@ -284,24 +294,33 @@ export class ClientesService {
 
   async listarClientes(
     id_empresa: number,
-    page: number = 1,
-    limit: number = 20,
-    nombre?: string,
-    rut?: string,
-    telefono?: string,
-    direccion?: string,
+    page: unknown = 1,
+    limit: unknown = 20,
+    filtros: FiltrosClientes = {},
   ) {
-    const safePage = Math.max(1, Number(page) || 1);
-    const safeLimit = Math.max(1, Number(limit) || 20);
-    const skip = (safePage - 1) * safeLimit;
+    const { page: pageSeguro, limit: limitSeguro, skip } = normalizarPaginacion(page, limit);
 
-    const where: Record<string, unknown> = {
+    // Un filtro que llega en blanco o con solo espacios no filtra nada: sin el
+    // trim, buscar " " devolveria vacio en vez del listado completo.
+    const limpiar = (valor?: string) => valor?.trim() || undefined;
+    const nombre = limpiar(filtros.nombre);
+    const rut = limpiar(filtros.rut);
+    const telefono = limpiar(filtros.telefono);
+    const direccion = limpiar(filtros.direccion);
+
+    // id_empresa va primero y sin condicion: es lo que impide que un usuario de
+    // una empresa vea clientes de la otra, y ningun filtro puede relajarlo.
+    const where: Prisma.clienteWhereInput = {
       id_empresa,
-      ...(nombre && { nombre_completo: { contains: nombre, mode: 'insensitive' as const } }),
+      ...(nombre && { nombre_completo: { contains: nombre, mode: 'insensitive' } }),
+      // El RUT se guarda sin puntos ni guion (ver RutInput), asi que el
+      // `contains` opera sobre digitos y no necesita normalizar mayusculas.
       ...(rut && { rut: { contains: rut } }),
       ...(telefono && { telefono: { contains: telefono } }),
       ...(direccion && {
-        direcciones: { some: { direccion_completa: { contains: direccion, mode: 'insensitive' as const } } },
+        direcciones: {
+          some: { direccion_completa: { contains: direccion, mode: 'insensitive' } },
+        },
       }),
     };
 
@@ -310,7 +329,7 @@ export class ClientesService {
         where,
         orderBy: { fecha_creacion: 'desc' },
         skip,
-        take: safeLimit,
+        take: limitSeguro,
         include: {
           direcciones: {
             where: { es_principal: true },
@@ -320,7 +339,7 @@ export class ClientesService {
       this.prisma.cliente.count({ where }),
     ]);
 
-    return { data: clientes, total, page, limit };
+    return { data: clientes, total, page: pageSeguro, limit: limitSeguro };
   }
 
   async listarPlanes(id_empresa: number) {

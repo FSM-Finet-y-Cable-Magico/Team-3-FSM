@@ -1,42 +1,27 @@
-# sv
+# Frontend FSM
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+SvelteKit, Tailwind y TypeScript. Configurar PUBLIC_API_URL con el backend local, según [README general](../../README.md).
 
-## Creating a project
-
-If you're seeing this, you've probably already done this step. Congrats!
-
-```sh
-# create a new project
-npx sv create my-app
-```
-
-To recreate this project with the same configuration:
-
-```sh
-# recreate this project
-npx sv@0.15.3 create --template minimal --types ts --install npm frontend
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```sh
+~~~sh
+npm install
+npm run check
 npm run build
-```
+~~~
 
-You can preview the production build with `npm run preview`.
+## Pruebas de navegador
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+~~~sh
+npx playwright install chromium
+npm run test:e2e
+~~~
+
+Para usar una instalación local de Edge en PowerShell:
+
+~~~powershell
+$env:PLAYWRIGHT_CHANNEL = 'msedge'
+npm run test:e2e
+~~~
+
+Playwright inicia su propio Vite en 127.0.0.1:5173; el puerto debe estar libre. Las peticiones HTTP de la API y las imágenes de Cloudinary se interceptan con datos de prueba, y el login usa una sesión sintética creada desde la pantalla. No se usan secretos, sesiones existentes ni bases compartidas.
+
+Las pruebas verifican paginación, acceso a Clientes, miniaturas, liberación de object URLs al eliminar/fallar/salir y navegación con subidas pendientes. Los screenshots se guardan en test-results. Los tests de backend verifican por separado los guards, servicios y persistencia simulada; los tests del navegador verifican el comportamiento de la interfaz.

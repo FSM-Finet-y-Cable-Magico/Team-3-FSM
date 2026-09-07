@@ -1,4 +1,7 @@
 <script lang="ts">
+  import Paginacion from '$lib/components/Paginacion.svelte';
+  import Alert from '$lib/components/Alert.svelte';
+  import Cargando from '$lib/components/Cargando.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
@@ -155,18 +158,12 @@
 {/if}
 
 {#if errorMsg}
-  <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm">{errorMsg}</div>
+  <Alert class="rounded-xl mb-5 text-sm">{errorMsg}</Alert>
 {/if}
 
 <!-- Tabla -->
 {#if loading}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center">
-    <svg class="animate-spin h-8 w-8 text-blue-500 mx-auto mb-3" fill="none" viewBox="0 0 24 24">
-      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-    </svg>
-    <p class="text-slate-400 text-sm">Cargando órdenes...</p>
-  </div>
+  <Cargando mensaje="Cargando órdenes..." class="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center" spinnerClass="h-8 w-8 text-blue-500 mx-auto mb-3" mensajeClass="text-slate-400 text-sm" />
 {:else}
   <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
     <table class="min-w-full divide-y divide-slate-100">
@@ -218,25 +215,6 @@
       </tbody>
     </table>
 
-    {#if total > limit}
-      <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-        <span class="text-sm text-slate-500">
-          Mostrando {(page - 1) * limit + 1}–{Math.min(page * limit, total)} de <strong>{total}</strong> OT
-        </span>
-        <div class="flex items-center gap-2">
-          <button
-            onclick={() => { page = Math.max(1, page - 1); cargarOTs(); }}
-            disabled={page <= 1}
-            class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >← Anterior</button>
-          <span class="px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg">{page}</span>
-          <button
-            onclick={() => { page++; cargarOTs(); }}
-            disabled={page * limit >= total}
-            class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >Siguiente →</button>
-        </div>
-      </div>
-    {/if}
+    <Paginacion {page} {limit} {total} entidad="OT" onchange={(nuevaPagina) => { page = nuevaPagina; cargarOTs(); }} />
   </div>
 {/if}
