@@ -1,0 +1,106 @@
+# Verificación automática de cada PR.
+#
+# Corre lo mismo que hoy se pide a mano antes de mergear. Nace de que el PR #56
+# y la rama de monitoreo se revisaron leyendo código y corriendo comandos en el
+# PC de cada uno: funciona, pero depende de que nadie se olvide, y ya pasó que
+# tests escritos meses atrás nunca se hubieran ejecutado.
+#
+# No necesita base de datos: `test/env.cjs` fija todas las variables y las
+# pruebas doblan la persistencia. Tampoco necesita credenciales de Cloudinary
+# — los tests doblan el SDK a propósito, para cubrir el caso "sin configurar".
+
+name: Verificación
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Si alguien empuja dos veces seguidas a la misma rama, cancela la corrida
+# anterior en vez de gastar minutos en un commit que ya quedó viejo.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fsm/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: fsm/backend/package-lock.json
+
+      # `npm ci` es lo correcto, pero el lockfile de este repo se genera en
+      # Windows y le faltan dependencias opcionales de Linux, así que en CI
+      # falla con EUSAGE. Mientras eso no se arregle, se cae a `npm install`.
+      # Si algún día `npm ci` deja de fallar, sacar el `||` y dejarlo solo.
+      - name: Instalar dependencias
+        run: npm ci || npm install
+
+      # El postinstall ya lo corre, pero si `npm ci` fue un acierto de caché
+      # puede no haberse ejecutado. Es idempotente y toma menos de un segundo.
+      - name: Generar cliente de Prisma
+        run: npx prisma generate
+
+      - name: Tipos
+        run: npx tsc --noEmit
+
+      - name: Compilar
+        run: npm run build
+
+      - name: Tests unitarios
+        run: npm test
+
+      # Van aparte de los unitarios: `npm test` solo toma `src/**/*.spec.ts`.
+      # Estos levantan el AppModule real con guards, DTO y cliente de Prisma
+      # de verdad; solo doblan persistencia y transporte. Son los que cubren
+      # permisos y flujos de OT, así que no pueden quedar fuera.
+      - name: Tests e2e
+        run: npm run test:e2e
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fsm/frontend
+    # `src/lib/api/config.ts` importa PUBLIC_API_URL de `$env/static/public`,
+    # que incrusta el valor en el bundle AL COMPILAR y por lo tanto exige que
+    # exista ya en `check` y en `build`. En los PC de cada uno sale del `.env`,
+    # que esta gitignoreado, asi que en CI no hay ninguno y sin esto el build
+    # muere con: "PUBLIC_API_URL" is not exported by "virtual:env/static/public".
+    #
+    # El valor es un marcador de posicion a proposito: CI solo compila y revisa
+    # tipos, nunca le pega al backend. El valor real de cada ambiente lo pone
+    # Vercel en su propio build.
+    env:
+      PUBLIC_API_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: fsm/frontend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci || npm install
+
+      # `svelte-check` no falla por warnings, solo por errores. Hoy el proyecto
+      # tiene 17 warnings de accesibilidad; si algún día se limpian, conviene
+      # agregar `--fail-on-warnings` para que no vuelvan a acumularse.
+      - name: Tipos y Svelte
+        run: npm run check
+
+      - name: Compilar
+        run: npm run build
