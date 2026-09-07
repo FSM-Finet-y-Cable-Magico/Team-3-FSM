@@ -46,6 +46,12 @@ describe('busqueda de clientes por criterios multiples', () => {
     });
   });
 
+  it('busca el RUT sin distinguir la K del digito verificador', async () => {
+    await service.listarClientes(1, 1, 20, { rut: '12345678k' });
+
+    expect(whereUsado().rut).toEqual({ contains: '12345678k', mode: 'insensitive' });
+  });
+
   it('combina los filtros en un AND, sin ampliar el resultado', async () => {
     await service.listarClientes(1, 1, 20, { nombre: 'juan', telefono: '5678' });
     const where = whereUsado();

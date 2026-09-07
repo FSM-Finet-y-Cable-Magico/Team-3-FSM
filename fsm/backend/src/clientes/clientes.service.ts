@@ -313,9 +313,12 @@ export class ClientesService {
     const where: Prisma.clienteWhereInput = {
       id_empresa,
       ...(nombre && { nombre_completo: { contains: nombre, mode: 'insensitive' } }),
-      // El RUT se guarda sin puntos ni guion (ver RutInput), asi que el
-      // `contains` opera sobre digitos y no necesita normalizar mayusculas.
-      ...(rut && { rut: { contains: rut } }),
+      // El RUT se guarda sin puntos ni guion (ver RutInput), pero el digito
+      // verificador puede ser K y queda con la mayuscula que se tecleo al dar
+      // de alta: RutInput solo la sube para mostrarla en pantalla, no en el
+      // valor que propaga. Sin `insensitive`, buscar "...k" no encuentra al
+      // cliente guardado con "...K", y es 1 de cada 11 RUT.
+      ...(rut && { rut: { contains: rut, mode: 'insensitive' } }),
       ...(telefono && { telefono: { contains: telefono } }),
       ...(direccion && {
         direcciones: {
