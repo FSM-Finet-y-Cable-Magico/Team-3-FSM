@@ -11,6 +11,8 @@ import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
 import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
 
+const MAX_CONTRATOS_ACTIVOS = 50;
+
 @Injectable()
 export class ClientesService {
   constructor(private prisma: PrismaService) {}
@@ -96,9 +98,10 @@ export class ClientesService {
           where: { es_principal: true },
         },
         contratos: {
-          where: { estado: 'ACTIVO' },
+          where: { estado: 'ACTIVO', id_empresa },
           include: { plan: true },
-          take: 1,
+          orderBy: { fecha_inicio: 'desc' },
+          take: MAX_CONTRATOS_ACTIVOS,
         },
       },
     });
@@ -145,7 +148,22 @@ export class ClientesService {
         obs_conflictivo: cliente.obs_conflictivo,
         fecha_creacion: cliente.fecha_creacion,
         direccion_principal: cliente.direcciones[0] ?? null,
-        contrato_activo: cliente.contratos[0] ?? null,
+        contratos_activos: cliente.contratos.map((contrato) => ({
+          id_contrato: contrato.id_contrato,
+          // fecha_inicio es un DATE puro. Se entrega como YYYY-MM-DD para que el
+          // front no lo reinterprete en su zona horaria y muestre el dia anterior.
+          fecha_inicio: contrato.fecha_inicio.toISOString().slice(0, 10),
+          estado: contrato.estado,
+          // La relacion con plan es opcional en el esquema.
+          plan: contrato.plan
+            ? {
+                nombre_comercial: contrato.plan.nombre_comercial,
+                velocidad_mbps: contrato.plan.velocidad_mbps,
+                // Decimal se serializa como string; se normaliza a numero aqui.
+                precio_mensual: Number(contrato.plan.precio_mensual),
+              }
+            : null,
+        })),
       },
       historial_ot,
       alerta_reparaciones_30_dias: {
