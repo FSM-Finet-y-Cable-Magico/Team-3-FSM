@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ApiScope } from '../common/guards/api-key.guard.js';
 import { ACCION_A_ESTADO_G1, type AccionEquipo } from '../ordenes/estado-equipo.constants.js';
+import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 import type { PayloadCierre, EquipoDeclarado } from '../ordenes/fan-out/fan-out-cierre.js';
 
 const MAX_RANGO_DIAS = 90;
@@ -24,19 +25,42 @@ export class IntegracionesService {
     return id_empresa;
   }
 
-  private rango(desde?: string, hasta?: string): { gte: Date; lte: Date } {
+  /**
+   * Convierte `desde`/`hasta` (YYYY-MM-DD, inclusivos) en un intervalo de
+   * instantes semiabierto [gte, lt).
+   *
+   * Antes hacia `new Date('2026-09-06')` y lo usaba como `lte`. Eso es la
+   * MEDIANOCHE UTC de ese dia, no su final, asi que:
+   *   - una consulta de un solo dia (desde = hasta) devolvia practicamente
+   *     nada: solo lo ocurrido exactamente a las 00:00 UTC;
+   *   - en un rango, el ultimo dia quedaba fuera.
+   * G1 y G8 usan esto para reconciliar cierres, o sea que perdian justo los
+   * del dia que consultaban.
+   *
+   * El dia se toma en la zona de operacion, con el mismo helper que usan el
+   * dashboard y la vista de terreno: si un cierre "del 6 de septiembre" cuenta
+   * como del 6, tiene que ser el mismo 6 para todos.
+   */
+  private rango(desde?: string, hasta?: string): { gte: Date; lt: Date } {
     if (!desde || !hasta) throw new BadRequestException('desde y hasta son obligatorios (YYYY-MM-DD)');
-    const gte = new Date(desde);
-    const lte = new Date(hasta);
-    if (isNaN(gte.getTime()) || isNaN(lte.getTime())) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) {
+      throw new BadRequestException('Fechas inválidas: se espera YYYY-MM-DD');
+    }
+    // Mediodia UTC: cae dentro del dia calendario buscado en cualquier zona,
+    // asi que el helper devuelve el rango del dia correcto sin depender del
+    // offset ni del horario de verano.
+    const dentroDe = (dia: string) => new Date(`${dia}T12:00:00Z`);
+    if (isNaN(dentroDe(desde).getTime()) || isNaN(dentroDe(hasta).getTime())) {
       throw new BadRequestException('Fechas inválidas');
     }
-    if (lte < gte) throw new BadRequestException('hasta no puede ser anterior a desde');
-    const dias = (lte.getTime() - gte.getTime()) / 86_400_000;
+    const { desde: gte } = rangoDiaOperacion(dentroDe(desde));
+    const { hasta: lt } = rangoDiaOperacion(dentroDe(hasta));
+    if (lt <= gte) throw new BadRequestException('hasta no puede ser anterior a desde');
+    const dias = (lt.getTime() - gte.getTime()) / 86_400_000;
     if (dias > MAX_RANGO_DIAS) {
       throw new BadRequestException(`El rango no puede superar ${MAX_RANGO_DIAS} días`);
     }
-    return { gte, lte };
+    return { gte, lt };
   }
 
   // ---- OTs ----
@@ -54,8 +78,8 @@ export class IntegracionesService {
     if (q.estado) where.estado = q.estado;
     if (q.id_tecnico) where.id_tecnico = q.id_tecnico;
     if (q.desde && q.hasta) {
-      const { gte, lte } = this.rango(q.desde, q.hasta);
-      where.fecha_creacion = { gte, lte };
+      const { gte, lt } = this.rango(q.desde, q.hasta);
+      where.fecha_creacion = { gte, lt };
     }
 
     const [data, total] = await Promise.all([
@@ -86,11 +110,11 @@ export class IntegracionesService {
   /** Cierres (OT COMPLETADAS) en un rango ≤90 días, con materiales. Para T1-CU-90. */
   async cierres(scope: ApiScope, q: { id_empresa: number; desde?: string; hasta?: string; page?: number }) {
     const id_empresa = this.exigirEmpresa(scope, q.id_empresa);
-    const { gte, lte } = this.rango(q.desde, q.hasta);
+    const { gte, lt } = this.rango(q.desde, q.hasta);
     const page = q.page ?? 1;
     const limit = 100;
 
-    const where = { id_empresa, estado: 'COMPLETADA', fecha_completada: { gte, lte } };
+    const where = { id_empresa, estado: 'COMPLETADA', fecha_completada: { gte, lt } };
     const [data, total] = await Promise.all([
       this.prisma.orden_trabajo.findMany({
         where,

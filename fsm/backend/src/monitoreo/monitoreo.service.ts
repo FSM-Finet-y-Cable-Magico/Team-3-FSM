@@ -143,7 +143,11 @@ export class MonitoreoService {
       skip: (page - 1) * limit,
       take: limit,
       include: {
-        monitoreos: { orderBy: { timestamp_medicion: 'desc' }, take: 1 },
+        // Desempate por id_monitoreo: `timestamp_medicion` guarda desde cuando
+        // la ONT esta en ese estado, no cuando se leyo, asi que una ONT estable
+        // repite el mismo valor en cada sondeo. Sin desempatar, "la ultima
+        // lectura" salia arbitraria entre las empatadas.
+        monitoreos: { orderBy: [{ timestamp_medicion: 'desc' }, { id_monitoreo: 'desc' }], take: 1 },
       },
     });
 
@@ -155,7 +159,7 @@ export class MonitoreoService {
     const registro = await this.prisma.registro_ont.findUnique({
       where: { numero_serie: sn },
       include: {
-        monitoreos: { orderBy: { timestamp_medicion: 'desc' }, take: 1 },
+        monitoreos: { orderBy: [{ timestamp_medicion: 'desc' }, { id_monitoreo: 'desc' }], take: 1 },
         historial: { orderBy: { timestamp: 'desc' }, take: 50 },
       },
     });
@@ -178,7 +182,7 @@ export class MonitoreoService {
 
     const registros = await this.prisma.registro_ont.findMany({
       where: { id_cliente },
-      include: { monitoreos: { orderBy: { timestamp_medicion: 'desc' }, take: 1 } },
+      include: { monitoreos: { orderBy: [{ timestamp_medicion: 'desc' }, { id_monitoreo: 'desc' }], take: 1 } },
     });
     return { id_cliente, onts: registros.map((r) => this.aVista(r)) };
   }

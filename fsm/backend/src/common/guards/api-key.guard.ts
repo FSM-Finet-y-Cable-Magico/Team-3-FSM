@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 export interface ApiScope {
@@ -20,12 +20,26 @@ export interface ApiScope {
  */
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
+  private readonly logger = new Logger(ApiKeyGuard.name);
   private readonly claves = new Map<string, ApiScope>();
 
   constructor(config: ConfigService) {
     const raw = config.get<string>('INTEGRACION_API_KEYS') ?? '';
     for (const entrada of raw.split(';').map((s) => s.trim()).filter(Boolean)) {
-      const [grupo, clave, empresas] = entrada.split(':');
+      const partes = entrada.split(':');
+      // El formato es `grupo:clave:empresas`, asi que una clave que contenga
+      // ":" parte la entrada de mas y se registra truncada. No abre nada --
+      // `empresas` queda vacio y `includes` da siempre false, o sea 403 a todo
+      // -- pero deja la integracion muerta con un 401/403 que no explica nada.
+      // Se avisa al arrancar en vez de fallar en silencio.
+      if (partes.length !== 3) {
+        this.logger.warn(
+          `INTEGRACION_API_KEYS: entrada con ${partes.length} campos en vez de 3 ` +
+            `(grupo:clave:empresas). Se ignora. Revisar si la clave trae ":".`,
+        );
+        continue;
+      }
+      const [grupo, clave, empresas] = partes;
       if (!grupo || !clave) continue;
       this.claves.set(clave, {
         grupo,

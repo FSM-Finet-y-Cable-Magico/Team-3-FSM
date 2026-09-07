@@ -269,7 +269,7 @@ export class AlertasService {
         id_caja_nap: true,
         caja_confirmada_por: true,
         monitoreos: {
-          orderBy: { timestamp_medicion: 'desc' },
+          orderBy: [{ timestamp_medicion: 'desc' }, { id_monitoreo: 'desc' }],
           take: 1,
           select: { estado_conexion: true, potencia_actual_dbm: true, timestamp_medicion: true },
         },
@@ -625,12 +625,21 @@ export class AlertasService {
         sin_senal_desde: Date | null;
       }[]
     >`
+      -- El desempate por id_monitoreo NO es cosmetico. timestamp_medicion
+      -- guarda el last_status_change de SmartOLT, o sea DESDE CUANDO la ONT
+      -- esta en ese estado, no cuando se leyo: es lo que hace falta para
+      -- horas_asi y para descartar equipos dados de baja. Pero eso significa
+      -- que una ONT con meses en linea escribe en cada sondeo una fila con el
+      -- MISMO timestamp. Sin desempate, DISTINCT ON elegia cualquiera de las
+      -- empatadas y la potencia podia venir de semanas atras: justo el dato
+      -- que CU-13 y CU-16 necesitan al dia, porque miden deriva.
+      -- id_monitoreo es autoincremental: el mayor es la lectura mas reciente.
       WITH ultima AS (
         SELECT DISTINCT ON (m.id_registro_ont)
                m.id_registro_ont, m.estado_conexion, m.potencia_actual_dbm, m.timestamp_medicion
         FROM monitoreo_ont m
         WHERE m.id_registro_ont IS NOT NULL
-        ORDER BY m.id_registro_ont, m.timestamp_medicion DESC
+        ORDER BY m.id_registro_ont, m.timestamp_medicion DESC, m.id_monitoreo DESC
       ),
       transicion AS (
         SELECT DISTINCT ON (h.id_registro_ont) h.id_registro_ont, h.timestamp

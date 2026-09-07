@@ -1,5 +1,5 @@
 import { normalizarPaginacion } from '../common/utils/paginacion.util.js';
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, forwardRef } from '@nestjs/common';
 import { Prisma, type orden_trabajo } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { validarRut } from '../common/utils/rut.util.js';
@@ -35,6 +35,8 @@ const OT_INCLUDE = {
 
 @Injectable()
 export class OrdenesService {
+  private readonly logger = new Logger(OrdenesService.name);
+
   constructor(
     private prisma: PrismaService,
     private cloudinary: CloudinaryService,
@@ -604,8 +606,19 @@ export class OrdenesService {
 
     // Fan-out best-effort: el cierre ya se comprometio arriba. Si esto falla,
     // G1/G8 reconcilian por GET /api/integraciones/ordenes/:id/cierre.
+    //
+    // NO se espera, y eso es el punto. `WebhookFanOut` reintenta 3 veces con
+    // 8 s de timeout y espera entre medio: con un webhook caido son ~27 s. Con
+    // el `await` que habia antes, esos 27 s se los comia el tecnico en terreno,
+    // desde el celular, esperando por algo que ya estaba guardado -- y con el
+    // riesgo de que reintentara el cierre creyendo que fallo. El comentario
+    // decia "best-effort" mientras el codigo hacia lo contrario.
+    //
+    // El `.catch` es por prolijidad: la interfaz se compromete a no lanzar,
+    // pero una promesa sin manejar tumbaria el proceso si alguna vez lo hace.
     const fecha = (otActualizada?.fecha_completada ?? new Date()).toISOString();
-    await this.fanOut.notificar({
+    void this.fanOut
+      .notificar({
       clave_idempotencia: `${id_ot}:${fecha}`,
       id_ot,
       id_empresa: ot.id_empresa,
@@ -624,8 +637,11 @@ export class OrdenesService {
       categoria_falla_otro: dto.categoria_falla_otro?.trim() || null,
       materiales: dto.materiales.map((m) => ({ id_tipo_equipo: m.id_tipo_equipo, cantidad: m.cantidad })),
       equipos_instalados,
-      equipos_retirados,
-    });
+        equipos_retirados,
+      })
+      .catch((e) =>
+        this.logger.error(`fan-out del cierre ${id_ot}: ${(e as Error).message}`),
+      );
 
     const advertencia_potencia =
       dto.potencia_optica_dbm < -24 || dto.potencia_optica_dbm > -19;
