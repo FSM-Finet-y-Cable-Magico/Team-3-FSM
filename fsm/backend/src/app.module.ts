@@ -6,6 +6,9 @@ import { AuthModule } from './auth/auth.module.js';
 import { ClientesModule } from './clientes/clientes.module.js';
 import { OrdenesModule } from './ordenes/ordenes.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
+import { MonitoreoModule } from './monitoreo/monitoreo.module.js';
+import { PlantaExternaModule } from './planta-externa/planta-externa.module.js';
+import { IntegracionesModule } from './integraciones/integraciones.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 
@@ -17,6 +20,9 @@ import { RolesGuard } from './common/guards/roles.guard.js';
     ClientesModule,
     OrdenesModule,
     DashboardModule,
+    MonitoreoModule,
+    PlantaExternaModule,
+    IntegracionesModule,
   ],
   providers: [
     // Ambos guards son globales: todo endpoint nace exigiendo token y rol, y

@@ -5,12 +5,14 @@ import { OrdenesService } from './ordenes.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
+import { FAN_OUT_CIERRE } from './fan-out/fan-out-cierre.js';
 
 // Verifica que llamar al servicio desde otro consumidor tampoco amplíe los roles.
 // El doble solo devuelve la fila; no implementa la regla de autorización.
 describe('autorización de OT desde el servicio', () => {
   const findFirst = jest.fn(async () => ({ id_ot: 1, id_empresa: 1, id_tecnico: 7, estado: 'EN_CURSO' }));
   const subirEvidencia = jest.fn();
+  const notificar = jest.fn(async () => {});
   let service: OrdenesService;
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -18,6 +20,11 @@ describe('autorización de OT desde el servicio', () => {
       OrdenesService, { provide: PrismaService, useValue: { orden_trabajo: { findFirst } } },
       { provide: CloudinaryService, useValue: { subirEvidencia } },
       { provide: DashboardGateway, useValue: {} },
+      // La rama de monitoreo le agrego al cierre un fan-out hacia los sistemas
+      // de los otros grupos. Aca se dobla porque el test es sobre autorizacion:
+      // las tres llamadas tienen que rebotar ANTES de llegar a notificar nada,
+      // y el `not.toHaveBeenCalled` de abajo lo comprueba.
+      { provide: FAN_OUT_CIERRE, useValue: { nombre: 'doble', notificar } },
     ] }).compile();
     service = moduleRef.get(OrdenesService);
   });
@@ -27,6 +34,7 @@ describe('autorización de OT desde el servicio', () => {
     await expect(service.cerrarOT(1, { fotos: [], materiales: [], potencia_optica_dbm: -21, resultado_llamada: 'CONFORME' }, user))
       .rejects.toBeInstanceOf(ForbiddenException);
     expect(subirEvidencia).not.toHaveBeenCalled();
+    expect(notificar).not.toHaveBeenCalled();
   });
 });
 
@@ -55,6 +63,10 @@ describe('detalle de OT para la vista', () => {
         { provide: PrismaService, useValue: { orden_trabajo: { findFirst } } },
         { provide: CloudinaryService, useValue: {} },
         { provide: DashboardGateway, useValue: {} },
+        // El cierre notifica el uso de material a G1 (ver ACUERDO G1-G3 en
+        // `cerrarOT`), asi que OrdenesService depende del fan-out aunque estas
+        // pruebas solo lean el detalle. Se dobla para poder construirlo.
+        { provide: FAN_OUT_CIERRE, useValue: { nombre: 'doble', notificar: async () => {} } },
       ],
     }).compile();
     service = moduleRef.get(OrdenesService);

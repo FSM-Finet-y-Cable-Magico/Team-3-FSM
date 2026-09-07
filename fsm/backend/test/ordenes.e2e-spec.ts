@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { AuthService } from '../src/auth/auth.service.js';
 import { CLOUDINARY_CLIENT } from '../src/cloudinary/cloudinary.service.js';
+import { FAN_OUT_CIERRE } from '../src/ordenes/fan-out/fan-out-cierre.js';
 import { Prisma } from '../generated/prisma/client.js';
 
 // Evolución del arnés de #43/#42: los guards, DTO, servicios de OT/clientes y
@@ -77,7 +78,18 @@ const prisma = {
   historial_ot: { create: jest.fn(async (_args: Prisma.historial_otCreateArgs) => ({})) },
   log_auditoria: { create: jest.fn(async (_args: Prisma.log_auditoriaCreateArgs) => ({})) },
   llamada_cortes: { create: jest.fn(async (_args: Prisma.llamada_cortesCreateArgs) => ({})) },
-  tipo_equipo: { findFirst: jest.fn(async () => ({ nombre: 'Cable' })) },
+  tipo_equipo: {
+    findFirst: jest.fn(async () => ({ nombre: 'Cable' })),
+    // La rama de monitoreo agrego al cierre una validacion de que el material
+    // exista en el catalogo de la empresa (ACUERDO G1-G3: G3 valida existencia,
+    // G1 valida saldo). Devolver el largo de `where.id_tipo_equipo.in` simula
+    // "todos los ids existen", que es el caso feliz que ejercitan estos tests;
+    // un doble que devolviera 0 haria fallar el cierre con 400, no con 500.
+    count: jest.fn(async (args: Prisma.tipo_equipoCountArgs = {}) => {
+      const ids = (args.where?.id_tipo_equipo as { in?: number[] })?.in;
+      return ids ? ids.length : 1;
+    }),
+  },
   stock_consumible: {
     findFirst: jest.fn(async () => ({ id_stock: 1, id_bodega: null, cantidad_disponible: 10 })),
     update: jest.fn(async (_args: Prisma.stock_consumibleUpdateArgs) => ({})),
@@ -87,6 +99,10 @@ const prisma = {
   $queryRaw: jest.fn(async (sql: Prisma.Sql) => sql.sql.includes('COUNT(*)') ? [{ total: 0 }] : []),
   $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
 };
+// Espia del aviso a G1. El cierre no descuenta stock: declara el uso y
+// notifica, y G1 confirma el descuento desde su inventario.
+const notificarG1 = jest.fn(async () => {});
+
 const imagenRemota = { secure_url: 'https://res.cloudinary.com/demo/image/upload/v1/evidencia.jpg', format: 'jpg', bytes: 2048 } as UploadApiResponse;
 const sdk = { uploader: { upload_stream: jest.fn((_options: UploadApiOptions, callback?: UploadResponseCallback) => ({
   end: (_buffer: Buffer) => callback?.(undefined, imagenRemota),
@@ -124,6 +140,7 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
       }))
       .overrideProvider(PrismaService).useValue(prisma)
       .overrideProvider(CLOUDINARY_CLIENT).useValue(sdk)
+      .overrideProvider(FAN_OUT_CIERRE).useValue({ nombre: 'doble', notificar: notificarG1 })
       .overrideProvider(AuthService).useValue({
         login: async () => ({ access_token: 'prueba' }),
         cambiarPassword: async () => ({ ok: true }),
@@ -256,8 +273,17 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
     const res = await cerrar(1, 'TECNICO', dto).expect(201);
     expect(res.body.estado).toBe('COMPLETADA');
     expect(prisma.evidencia_foto.createMany).toHaveBeenCalledWith({ data: [{ id_ot: 1, ...dto.fotos[0] }] });
-    expect(prisma.stock_consumible.update).toHaveBeenCalledWith({ where: { id_stock: 1 }, data: { cantidad_disponible: { decrement: 2 } } });
-    expect(prisma.movimiento_inventario.create).toHaveBeenCalled();
+    // ACUERDO G1-G3 (Opcion A): al cerrar, G3 DECLARA el material usado y avisa
+    // a G1; el descuento lo confirma G1 desde su inventario. Antes este test
+    // afirmaba lo contrario (RNF-14 / PR #37), que era el contrato anterior.
+    expect(prisma.uso_material_ot.createMany).toHaveBeenCalledWith({
+      data: [{ id_ot: 1, id_tipo_equipo: 1, cantidad: 2 }],
+    });
+    expect(notificarG1).toHaveBeenCalled();
+    // Lo que NO debe pasar. Va explicito para que reintroducir el descuento en
+    // G3 rompa la prueba en vez de duplicar el movimiento en el lado de G1.
+    expect(prisma.stock_consumible.update).not.toHaveBeenCalled();
+    expect(prisma.movimiento_inventario.create).not.toHaveBeenCalled();
     expect(prisma.llamada_cortes.create).toHaveBeenCalled();
     expect(prisma.historial_ot.create).toHaveBeenCalled();
     expect(prisma.log_auditoria.create).toHaveBeenCalled();
