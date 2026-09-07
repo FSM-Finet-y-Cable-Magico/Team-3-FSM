@@ -138,6 +138,19 @@
     return map[estado] ?? 'bg-gray-100 text-gray-800';
   }
 
+  function formatearFechaISO(fecha: string): string {
+    // Llega como YYYY-MM-DD. Se arma en hora local porque new Date(iso) lo
+    // interpretaria como UTC y en Chile mostraria el dia anterior.
+    const [anio, mes, dia] = fecha.split('-').map(Number);
+    if (!anio || !mes || !dia) return fecha;
+    return new Date(anio, mes - 1, dia).toLocaleDateString('es-CL');
+  }
+
+  function formatearPrecio(valor: number | null | undefined): string {
+    if (valor === null || valor === undefined || Number.isNaN(valor)) return 'N/A';
+    return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP' }).format(valor);
+  }
+
 </script>
     {#if loading}
       <div class="text-center py-8 text-gray-500">Cargando...</div>
@@ -213,10 +226,37 @@
                     <p class="text-sm text-gray-500">{cliente.direccion_principal.comuna}{cliente.direccion_principal.ciudad ? ', ' + cliente.direccion_principal.ciudad : ''}</p>
                   </div>
                 {/if}
-                {#if cliente.contrato_activo}
-                  <div>
-                    <span class="text-xs text-gray-500 uppercase">Plan contratado</span>
-                    <p class="text-sm">{cliente.contrato_activo.plan.nombre_comercial} ({cliente.contrato_activo.plan.velocidad_mbps} Mbps)</p>
+                {#if cliente.contratos_activos && cliente.contratos_activos.length > 0}
+                  <details class="mt-4">
+                    <summary class="cursor-pointer text-sm font-medium text-blue-600 hover:text-blue-800">
+                      Servicios activos ({cliente.contratos_activos.length})
+                    </summary>
+                    <div class="mt-2 space-y-3">
+                      {#each cliente.contratos_activos as servicio (servicio.id_contrato)}
+                        <div class="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                          {#if servicio.plan}
+                            <span class="text-sm font-semibold text-gray-800">{servicio.plan.nombre_comercial}</span>
+                            <div class="mt-2 grid grid-cols-2 gap-2 text-sm text-gray-600">
+                              <span>
+                                {servicio.plan.velocidad_mbps !== null
+                                  ? servicio.plan.velocidad_mbps + ' Mbps'
+                                  : 'Velocidad no definida'}
+                              </span>
+                              <span class="text-right font-medium">{formatearPrecio(servicio.plan.precio_mensual)}</span>
+                            </div>
+                          {:else}
+                            <span class="text-sm font-semibold text-gray-500 italic">Plan no asignado</span>
+                          {/if}
+                          <p class="text-xs text-gray-400 mt-1">
+                            Inicio: {formatearFechaISO(servicio.fecha_inicio)}
+                          </p>
+                        </div>
+                      {/each}
+                    </div>
+                  </details>
+                {:else}
+                  <div class="mt-4">
+                    <p class="text-sm text-gray-500">Sin servicios activos</p>
                   </div>
                 {/if}
                 {#if cliente.unidad_instalada}
@@ -282,8 +322,11 @@
               <p class="text-sm text-gray-500">Sin órdenes de trabajo registradas</p>
             {:else}
               <div class="space-y-3">
-                {#each historialOT as ot}
-                  <div class="border-b border-gray-100 pb-3 last:border-0">
+                {#each historialOT as ot (ot.id_ot)}
+                  <a
+                    href="/ot/{ot.id_ot}"
+                    class="block border-b border-gray-100 pb-3 last:border-0 hover:bg-gray-50 rounded-lg px-2 -mx-2 transition-colors"
+                  >
                     <div class="flex items-center justify-between">
                       <span class="text-sm font-medium">{ot.tipo_ot}</span>
                       <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {estadoColor(ot.estado)}">
@@ -299,7 +342,7 @@
                         &rarr; {new Date(ot.fecha_completada).toLocaleDateString('es-CL')}
                       {/if}
                     </p>
-                  </div>
+                  </a>
                 {/each}
               </div>
             {/if}

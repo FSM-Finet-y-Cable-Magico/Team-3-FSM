@@ -7,6 +7,8 @@
   import { authStore } from '$lib/stores/auth.store';
   import * as ordenesApi from '$lib/api/ordenes.api';
   import EstadoBadge from '$lib/components/EstadoBadge.svelte';
+  import { urlTransformada } from '$lib/utils/cloudinary';
+  import { estadoPotencia, POTENCIA_MINIMA_DBM, POTENCIA_MAXIMA_DBM } from '$lib/utils/potencia';
 
   let token = '';
   let rol = $state('');
@@ -183,6 +185,15 @@
   }
 
   const esMiOT = $derived(ot?.id_tecnico === userId);
+
+  const COLOR_POTENCIA = {
+    BAJA: { valor: 'text-red-600', nota: 'text-red-500' },
+    ALTA: { valor: 'text-amber-600', nota: 'text-amber-500' },
+    OPTIMA: { valor: 'text-green-600', nota: '' },
+    SIN_DATO: { valor: 'text-gray-400', nota: '' },
+  };
+
+  const nivelPotencia = $derived(estadoPotencia(ot?.potencia_optica_dbm));
 </script>
 
 {#if loading}
@@ -465,6 +476,106 @@
         Esta OT se encuentra en estado final: <strong>{ot.estado}</strong>. No hay acciones disponibles.
       </div>
     {/if}
+
+    <!-- Galería de fotos -->
+    {#if ot.fotos && ot.fotos.length > 0}
+      <div class="bg-white rounded-xl shadow p-6">
+        <h3 class="font-semibold text-gray-700 mb-4">Galería de evidencia</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {#each ot.fotos as foto, indice (foto.id_foto)}
+            <a href={foto.url_cloudinary} target="_blank" rel="noopener noreferrer">
+              <!-- El <img> mide 384 px de ancho como maximo; se pide el doble
+                   para pantallas de densidad alta. Servir el original de 2 a 4 MB
+                   que sube el tecnico desde el telefono es lo que corrige M12. -->
+              <img
+                src={urlTransformada(foto.url_cloudinary, { ancho: 768, alto: 384, modo: 'fill' })}
+                alt="Evidencia {indice + 1} de la OT #{ot.id_ot}"
+                loading="lazy"
+                class="w-full h-48 object-cover rounded-lg shadow-sm hover:opacity-90 transition-opacity"
+              />
+            </a>
+          {/each}
+        </div>
+      </div>
+    {:else}
+      <div class="bg-white rounded-xl shadow p-6">
+        <h3 class="font-semibold text-gray-700 mb-2">Galería de evidencia</h3>
+        <p class="text-sm text-gray-400">Sin fotografías de evidencia registradas.</p>
+      </div>
+    {/if}
+
+    <!-- Materiales utilizados -->
+    <div class="bg-white rounded-xl shadow p-6">
+      <h3 class="font-semibold text-gray-700 mb-4">Materiales utilizados</h3>
+      {#if ot.materiales && ot.materiales.length > 0}
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-200">
+              <th class="text-left py-2 px-3 text-gray-600 font-medium">Equipo</th>
+              <th class="text-left py-2 px-3 text-gray-600 font-medium">Categoría</th>
+              <th class="text-right py-2 px-3 text-gray-600 font-medium">Cantidad</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each ot.materiales as mat (mat.id_uso)}
+              <tr class="border-b border-gray-100">
+                <td class="py-2 px-3 text-gray-900">{mat.tipo_equipo?.nombre ?? '-'}</td>
+                <td class="py-2 px-3 text-gray-500">{mat.tipo_equipo?.categoria ?? '-'}</td>
+                <td class="py-2 px-3 text-right text-gray-900">{mat.cantidad}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {:else}
+        <p class="text-sm text-gray-400">Sin materiales registrados.</p>
+      {/if}
+    </div>
+
+    <!-- Potencia óptica medida -->
+    <div class="bg-white rounded-xl shadow p-6">
+      <h3 class="font-semibold text-gray-700 mb-4">Potencia óptica medida</h3>
+      {#if nivelPotencia !== 'SIN_DATO'}
+        <p class="text-2xl font-bold {COLOR_POTENCIA[nivelPotencia].valor}">
+          {ot.potencia_optica_dbm} dBm
+        </p>
+        {#if nivelPotencia === 'BAJA'}
+          <p class="text-xs {COLOR_POTENCIA.BAJA.nota} mt-1">
+            Potencia baja (por debajo de {POTENCIA_MINIMA_DBM} dBm)
+          </p>
+        {:else if nivelPotencia === 'ALTA'}
+          <p class="text-xs {COLOR_POTENCIA.ALTA.nota} mt-1">
+            Potencia alta (por encima de {POTENCIA_MAXIMA_DBM} dBm)
+          </p>
+        {/if}
+      {:else}
+        <p class="text-sm text-gray-400">Sin medición de potencia óptica registrada.</p>
+      {/if}
+    </div>
+
+    <!-- Llamada de cortesía -->
+    <div class="bg-white rounded-xl shadow p-6">
+      <h3 class="font-semibold text-gray-700 mb-4">Llamada de cortesía</h3>
+      {#if ot.llamada}
+        <div class="flex items-center gap-3">
+          <span
+            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {ot.llamada
+              .resultado === 'CONFORME'
+              ? 'bg-green-100 text-green-800'
+              : 'bg-red-100 text-red-800'}"
+          >
+            {ot.llamada.resultado}
+          </span>
+          <span class="text-xs text-gray-400">
+            {new Date(ot.llamada.fecha_llamada).toLocaleString('es-CL')}
+          </span>
+        </div>
+        {#if ot.llamada.observaciones}
+          <p class="text-sm text-gray-600 mt-2">{ot.llamada.observaciones}</p>
+        {/if}
+      {:else}
+        <p class="text-sm text-gray-400">Sin llamada de cortesía registrada.</p>
+      {/if}
+    </div>
 
     <!-- Historial -->
     {#if ot.historial && ot.historial.length > 0}
