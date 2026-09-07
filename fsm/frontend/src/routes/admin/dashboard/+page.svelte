@@ -200,7 +200,7 @@
         color="yellow"
         icono={ICONO_CLOCK}
         clickable={true}
-        href="/ot?estado=PENDIENTE"
+        href="/admin/ot?estado=PENDIENTE"
       />
       <StatCard
         titulo="OT En Curso"
@@ -208,7 +208,7 @@
         color="blue"
         icono={ICONO_LIGHTNING}
         clickable={true}
-        href="/ot?estado=EN_CURSO"
+        href="/admin/ot?estado=EN_CURSO"
       />
       <!-- Sin enlace a proposito: la tarjeta cuenta solo las de hoy y /ot todavia
            no lee searchParams, asi que el destino mostraba el listado completo.
@@ -225,7 +225,7 @@
         color="red"
         icono={ICONO_EXCLAM}
         clickable={true}
-        href="/ot?prioridad=CRITICA"
+        href="/admin/ot?prioridad=CRITICA"
       />
     </div>
 
@@ -237,7 +237,7 @@
         color="gray"
         icono={ICONO_USERS}
         clickable={true}
-        href="/clientes"
+        href="/admin/clientes"
       />
       <StatCard
         titulo="Resueltas Remotamente"
@@ -253,7 +253,7 @@
         color="red"
         icono={ICONO_EXCLAM}
         clickable={true}
-        href="/ot?tipo_ot=REPARACION"
+        href="/admin/ot?tipo_ot=REPARACION"
       />
       <StatCard
         titulo="Tiempo Promedio Cierre"
@@ -287,7 +287,7 @@
       <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-base font-semibold text-gray-800">Ultimas completadas</h3>
-          <a href="/ot?estado=COMPLETADA" class="text-xs text-blue-600 hover:text-blue-800 font-medium">
+          <a href="/admin/ot?estado=COMPLETADA" class="text-xs text-blue-600 hover:text-blue-800 font-medium">
             Ver todas
           </a>
         </div>

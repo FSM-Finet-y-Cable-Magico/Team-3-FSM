@@ -32,7 +32,7 @@
       return;
     }
     if (!['ADMIN', 'JEFE_TECNICO', 'TECNICO'].includes(state.usuario?.rol ?? '')) {
-      goto('/dashboard');
+      goto('/admin/dashboard');
       return;
     }
 
@@ -82,7 +82,7 @@
   </div>
   {#if esJefeOAdmin}
     <a
-      href="/ot/nueva"
+      href="/admin/ot/nueva"
       class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-5 rounded-xl shadow-sm transition-all text-sm"
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

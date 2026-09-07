@@ -76,7 +76,7 @@
       if (auth.usuario?.rol === 'TECNICO') {
         programar(() => goto('/terreno'), 500);
       } else {
-        programar(() => goto('/dashboard'), 500);
+        programar(() => goto('/admin/dashboard'), 500);
       }
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : 'Error al cambiar contraseña';

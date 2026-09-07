@@ -35,7 +35,7 @@
     const state = get(authStore);
 
     if (!state.isAuthenticated || !['ADMIN', 'JEFE_TECNICO'].includes(state.usuario?.rol ?? '')) {
-      goto('/dashboard');
+      goto('/admin/dashboard');
       return;
     }
 
@@ -158,7 +158,7 @@
             {loading ? 'Registrando...' : 'Registrar cliente'}
           </button>
           <a
-            href="/clientes"
+            href="/admin/clientes"
             class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors text-center"
           >
             Cancelar

@@ -43,7 +43,7 @@
     const state = get(authStore);
 
     if (!state.isAuthenticated || state.usuario?.rol !== 'ADMIN') {
-      goto('/dashboard');
+      goto('/admin/dashboard');
       return;
     }
 

@@ -12,7 +12,7 @@
     } else if (usuario?.rol === 'TECNICO') {
       goto('/terreno');
     } else {
-      goto('/dashboard');
+      goto('/admin/dashboard');
     }
   });
 </script>

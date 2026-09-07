@@ -53,7 +53,7 @@
       return;
     }
     if (!['ADMIN', 'JEFE_TECNICO'].includes(state.usuario?.rol ?? '')) {
-      goto('/dashboard');
+      goto('/admin/dashboard');
       return;
     }
 
@@ -133,7 +133,7 @@
 
 <div class="max-w-2xl mx-auto">
   <div class="flex items-center gap-3 mb-6">
-    <button onclick={() => goto('/ot')} class="text-gray-400 hover:text-gray-600 text-lg">&larr;</button>
+    <button onclick={() => goto('/admin/ot')} class="text-gray-400 hover:text-gray-600 text-lg">&larr;</button>
     <h2 class="text-2xl font-bold text-gray-800">Nueva Orden de Trabajo</h2>
   </div>
 
