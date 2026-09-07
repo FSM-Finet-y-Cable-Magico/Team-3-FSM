@@ -138,6 +138,18 @@ export const SEVERIDAD = {
 } as const;
 
 /**
+ * Orden de urgencia, de mas a menos. Existe porque `severidad` se guarda como
+ * texto y ordenar por la columna da el alfabeto: ALTA, BAJA, CRITICA, MEDIA.
+ * Es decir, las BAJA quedaban por encima de la CRITICA en el panel.
+ */
+export const ORDEN_SEVERIDAD: Record<string, number> = {
+  CRITICA: 0,
+  ALTA: 1,
+  MEDIA: 2,
+  BAJA: 3,
+};
+
+/**
  * Valores que se guardan en `monitoreo_ont.estado_conexion` e
  * `historial_conexion_ont.evento`. Ambas columnas son `VARCHAR(15)`: todos
  * estos caben.

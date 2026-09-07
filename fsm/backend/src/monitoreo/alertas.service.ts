@@ -10,6 +10,7 @@ import {
   UMBRAL_DESCONEXION_MIN_DEFECTO,
   potenciaEnFranjaPreventiva,
   potenciaFueraDeRango,
+  ORDEN_SEVERIDAD,
 } from './monitoreo.constants.js';
 
 export interface ResumenEvaluacion {
@@ -57,8 +58,19 @@ export class AlertasService {
 
     // Clave de identidad de una alerta: tipo + sujeto. Es con lo que se decide
     // si esta propuesta ya está representada por una alerta abierta.
+    // Una alerta individual ya queda identificada por su ONT, y se deja fuera
+    // `clave_caja` a proposito: si el ligado a caja cambia, la alerta sigue
+    // siendo la misma y no debe duplicarse.
+    //
+    // Una AGREGADA no tiene ONT, asi que su sujeto es la clave. Antes la clave
+    // solo entraba para FALLA_CAJA_NAP, y las otras tres agregadas
+    // (FALLA_OLT, FALLA_PLACA_OLT, POTENCIA_DEGRADANDOSE) colapsaban todas a
+    // "TIPO||". Con eso, tras la primera corrida: si caia una segunda OLT su
+    // alerta se consideraba "ya abierta" y no se creaba, y si la primera se
+    // recuperaba su alerta no se cerraba porque la de la segunda seguia
+    // proponiendo la misma clave. Revisar una, ademas, silenciaba todas por 24 h.
     const idDe = (p: { tipo: string; id_registro_ont: number | null; clave_caja: string | null }) =>
-      `${p.tipo}|${p.id_registro_ont ?? ''}|${p.tipo === 'FALLA_CAJA_NAP' ? (p.clave_caja ?? '') : ''}`;
+      `${p.tipo}|${p.id_registro_ont ?? ''}|${p.id_registro_ont == null ? (p.clave_caja ?? '') : ''}`;
 
     const abiertas = await this.prisma.alerta_monitoreo.findMany({
       where: { id_empresa, resuelta: false },
@@ -159,8 +171,16 @@ export class AlertasService {
         ...(zona ? { registro: { zona: { contains: zona, mode: 'insensitive' as const } } } : {}),
         ...(caja ? { clave_caja: { contains: caja, mode: 'insensitive' as const } } : {}),
       },
-      orderBy: [{ severidad: 'asc' }, { creada_en: 'desc' }],
-      take: Math.min(200, Math.max(1, limit)),
+      // El orden por severidad NO se puede pedir en SQL: la columna es texto y
+      // `asc` da el alfabeto -- ALTA, BAJA, CRITICA, MEDIA -- o sea las BAJA
+      // por encima de la CRITICA, que es exactamente al reves de para lo que
+      // sirve este panel. Se ordena abajo, en memoria, con ORDEN_SEVERIDAD.
+      //
+      // Por eso el techo se aplica DESPUES de ordenar: recortando en SQL por un
+      // orden equivocado, una CRITICA vieja podia quedar fuera del listado.
+      // Acotado igual por `where` (una empresa, solo abiertas), que sobre los
+      // datos reales de FiNet son ~200 filas.
+      orderBy: { creada_en: 'desc' },
       include: {
         registro: { select: { numero_serie: true, zona: true, nombre_cliente_ext: true, direccion_cliente_ext: true } },
         caja: { select: { identificador_unico: true, latitud: true, longitud: true } },
@@ -173,18 +193,24 @@ export class AlertasService {
     // ONT: todo en el nombre y la posición del puerto en la dirección. Se
     // desarma acá para que el panel muestre nombre y dirección donde
     // corresponde. Solo presentación: el dato crudo no se toca.
-    return filas.map((a) => {
-      if (!a.registro) return a;
-      const f = descomponerFicha(a.registro.nombre_cliente_ext, a.registro.direccion_cliente_ext);
-      return {
-        ...a,
-        registro: {
-          ...a.registro,
-          nombre_cliente_ext: f.nombre,
-          direccion_cliente_ext: f.direccion,
-        },
-      };
-    });
+    const rango = (sev: string | null) => ORDEN_SEVERIDAD[sev ?? ''] ?? 99;
+    return filas
+      // Primero por urgencia, y a igual urgencia la mas reciente arriba.
+      .sort((a, b) => rango(a.severidad) - rango(b.severidad) ||
+        b.creada_en.getTime() - a.creada_en.getTime())
+      .slice(0, Math.min(200, Math.max(1, limit)))
+      .map((a) => {
+        if (!a.registro) return a;
+        const f = descomponerFicha(a.registro.nombre_cliente_ext, a.registro.direccion_cliente_ext);
+        return {
+          ...a,
+          registro: {
+            ...a.registro,
+            nombre_cliente_ext: f.nombre,
+            direccion_cliente_ext: f.direccion,
+          },
+        };
+      });
   }
 
   /**
@@ -204,13 +230,21 @@ export class AlertasService {
     // Una alerta individual ya trae su cliente; no hay grupo que desplegar.
     if (!alerta.clave_caja) return { alerta, afectados: [] };
 
-    // `clave_caja` tiene dos formatos según el nivel del agregado:
+    // `clave_caja` tiene TRES formatos, uno por nivel del agregado:
     //   caja  → "2/1/7|NAP 6"        (olt/placa/puerto + nombre normalizado)
     //   placa → "OLT 2 / placa 1"
+    //   OLT   → "OLT 2"
+    // El de la OLT faltaba, y caia al `else`: `"OLT 2".split('/')` deja
+    // olt="OLT 2" en vez de "2", asi que el detalle de una FALLA_OLT devolvia
+    // siempre cero afectados -- justo la alerta mas grave, la que agrupa mas
+    // clientes y la que el jefe tecnico necesita desplegar para despachar.
     let filtro: { olt: string; board?: number; pon?: number; caja?: string };
     const mPlaca = /^OLT (.+) \/ placa (.+)$/.exec(alerta.clave_caja);
+    const mOlt = /^OLT (.+)$/.exec(alerta.clave_caja);
     if (mPlaca) {
       filtro = { olt: mPlaca[1], board: Number(mPlaca[2]) };
+    } else if (mOlt) {
+      filtro = { olt: mOlt[1] };
     } else {
       const [puerto, caja] = alerta.clave_caja.split('|');
       const [olt, board, pon] = puerto.split('/');
