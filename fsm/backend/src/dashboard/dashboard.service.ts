@@ -1,15 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 
 @Injectable()
 export class DashboardService {
   constructor(private prisma: PrismaService) {}
 
   async indicadoresDelDia(id_empresa: number) {
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    const manana = new Date(hoy);
-    manana.setDate(manana.getDate() + 1);
+    // La jornada se resuelve con el mismo helper que usa la vista de terreno
+    // (CU-11): devuelve instantes, no hora de pared, asi que la ventana no se
+    // corre contra `fecha_completada`, que es un timestamp sin zona en UTC.
+    // Calcularla en SQL con AT TIME ZONE daba medianoche de Santiago como texto
+    // sin zona, y el dashboard terminaba contando de 21:00 a 21:00.
+    const { desde: inicio_dia, hasta: fin_dia } = rangoDiaOperacion();
     const hace30Dias = new Date();
     hace30Dias.setDate(hace30Dias.getDate() - 30);
 
@@ -22,6 +25,8 @@ export class DashboardService {
       resueltasRemoto,
       clientesConReparacionesRecurrentes,
       cargaTecnicosRaw,
+      completadasHoy,
+      tiempoPromedioCierre,
     ] = await Promise.all([
       this.prisma.orden_trabajo.groupBy({
         by: ['estado'],
@@ -50,7 +55,7 @@ export class DashboardService {
         where: {
           id_empresa,
           estado: 'COMPLETADA',
-          fecha_completada: { gte: hoy, lt: manana },
+          fecha_completada: { gte: inicio_dia, lt: fin_dia },
         },
         orderBy: { fecha_completada: 'desc' },
         take: 5,
@@ -69,7 +74,7 @@ export class DashboardService {
           id_empresa,
           estado: 'COMPLETADA',
           resuelto_remotamente: true,
-          fecha_completada: { gte: hoy, lt: manana },
+          fecha_completada: { gte: inicio_dia, lt: fin_dia },
         },
       }),
 
@@ -97,6 +102,27 @@ export class DashboardService {
         },
         _count: { id_ot: true },
       }),
+
+      this.prisma.orden_trabajo.count({
+        where: {
+          id_empresa,
+          estado: 'COMPLETADA',
+          fecha_completada: { gte: inicio_dia, lt: fin_dia },
+        },
+      }),
+
+      // El ::float8 no es decorativo: EXTRACT(EPOCH ...) devuelve numeric, que
+      // Prisma mapea a Decimal y se serializa a JSON como string. La vista hace
+      // .toFixed() sobre este valor y reventaba el dashboard entero apenas se
+      // cerraba la primera OT del dia.
+      this.prisma.$queryRaw<[{ horas_promedio: number | null }]>`
+        SELECT AVG(EXTRACT(EPOCH FROM (fecha_completada - fecha_creacion)) / 3600)::float8 AS horas_promedio
+        FROM orden_trabajo
+        WHERE id_empresa = ${id_empresa}
+          AND estado = 'COMPLETADA'
+          AND fecha_completada >= ${inicio_dia}
+          AND fecha_completada < ${fin_dia}
+      `,
     ]);
 
     const ot_por_estado = {
@@ -143,6 +169,8 @@ export class DashboardService {
       ultimas_completadas: ultimasCompletadas,
       total_clientes_activos: totalClientes,
       resueltas_remotamente_hoy: resueltasRemoto,
+      ot_completadas_hoy: completadasHoy,
+      tiempo_promedio_cierre: tiempoPromedioCierre[0]?.horas_promedio ?? null,
       fecha_actualizacion: new Date(),
     };
   }

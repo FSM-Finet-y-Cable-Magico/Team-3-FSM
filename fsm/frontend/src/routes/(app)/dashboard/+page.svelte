@@ -18,6 +18,7 @@
   const ICONO_USERS = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>`;
   const ICONO_DESKTOP = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>`;
   const ICONO_REFRESH = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>`;
+  const ICONO_HOURGLASS = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4-2m0 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`;
 
   let token = '';
   let rol = $state('');
@@ -209,13 +210,14 @@
         clickable={true}
         href="/ot?estado=EN_CURSO"
       />
+      <!-- Sin enlace a proposito: la tarjeta cuenta solo las de hoy y /ot todavia
+           no lee searchParams, asi que el destino mostraba el listado completo.
+           Cuando /ot filtre por URL, apuntar al dia, no a todas las COMPLETADA. -->
       <StatCard
         titulo="Completadas Hoy"
-        valor={indicadores.ot_por_estado.COMPLETADA}
+        valor={indicadores.ot_completadas_hoy}
         color="green"
         icono={ICONO_CHECK}
-        clickable={true}
-        href="/ot?estado=COMPLETADA"
       />
       <StatCard
         titulo="OT Criticas"
@@ -227,8 +229,8 @@
       />
     </div>
 
-    <!-- Fila 2: 2 cards secundarias -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <!-- Fila 2: 4 cards secundarias -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <StatCard
         titulo="Clientes Activos"
         valor={indicadores.total_clientes_activos}
@@ -252,6 +254,13 @@
         icono={ICONO_EXCLAM}
         clickable={true}
         href="/ot?tipo_ot=REPARACION"
+      />
+      <StatCard
+        titulo="Tiempo Promedio Cierre"
+        valor={indicadores.tiempo_promedio_cierre != null ? `${indicadores.tiempo_promedio_cierre.toFixed(1)} h` : '-'}
+        subtitulo={indicadores.tiempo_promedio_cierre != null ? 'prom. por OT' : 'sin datos'}
+        color="blue"
+        icono={ICONO_HOURGLASS}
       />
     </div>
 
