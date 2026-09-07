@@ -5,12 +5,20 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { validarRut } from '../common/utils/rut.util.js';
 import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
 import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
 
+/** Criterios de la busqueda de clientes (RF-54). Todos opcionales y combinables. */
+export interface FiltrosClientes {
+  nombre?: string;
+  rut?: string;
+  telefono?: string;
+  direccion?: string;
+}
 const MAX_CONTRATOS_ACTIVOS = 50;
 
 @Injectable()
@@ -301,12 +309,44 @@ export class ClientesService {
     });
   }
 
-  async listarClientes(id_empresa: number, page: number = 1, limit: number = 20) {
+  async listarClientes(
+    id_empresa: number,
+    page: unknown = 1,
+    limit: unknown = 20,
+    filtros: FiltrosClientes = {},
+  ) {
     const { page: pageSeguro, limit: limitSeguro, skip } = normalizarPaginacion(page, limit);
+
+    // Un filtro que llega en blanco o con solo espacios no filtra nada: sin el
+    // trim, buscar " " devolveria vacio en vez del listado completo.
+    const limpiar = (valor?: string) => valor?.trim() || undefined;
+    const nombre = limpiar(filtros.nombre);
+    const rut = limpiar(filtros.rut);
+    const telefono = limpiar(filtros.telefono);
+    const direccion = limpiar(filtros.direccion);
+
+    // id_empresa va primero y sin condicion: es lo que impide que un usuario de
+    // una empresa vea clientes de la otra, y ningun filtro puede relajarlo.
+    const where: Prisma.clienteWhereInput = {
+      id_empresa,
+      ...(nombre && { nombre_completo: { contains: nombre, mode: 'insensitive' } }),
+      // El RUT se guarda sin puntos ni guion (ver RutInput), pero el digito
+      // verificador puede ser K y queda con la mayuscula que se tecleo al dar
+      // de alta: RutInput solo la sube para mostrarla en pantalla, no en el
+      // valor que propaga. Sin `insensitive`, buscar "...k" no encuentra al
+      // cliente guardado con "...K", y es 1 de cada 11 RUT.
+      ...(rut && { rut: { contains: rut, mode: 'insensitive' } }),
+      ...(telefono && { telefono: { contains: telefono } }),
+      ...(direccion && {
+        direcciones: {
+          some: { direccion_completa: { contains: direccion, mode: 'insensitive' } },
+        },
+      }),
+    };
 
     const [clientes, total] = await Promise.all([
       this.prisma.cliente.findMany({
-        where: { id_empresa },
+        where,
         orderBy: { fecha_creacion: 'desc' },
         skip,
         take: limitSeguro,
@@ -316,7 +356,7 @@ export class ClientesService {
           },
         },
       }),
-      this.prisma.cliente.count({ where: { id_empresa } }),
+      this.prisma.cliente.count({ where }),
     ]);
 
     return { data: clientes, total, page: pageSeguro, limit: limitSeguro };

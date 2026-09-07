@@ -15,10 +15,21 @@ export class ClientesController {
   @Get()
   listarClientes(
     @CurrentUser() user: { id_empresa: number },
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('nombre') nombre?: string,
+    @Query('rut') rut?: string,
+    @Query('telefono') telefono?: string,
+    @Query('direccion') direccion?: string,
   ) {
-    return this.clientesService.listarClientes(user.id_empresa, page ?? 1, limit ?? 20);
+    // page y limit se pasan crudos: normalizarPaginacion en el servicio ya
+    // recorta el rango y descarta lo que no sea un numero utilizable.
+    return this.clientesService.listarClientes(user.id_empresa, page, limit, {
+      nombre,
+      rut,
+      telefono,
+      direccion,
+    });
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO')

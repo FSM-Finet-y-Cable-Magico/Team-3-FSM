@@ -116,8 +116,14 @@ export async function listarClientes(
   token: string,
   page: number = 1,
   limit: number = 20,
+  filtros?: { nombre?: string; rut?: string; telefono?: string; direccion?: string },
 ): Promise<ClientesPaginados> {
-  return fetchApi(token, `${API_URL}/api/clientes?page=${page}&limit=${limit}`);
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (filtros?.nombre) params.set('nombre', filtros.nombre);
+  if (filtros?.rut) params.set('rut', filtros.rut);
+  if (filtros?.telefono) params.set('telefono', filtros.telefono);
+  if (filtros?.direccion) params.set('direccion', filtros.direccion);
+  return fetchApi(token, `${API_URL}/api/clientes?${params.toString()}`);
 }
 
 export async function listarPlanes(token: string): Promise<PlanResumen[]> {
