@@ -9,6 +9,35 @@ export interface MaterialDisponible {
   stock: { cantidad_disponible: number; umbral_minimo?: number | null } | null;
 }
 
+/**
+ * Acciones y diagnosticos que sirve el backend.
+ *
+ * No se copian los literales aca: G1 los compara con tildes, y una copia en la
+ * Vista se desincroniza sin que nadie se entere hasta que G1 rechaza el cierre.
+ */
+export interface AccionEquipoOpcion {
+  accion: string;
+  /** Si es true, el formulario exige diagnostico. */
+  es_retiro: boolean;
+  /** A que estado lo mueve G1. Se muestra para que el tecnico sepa que implica. */
+  estado_g1: string;
+}
+
+export interface OpcionesEquipo {
+  acciones: AccionEquipoOpcion[];
+  diagnosticos: string[];
+  diagnostico_por_defecto: string;
+}
+
+/** Un equipo individualizable declarado en el cierre (acuerdo G1: va por serie). */
+export interface EquipoOt {
+  numero_serie: string;
+  accion: string;
+  diagnostico?: string;
+  motivo?: string;
+  observacion_estado_fisico?: string;
+}
+
 export interface CerrarOTDto {
   fotos: { url_cloudinary: string; formato: string; tamano_kb: number }[];
   materiales: { id_tipo_equipo: number; cantidad: number; numero_serie?: string }[];
@@ -18,6 +47,10 @@ export interface CerrarOTDto {
   resuelto_remotamente?: boolean;
   id_categoria_falla?: number;
   categoria_falla_otro?: string;
+  /** G1 los pasa a "Instalado en cliente". */
+  equipos_instalados?: EquipoOt[];
+  /** G1 aplica la transicion segun `accion` (bodega, revision o baja). */
+  equipos_retirados?: EquipoOt[];
 }
 
 async function fetchApi(token: string, url: string, options?: RequestInit) {
@@ -38,6 +71,10 @@ async function fetchApi(token: string, url: string, options?: RequestInit) {
 
 export async function obtenerMateriales(token: string): Promise<MaterialDisponible[]> {
   return fetchApi(token, `${API_URL}/api/ordenes/materiales`);
+}
+
+export async function obtenerOpcionesEquipo(token: string): Promise<OpcionesEquipo> {
+  return fetchApi(token, `${API_URL}/api/ordenes/acciones-equipo`);
 }
 
 export async function cerrarOT(token: string, id_ot: number, dto: CerrarOTDto): Promise<Record<string, unknown>> {

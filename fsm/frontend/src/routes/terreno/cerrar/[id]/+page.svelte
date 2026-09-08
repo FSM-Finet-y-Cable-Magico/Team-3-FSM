@@ -50,6 +50,10 @@
   let cantidades = $state<Record<number, number>>({});
   let series = $state<Record<number, string>>({});
 
+  // Paso 3 - Equipos individualizables (acuerdo con G1)
+  let opcionesEquipo = $state<terrenoApi.OpcionesEquipo | null>(null);
+  let equipos = $state<terrenoApi.EquipoOt[]>([]);
+
   // Paso 3 - Cierre
   let potencia = $state<string>('');
   let resultadoLlamada = $state<'CONFORME' | 'NO_CONFORME'>('CONFORME');
@@ -79,6 +83,57 @@
   );
   const requiereCategoriaFalla = $derived(ot?.tipo_ot === 'REPARACION');
 
+  const esRetiro = (accion: string) =>
+    opcionesEquipo?.acciones.find((a) => a.accion === accion)?.es_retiro ?? false;
+
+  const etiquetaAccion = (accion: string) =>
+    accion.replaceAll('_', ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
+
+  function agregarEquipo() {
+    equipos.push({ numero_serie: '', accion: 'RETIRADO_PARA_DIAGNOSTICO' });
+  }
+
+  function quitarEquipo(i: number) {
+    equipos.splice(i, 1);
+  }
+
+  // El backend acepta A-Z, 0-9 y guion. Se normaliza al tipear en vez de
+  // rechazar despues: el tecnico esta en la calle y no va a adivinar el formato
+  // a partir de un 400.
+  function normalizarSerie(i: number, valor: string) {
+    equipos[i].numero_serie = valor.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 30);
+  }
+
+  /**
+   * Que le falta al formulario para poder cerrar.
+   *
+   * Antes el boton simplemente quedaba gris y no decia nada: el tecnico veia un
+   * boton que no responde sin ninguna pista. Ademas la validacion de categoria
+   * dentro de `cerrarOT` era inalcanzable, porque el boton ya estaba bloqueado
+   * justo en ese caso.
+   */
+  const faltante = $derived.by(() => {
+    const falta: string[] = [];
+    if (fotosListas.length === 0) falta.push('al menos una foto');
+    if (potencia === '' || isNaN(parseFloat(potencia))) falta.push('la potencia optica');
+    if (requiereCategoriaFalla && !idCategoriaFalla) falta.push('la categoria de falla');
+    if (
+      categoriaSeleccionada?.nombre.toLowerCase() === 'otro' &&
+      !categoriaFallaOtro.trim()
+    ) {
+      falta.push('la descripcion de la falla');
+    }
+    equipos.forEach((e, i) => {
+      const n = i + 1;
+      if (!e.numero_serie.trim()) falta.push(`el numero de serie del equipo ${n}`);
+      // El diagnostico es opcional en el contrato --G1 asume "Causa
+      // desconocida" si no viene-- pero obligatorio aca: es el unico momento en
+      // que alguien tiene el equipo en la mano y puede decir que le pasa.
+      if (esRetiro(e.accion) && !e.diagnostico) falta.push(`el diagnostico del equipo ${n}`);
+    });
+    return falta;
+  });
+
   onMount(async () => {
     authStore.checkAuth();
     const state = get(authStore);
@@ -92,10 +147,16 @@
     userId = state.usuario?.userId ?? 0;
 
     try {
-      const [otData, matsData, catsData] = await Promise.all([
+      const [otData, matsData, catsData, opcEquipo] = await Promise.all([
         ordenesApi.obtenerOT(token, idOT),
         terrenoApi.obtenerMateriales(token),
         ordenesApi.listarCategoriasFalla(token),
+        // Este NO tumba la pantalla si falla. Declarar equipos es secundario
+        // frente a cerrar la OT: dejar al tecnico sin poder cerrar --parado en
+        // el domicilio, con el cliente esperando-- porque no se pudo leer una
+        // lista de opciones es peor que cerrar sin esa seccion. Es el mismo
+        // criterio con el que el contrato con G1 no exige el diagnostico.
+        terrenoApi.obtenerOpcionesEquipo(token).catch(() => null),
       ]);
       if (destruido) return;
       if (otData.id_tecnico !== userId) {
@@ -109,6 +170,7 @@
       ot = otData;
       materiales = matsData;
       categoriasFalla = catsData;
+      opcionesEquipo = opcEquipo;
     } catch (err) {
       errorInit = err instanceof Error ? err.message : 'Error al cargar datos';
     } finally {
@@ -182,14 +244,31 @@
       resuelto_remotamente: resueltoRemotamente,
       id_categoria_falla: idCategoriaFalla ? Number(idCategoriaFalla) : undefined,
       categoria_falla_otro: categoriaFallaOtro.trim() || undefined,
+      // Se separan por accion porque G1 las procesa distinto: las instaladas
+      // van al cliente, las retiradas siguen la transicion de su accion.
+      equipos_instalados: limpiarEquipos(equipos.filter((e) => !esRetiro(e.accion))),
+      equipos_retirados: limpiarEquipos(equipos.filter((e) => esRetiro(e.accion))),
     };
+  }
+
+  /** Deja las listas en `undefined` si van vacias, para no mandar arrays sueltos. */
+  function limpiarEquipos(lista: terrenoApi.EquipoOt[]) {
+    const utiles = lista
+      .filter((e) => e.numero_serie.trim())
+      .map((e) => ({
+        numero_serie: e.numero_serie.trim(),
+        accion: e.accion,
+        diagnostico: esRetiro(e.accion) ? e.diagnostico || undefined : undefined,
+        observacion_estado_fisico: e.observacion_estado_fisico?.trim() || undefined,
+      }));
+    return utiles.length ? utiles : undefined;
   }
 
   async function cerrarOT(dto?: terrenoApi.CerrarOTDto) {
     if (subiendoFoto || fotosListas.length === 0) return;
     const payload = dto ?? buildDto();
-    if (ot?.tipo_ot === 'REPARACION' && !payload.id_categoria_falla) {
-      errorCierre = 'Seleccione la categoría de falla';
+    if (faltante.length > 0) {
+      errorCierre = `Falta ${faltante.join(', ')}.`;
       return;
     }
 
@@ -413,6 +492,132 @@
 
       <!-- PASO 3: Datos de cierre -->
       {#if paso === 3}
+        <!-- Equipos individualizables (acuerdo con G1). Va ANTES de los datos de
+             cierre porque es lo que el tecnico tiene en la mano en ese momento;
+             la potencia y la llamada de cortesia vienen despues.
+             Si no se pudieron leer las opciones, la seccion no se dibuja y el
+             cierre sigue disponible: se avisa, no se bloquea. -->
+        {#if !opcionesEquipo}
+          <div class="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-xl px-4 py-3 mb-4">
+            No se pudieron cargar las opciones de equipos. Podes cerrar la OT igual,
+            pero avisa por radio si retiraste o instalaste un equipo con numero de serie.
+          </div>
+        {:else}
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 space-y-3 mb-4">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <h2 class="font-semibold text-slate-800">Equipos con numero de serie</h2>
+              <p class="text-xs text-slate-500 mt-0.5">
+                ONT, router o cualquier equipo que instales o retires. Si no tocaste
+                ninguno, deja esto vacio.
+              </p>
+            </div>
+            <button
+              type="button"
+              onclick={agregarEquipo}
+              class="shrink-0 px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700
+                     text-sm font-medium active:bg-blue-100"
+            >+ Agregar</button>
+          </div>
+
+          {#each equipos as equipo, i (i)}
+            <div class="border border-slate-200 rounded-xl p-3 space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Equipo {i + 1}
+                </span>
+                <button
+                  type="button"
+                  onclick={() => quitarEquipo(i)}
+                  class="text-sm text-red-600 font-medium active:text-red-800"
+                >Quitar</button>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1" for="serie-{i}">
+                  Numero de serie *
+                </label>
+                <input
+                  id="serie-{i}"
+                  type="text"
+                  autocapitalize="characters"
+                  value={equipo.numero_serie}
+                  oninput={(e) => normalizarSerie(i, e.currentTarget.value)}
+                  placeholder="Ej: ALTX1234ABCD"
+                  class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base font-mono
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1" for="accion-{i}">
+                  Que se hizo con el equipo *
+                </label>
+                <select
+                  id="accion-{i}"
+                  bind:value={equipo.accion}
+                  class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {#each opcionesEquipo?.acciones ?? [] as a}
+                    <option value={a.accion}>{etiquetaAccion(a.accion)}</option>
+                  {/each}
+                </select>
+                <!-- Se muestra a donde lo mueve inventario: "baja en terreno"
+                     suena reversible y no lo es. -->
+                {#if opcionesEquipo}
+                  <p class="text-xs text-slate-500 mt-1">
+                    Inventario lo deja en:
+                    <span class="font-medium text-slate-700">
+                      {opcionesEquipo.acciones.find((a) => a.accion === equipo.accion)?.estado_g1 ?? '--'}
+                    </span>
+                  </p>
+                {/if}
+              </div>
+
+              {#if esRetiro(equipo.accion)}
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-1" for="diag-{i}">
+                    Que le pasa al equipo *
+                  </label>
+                  <select
+                    id="diag-{i}"
+                    bind:value={equipo.diagnostico}
+                    class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
+                           focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value={undefined}>Seleccione diagnostico</option>
+                    {#each opcionesEquipo?.diagnosticos ?? [] as d}
+                      <option value={d}>{d}</option>
+                    {/each}
+                  </select>
+                  <p class="text-xs text-slate-500 mt-1">
+                    Sos el unico que tiene el equipo en la mano: si no lo completas,
+                    inventario lo recibe como
+                    "{opcionesEquipo?.diagnostico_por_defecto ?? 'Causa desconocida'}".
+                  </p>
+                </div>
+
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-1" for="obs-{i}">
+                    Estado fisico <span class="font-normal text-slate-400">(opcional)</span>
+                  </label>
+                  <input
+                    id="obs-{i}"
+                    type="text"
+                    maxlength="200"
+                    bind:value={equipo.observacion_estado_fisico}
+                    placeholder="Golpes, humedad, cable cortado..."
+                    class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
+                           focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+        {/if}
+
         <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 space-y-4">
           <h2 class="font-semibold text-slate-800">Datos de cierre</h2>
 
@@ -522,6 +727,14 @@
           </Alert>
         {/if}
 
+        <!-- Sin esto el boton queda gris y el tecnico no tiene como saber por
+             que: no puede hacer clic para provocar el mensaje de error. -->
+        {#if faltante.length > 0}
+          <div class="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-xl px-4 py-3 mb-3">
+            Para cerrar falta {faltante.join(', ')}.
+          </div>
+        {/if}
+
         <div class="flex gap-3">
           <button
             onclick={() => (paso = 2)}
@@ -534,7 +747,7 @@
           </button>
           <button
             onclick={() => cerrarOT()}
-            disabled={cerrando || potencia === '' || isNaN(parseFloat(potencia)) || (requiereCategoriaFalla && !idCategoriaFalla)}
+            disabled={cerrando || faltante.length > 0}
             class="flex-1 bg-green-600 active:bg-green-800 text-white font-semibold py-4 rounded-xl text-base disabled:opacity-40 flex items-center justify-center gap-2"
           >
             {#if cerrando}
