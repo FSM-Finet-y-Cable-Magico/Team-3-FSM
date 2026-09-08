@@ -13,6 +13,13 @@ export interface ResumenLigado extends StatsLigado {
   ya_ligadas: number;
   /** Verificadas en terreno como "sin caja del mapa"; quedan fuera del algoritmo. */
   confirmadas_sin_caja: number;
+  /**
+   * Cajas que recibieron zona derivada de sus ONT (ver `derivarZonas`).
+   *
+   * Baja en cada corrida hasta llegar a 0, por lo mismo que `ligadas`: ver la
+   * nota sobre convergencia en `ligarCajas`.
+   */
+  zonas_derivadas: number;
   radio_m: number;
   ms: number;
 }
@@ -116,6 +123,23 @@ export class LigadoCajaService {
     return { numero_serie, id_caja_nap, propagadas: propagadas.length, confirmada_en: ahora };
   }
 
+  /**
+   * ES CONVERGENTE, NO IDEMPOTENTE, y conviene saberlo antes de asustarse.
+   *
+   * Cada corrida usa los enlaces YA existentes como evidencia fija para la
+   * votacion del grupo PON, asi que una segunda pasada resuelve casos que la
+   * primera no podia. Sobre los datos reales de FiNet:
+   *
+   *   corrida 1 -> 710 ONT ligadas, 252 zonas derivadas
+   *   corrida 2 ->  18 ONT ligadas,  10 zonas
+   *   corrida 3 ->   0             ,   0     <- converge
+   *
+   * O sea que correrlo dos veces seguidas SI cambia datos la segunda vez, y
+   * eso es correcto. Lo que nunca hace es deshacer: solo toca ONT sin caja y
+   * cajas sin zona, y respeta lo confirmado en terreno.
+   *
+   * Conviene correrlo dos veces tras una carga nueva de topologia.
+   */
   async ligarCajas(id_empresa: number, radioM = RADIO_DEFECTO_M): Promise<ResumenLigado> {
     const t0 = Date.now();
 
@@ -198,11 +222,16 @@ export class LigadoCajaService {
       ),
     );
 
+    // Va despues del ligado y no antes: la zona se deduce de las ONT que
+    // cuelgan de cada caja, asi que necesita los enlaces recien escritos.
+    const zonas_derivadas = await this.derivarZonas(id_empresa);
+
     const resumen: ResumenLigado = {
       ...stats,
       ligadas: asignaciones.size,
       ya_ligadas,
       confirmadas_sin_caja: confirmadasSinCaja,
+      zonas_derivadas,
       radio_m: radioM,
       ms: Date.now() - t0,
     };
@@ -212,5 +241,66 @@ export class LigadoCajaService {
         `${resumen.sin_caja_candidata} sin caja, ${resumen.ms}ms`,
     );
     return resumen;
+  }
+
+  /**
+   * Rellena `caja_nap.zona` a partir de las ONT que cuelgan de cada caja.
+   *
+   * El KML de Tomodat no trae la zona, asi que las 911 cajas importadas la
+   * tienen en NULL: el filtro por zona de la pantalla de topologia quedaba
+   * vacio y las alertas no se podian acotar geograficamente. SmartOLT si la
+   * trae, en `registro_ont.zona`, y el ligado ya dice que ONT va en que caja
+   * -- o sea que el dato existe, solo estaba en la otra punta del enlace.
+   *
+   * Cuando una caja tiene ONT de varias zonas (10 de 254 sobre los datos
+   * reales de FiNet) gana la mas repetida. Es el mismo criterio de votacion
+   * que usa `emparejar` para resolver el grupo PON: ante datos sucios, manda
+   * la mayoria, no la primera fila que aparece.
+   *
+   * NO pisa una zona ya escrita: si alguien la corrigio a mano desde CU-19,
+   * esa correccion vale mas que la deduccion.
+   */
+  private async derivarZonas(id_empresa: number): Promise<number> {
+    const filas = await this.prisma.registro_ont.findMany({
+      where: { id_empresa, id_caja_nap: { not: null }, zona: { not: null } },
+      select: { id_caja_nap: true, zona: true },
+    });
+    if (filas.length === 0) return 0;
+
+    // id_caja_nap -> zona -> cuantas ONT la respaldan
+    const votos = new Map<number, Map<string, number>>();
+    for (const f of filas) {
+      const porCaja = votos.get(f.id_caja_nap!) ?? new Map<string, number>();
+      porCaja.set(f.zona!, (porCaja.get(f.zona!) ?? 0) + 1);
+      votos.set(f.id_caja_nap!, porCaja);
+    }
+
+    const sinZona = await this.prisma.caja_nap.findMany({
+      where: { id_caja_nap: { in: [...votos.keys()] }, zona: null },
+      select: { id_caja_nap: true },
+    });
+
+    // Una sentencia por zona en vez de una por caja: son pocas zonas y muchas
+    // cajas, igual que el agrupado de `ligarCajas`.
+    const porZona = new Map<string, number[]>();
+    for (const { id_caja_nap } of sinZona) {
+      const ganadora = [...votos.get(id_caja_nap)!].sort((a, b) => b[1] - a[1])[0][0];
+      const lista = porZona.get(ganadora);
+      if (lista) lista.push(id_caja_nap);
+      else porZona.set(ganadora, [id_caja_nap]);
+    }
+    if (porZona.size === 0) return 0;
+
+    await this.prisma.$transaction(
+      [...porZona].map(([zona, ids]) =>
+        this.prisma.caja_nap.updateMany({
+          where: { id_caja_nap: { in: ids }, zona: null },
+          data: { zona },
+        }),
+      ),
+    );
+
+    this.logger.log(`Zona derivada para ${sinZona.length} cajas desde sus ONT`);
+    return sinZona.length;
   }
 }
