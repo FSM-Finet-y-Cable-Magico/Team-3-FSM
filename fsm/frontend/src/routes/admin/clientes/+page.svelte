@@ -131,7 +131,7 @@
   {#if rol !== 'TECNICO'}
     <a
       href="/admin/clientes/nuevo"
-      class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-5 rounded-xl shadow-sm transition-all duration-150 text-sm"
+      class="btn btn-primario"
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -166,7 +166,7 @@
     <button
       onclick={buscar}
       disabled={buscando}
-      class="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white font-medium py-2.5 px-5 rounded-xl transition-all disabled:opacity-50 text-sm"
+      class="btn btn-oscuro"
     >
       {#if buscando}
         <Spinner class="h-4 w-4" />
@@ -181,7 +181,7 @@
       <button
         onclick={limpiarFiltros}
         disabled={buscando}
-        class="text-sm text-slate-500 hover:text-slate-700 font-medium py-2.5 px-3 disabled:opacity-50"
+        class="btn-texto text-slate-500 hover:text-slate-700 py-2.5 px-3 disabled:opacity-50"
       >
         Limpiar
       </button>
@@ -197,7 +197,7 @@
 {#if loading}
   <Cargando mensaje="Cargando clientes..." class="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center" spinnerClass="h-8 w-8 text-blue-500 mx-auto mb-3" mensajeClass="text-slate-400 text-sm" />
 {:else}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto">
     <table class="min-w-full divide-y divide-slate-100">
       <thead>
         <tr class="bg-slate-50">
@@ -232,7 +232,7 @@
             <td class="px-6 py-4">
               <button
                 onclick={() => goto(`/clientes/${c.rut}`)}
-                class="text-blue-600 hover:text-blue-800 text-sm font-semibold hover:underline transition-colors"
+                class="btn-texto hover:underline"
               >
                 Ver ficha →
               </button>

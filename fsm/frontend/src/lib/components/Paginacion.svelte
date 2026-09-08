@@ -2,7 +2,7 @@
   let { page, limit, total, entidad, onchange }: {
     page: number; limit: number; total: number; entidad: string; onchange: (page: number) => void;
   } = $props();
-  const boton = 'px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors';
+  const boton = 'btn btn-secundario btn-chico';
 </script>
 
 {#if total > limit}

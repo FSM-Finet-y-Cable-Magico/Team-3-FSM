@@ -133,7 +133,7 @@
 
 <div class="max-w-2xl mx-auto">
   <div class="flex items-center gap-3 mb-6">
-    <button onclick={() => goto('/admin/ot')} class="text-gray-400 hover:text-gray-600 text-lg">&larr;</button>
+    <button onclick={() => goto('/admin/ot')} class="btn-texto text-lg text-slate-400 hover:text-slate-600">&larr;</button>
     <h2 class="text-2xl font-bold text-gray-800">Nueva Orden de Trabajo</h2>
   </div>
 
@@ -165,7 +165,7 @@
         <button
           onclick={buscarCliente}
           disabled={buscando}
-          class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
+          class="btn btn-primario"
         >
           {buscando ? 'Buscando...' : 'Buscar'}
         </button>
@@ -310,14 +310,14 @@
         <div class="flex gap-3 mt-6">
           <button
             onclick={volverPaso1}
-            class="border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors text-sm"
+            class="btn btn-secundario text-sm"
           >
             Volver
           </button>
           <button
             onclick={crearOT}
             disabled={creando || !tipoOT || bloqueadoPorConflictivo}
-            class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 text-sm"
+            class="flex-1 btn btn-primario text-sm"
           >
             {creando ? 'Creando...' : 'Crear OT'}
           </button>

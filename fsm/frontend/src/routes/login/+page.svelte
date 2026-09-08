@@ -149,7 +149,7 @@
         <button
           type="submit"
           disabled={isLoading}
-          class="login-submit"
+          class="btn btn-oscuro btn-bloque mt-1"
         >
           {#if isLoading}
             <Spinner class="h-4 w-4 text-white" />

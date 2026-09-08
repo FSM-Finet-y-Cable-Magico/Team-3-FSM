@@ -165,7 +165,7 @@
 
 <svelte:head><title>Notificaciones</title></svelte:head>
 
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
+<div class="space-y-5">
 
   <div>
     <h1 class="text-2xl font-bold text-slate-900">Notificaciones</h1>
@@ -198,9 +198,7 @@
         <button
           type="button" role="tab" aria-selected={vista === v}
           onclick={() => (vista = v as typeof vista)}
-          class="px-4 py-1.5 text-sm font-medium cursor-pointer transition-colors duration-200
-                 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500
-                 {vista === v ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}"
+          class="btn-pestana {vista === v ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}"
         >{t}</button>
       {/each}
     </div>
@@ -327,21 +325,18 @@
             <div class="flex gap-2 shrink-0">
               {#if p.editable}
                 <button type="button" onclick={() => empezarEdicion(p)}
-                  class="text-sm text-blue-700 font-medium cursor-pointer rounded
-                         hover:text-blue-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  class="btn-texto"
                 >Editar</button>
                 {#if p.activa}
                   <button type="button" onclick={() => desactivar(p)}
-                    class="text-sm text-red-700 font-medium cursor-pointer rounded
-                           hover:text-red-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                    class="btn-texto-peligro"
                   >Desactivar</button>
                 {/if}
               {:else}
                 <!-- Las base son compartidas por las dos empresas: editarlas
                      cambiaría también las de la otra. Se duplican. -->
                 <button type="button" onclick={() => duplicar(p)}
-                  class="text-sm text-blue-700 font-medium cursor-pointer rounded
-                         hover:text-blue-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  class="btn-texto"
                 >Duplicar</button>
               {/if}
             </div>
@@ -405,8 +400,7 @@
                 </td>
                 <td class="px-3 py-2 text-right">
                   <a href="/admin/ot/{o.id_ot}"
-                     class="text-blue-700 hover:text-blue-900 font-medium cursor-pointer rounded
-                            focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                     class="btn-texto"
                   >Abrir</a>
                 </td>
               </tr>

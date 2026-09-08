@@ -203,7 +203,7 @@
 {:else if ot}
   <div class="max-w-3xl mx-auto space-y-5">
     <div class="flex items-center gap-3">
-      <button onclick={() => goto('/admin/ot')} class="text-gray-400 hover:text-gray-600 text-lg">&larr;</button>
+      <button onclick={() => goto('/admin/ot')} class="btn-texto text-lg text-slate-400 hover:text-slate-600">&larr;</button>
       <h2 class="text-xl font-bold text-gray-800">Orden de Trabajo #{ot.id_ot}</h2>
     </div>
 
@@ -231,8 +231,7 @@
             {#if ot.caja_nap.latitud}
               <a href={`https://www.google.com/maps?q=${ot.caja_nap.latitud},${ot.caja_nap.longitud}`}
                  target="_blank" rel="noopener"
-                 class="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 hover:underline
-                        cursor-pointer transition-colors duration-200">
+                 class="btn-texto gap-1.5 hover:underline">
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                      stroke-width="2" aria-hidden="true">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
@@ -358,7 +357,7 @@
             <button
               onclick={asignarTecnico}
               disabled={asignando}
-              class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-5 rounded-lg transition-colors disabled:opacity-50 text-sm"
+              class="btn btn-primario"
             >
               {asignando ? 'Asignando...' : 'Asignar técnico'}
             </button>
@@ -369,19 +368,19 @@
             <button
               onclick={() => cambiarEstado('EN_CURSO')}
               disabled={cambiandoEstado}
-              class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-lg transition-colors disabled:opacity-50 text-sm"
+              class="btn btn-primario"
             >
               Marcar OT en curso
             </button>
             <button
               onclick={() => (mostrarModalCancelar = true)}
-              class="bg-red-100 hover:bg-red-200 text-red-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+              class="btn btn-secundario text-red-800 border-red-300 bg-red-50 hover:bg-red-100"
             >
               Cancelar OT
             </button>
             <button
               onclick={() => (mostrarModalAusente = true)}
-              class="bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+              class="btn btn-secundario text-amber-800 border-amber-300 bg-amber-50 hover:bg-amber-100"
             >
               Cliente ausente
             </button>
@@ -392,13 +391,13 @@
             <button
               onclick={() => cambiarEstado('EN_CURSO')}
               disabled={cambiandoEstado}
-              class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-lg transition-colors disabled:opacity-50 text-sm"
+              class="btn btn-primario"
             >
               Iniciar trabajo
             </button>
             <button
               onclick={() => (mostrarModalAusente = true)}
-              class="bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+              class="btn btn-secundario text-amber-800 border-amber-300 bg-amber-50 hover:bg-amber-100"
             >
               Cliente ausente
             </button>
@@ -411,13 +410,13 @@
           <div class="flex gap-3 flex-wrap">
             <button
               onclick={() => goto(`/terreno/cerrar/${ot!.id_ot}`)}
-              class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+              class="btn btn-exito"
             >
               Ir a cerrar OT
             </button>
             <button
               onclick={() => (mostrarModalAusente = true)}
-              class="bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+              class="btn btn-secundario text-amber-800 border-amber-300 bg-amber-50 hover:bg-amber-100"
             >
               Cliente ausente
             </button>
@@ -430,13 +429,13 @@
           <div class="flex gap-3 flex-wrap">
             <button
               onclick={() => (mostrarModalCancelar = true)}
-              class="bg-red-100 hover:bg-red-200 text-red-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+              class="btn btn-secundario text-red-800 border-red-300 bg-red-50 hover:bg-red-100"
             >
               Cancelar OT
             </button>
             <button
               onclick={() => (mostrarModalAusente = true)}
-              class="bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+              class="btn btn-secundario text-amber-800 border-amber-300 bg-amber-50 hover:bg-amber-100"
             >
               Cliente ausente
             </button>
@@ -448,14 +447,14 @@
               <button
                 onclick={() => cambiarEstado('ASIGNADA')}
                 disabled={cambiandoEstado}
-                class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-5 rounded-lg transition-colors disabled:opacity-50 text-sm"
+                class="btn btn-primario"
               >
                 {cambiandoEstado ? 'Reintentando...' : 'Reintentar visita'}
               </button>
               {#if rol === 'ADMIN' || rol === 'JEFE_TECNICO'}
                 <button
                   onclick={() => (mostrarModalCancelar = true)}
-                  class="bg-red-100 hover:bg-red-200 text-red-700 font-medium py-2 px-5 rounded-lg transition-colors text-sm"
+                  class="btn btn-secundario text-red-800 border-red-300 bg-red-50 hover:bg-red-100"
                 >
                   Cancelar OT
                 </button>
@@ -634,14 +633,14 @@
       <div class="flex gap-3 mt-4">
         <button
           onclick={() => { mostrarModalAusente = false; ausenteError = ''; }}
-          class="flex-1 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors text-sm"
+          class="flex-1 btn btn-secundario text-sm"
         >
           Volver
         </button>
         <button
           onclick={confirmarClienteAusente}
           disabled={marcandoAusente}
-          class="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 text-sm"
+          class="btn btn-bloque flex-1 bg-amber-500 text-white shadow-sm hover:bg-amber-600 focus-visible:ring-amber-500 text-sm"
         >
           {marcandoAusente ? 'Marcando...' : 'Marcar ausente'}
         </button>
@@ -673,14 +672,14 @@
       <div class="flex gap-3 mt-4">
         <button
           onclick={() => { mostrarModalCancelar = false; cancelarError = ''; }}
-          class="flex-1 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors text-sm"
+          class="flex-1 btn btn-secundario text-sm"
         >
           Volver
         </button>
         <button
           onclick={confirmarCancelacion}
           disabled={cancelando}
-          class="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 text-sm"
+          class="btn btn-peligro btn-bloque flex-1 text-sm"
         >
           {cancelando ? 'Cancelando...' : 'Confirmar cancelación'}
         </button>

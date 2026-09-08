@@ -303,14 +303,14 @@
 {:else if errorInit}
   <div class="min-h-screen bg-gray-50 p-4">
     <Alert class="rounded-xl text-sm">{errorInit}</Alert>
-    <button onclick={() => goto('/terreno')} class="mt-4 text-blue-600 text-sm">Volver</button>
+    <button onclick={() => goto('/terreno')} class="btn-texto mt-4">Volver</button>
   </div>
 {:else}
   <div class="min-h-screen bg-gray-50 flex flex-col">
     <!-- Header -->
     <header class="bg-slate-900 text-white px-4 py-3 sticky top-0 z-10 shadow-lg">
       <div class="flex items-center gap-3">
-        <button aria-label="Volver a terreno" onclick={() => goto('/terreno')} class="text-slate-300 p-1">
+        <button aria-label="Volver a terreno" onclick={() => goto('/terreno')} class="btn-texto p-1 text-slate-300 hover:text-white focus-visible:ring-slate-400">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
@@ -387,7 +387,7 @@
                   {/if}
                     <button aria-label="Eliminar evidencia {i + 1}"
                       onclick={() => eliminarFoto(i)}
-                      class="absolute top-1 right-1 bg-black/60 rounded-full p-0.5"
+                      class="absolute top-1 right-1 bg-black/60 rounded-full p-0.5 cursor-pointer"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -408,7 +408,7 @@
         <button
           onclick={() => (paso = 2)}
           disabled={fotosListas.length === 0 || subiendoFoto}
-          class="w-full bg-blue-600 active:bg-blue-800 text-white font-semibold py-4 rounded-xl text-base disabled:opacity-40 flex items-center justify-center gap-2"
+          class="btn btn-primario btn-bloque btn-grande"
         >
           Siguiente
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -444,13 +444,13 @@
                     <div class="flex items-center gap-2">
                       <button
                         onclick={() => cantidades[mat.id_tipo_equipo] = Math.max(0, (cantidades[mat.id_tipo_equipo] ?? 0) - 1)}
-                        class="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 font-bold text-lg flex items-center justify-center active:bg-slate-200"
+                        class="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 font-bold text-lg flex items-center justify-center active:bg-slate-200 cursor-pointer"
                       >-</button>
                       <span class="w-8 text-center font-semibold text-slate-800">{cantidad}</span>
                       <button
                         onclick={() => cantidades[mat.id_tipo_equipo] = Math.min(stockDisp, (cantidades[mat.id_tipo_equipo] ?? 0) + 1)}
                         disabled={cantidad >= stockDisp}
-                        class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 font-bold text-lg flex items-center justify-center active:bg-blue-200 disabled:opacity-30"
+                        class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 font-bold text-lg flex items-center justify-center active:bg-blue-200 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                       >+</button>
                     </div>
                   </div>
@@ -471,7 +471,7 @@
         <div class="flex gap-3">
           <button
             onclick={() => (paso = 1)}
-            class="flex-1 border border-slate-300 text-slate-700 font-semibold py-4 rounded-xl text-base flex items-center justify-center gap-2"
+            class="btn btn-secundario btn-grande flex-1"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
@@ -480,7 +480,7 @@
           </button>
           <button
             onclick={() => (paso = 3)}
-            class="flex-1 bg-blue-600 active:bg-blue-800 text-white font-semibold py-4 rounded-xl text-base flex items-center justify-center gap-2"
+            class="btn btn-primario btn-grande flex-1"
           >
             Siguiente
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -515,8 +515,8 @@
             <button
               type="button"
               onclick={agregarEquipo}
-              class="shrink-0 px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700
-                     text-sm font-medium active:bg-blue-100"
+              class="btn btn-secundario btn-chico shrink-0 border-blue-200 bg-blue-50 text-blue-700
+                     hover:bg-blue-100 focus-visible:ring-blue-500"
             >+ Agregar</button>
           </div>
 
@@ -529,7 +529,7 @@
                 <button
                   type="button"
                   onclick={() => quitarEquipo(i)}
-                  class="text-sm text-red-600 font-medium active:text-red-800"
+                  class="btn-texto-peligro"
                 >Quitar</button>
               </div>
 
@@ -676,14 +676,14 @@
             <div class="grid grid-cols-2 gap-3">
               <button
                 onclick={() => (resultadoLlamada = 'CONFORME')}
-                class="py-3 rounded-xl border-2 text-sm font-semibold transition-colors
+                class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
                   {resultadoLlamada === 'CONFORME' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 text-slate-500'}"
               >
                 Conforme
               </button>
               <button
                 onclick={() => (resultadoLlamada = 'NO_CONFORME')}
-                class="py-3 rounded-xl border-2 text-sm font-semibold transition-colors
+                class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
                   {resultadoLlamada === 'NO_CONFORME' ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-200 text-slate-500'}"
               >
                 No conforme
@@ -710,7 +710,7 @@
             <span class="text-sm font-medium text-slate-700">Resuelto remotamente</span>
             <button
               onclick={() => (resueltoRemotamente = !resueltoRemotamente)}
-              class="relative inline-flex h-7 w-12 items-center rounded-full transition-colors
+              class="relative inline-flex h-7 w-12 items-center rounded-full transition-colors cursor-pointer
                 {resueltoRemotamente ? 'bg-blue-600' : 'bg-slate-200'}"
             >
               <span
@@ -738,7 +738,7 @@
         <div class="flex gap-3">
           <button
             onclick={() => (paso = 2)}
-            class="flex-1 border border-slate-300 text-slate-700 font-semibold py-4 rounded-xl text-base flex items-center justify-center gap-2"
+            class="btn btn-secundario btn-grande flex-1"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
@@ -748,7 +748,7 @@
           <button
             onclick={() => cerrarOT()}
             disabled={cerrando || faltante.length > 0}
-            class="flex-1 bg-green-600 active:bg-green-800 text-white font-semibold py-4 rounded-xl text-base disabled:opacity-40 flex items-center justify-center gap-2"
+            class="btn btn-exito btn-grande flex-1"
           >
             {#if cerrando}
               <Spinner class="h-5 w-5" />
@@ -787,13 +787,13 @@
         <div class="flex gap-3">
           <button
             onclick={() => goto('/terreno')}
-            class="flex-1 border border-slate-300 text-slate-700 font-medium py-3 rounded-xl text-sm"
+            class="btn btn-secundario flex-1"
           >
             Volver
           </button>
           <button
             onclick={confirmarCierrePotencia}
-            class="flex-1 bg-amber-500 text-white font-semibold py-3 rounded-xl text-sm"
+            class="btn flex-1 bg-amber-500 text-white shadow-sm hover:bg-amber-600 focus-visible:ring-amber-500"
           >
             Entendido
           </button>

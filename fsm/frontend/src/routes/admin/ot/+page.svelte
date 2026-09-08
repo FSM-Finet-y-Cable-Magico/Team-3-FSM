@@ -83,7 +83,7 @@
   {#if esJefeOAdmin}
     <a
       href="/admin/ot/nueva"
-      class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-5 rounded-xl shadow-sm transition-all text-sm"
+      class="btn btn-primario"
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -147,7 +147,7 @@
         <div class="flex items-end">
           <button
             onclick={() => { filtroEstado = ''; filtroTipo = ''; filtroPrioridad = ''; aplicarFiltros(); }}
-            class="px-3 py-2 text-sm text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            class="btn btn-secundario btn-chico"
           >
             Limpiar
           </button>
@@ -165,7 +165,7 @@
 {#if loading}
   <Cargando mensaje="Cargando órdenes..." class="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center" spinnerClass="h-8 w-8 text-blue-500 mx-auto mb-3" mensajeClass="text-slate-400 text-sm" />
 {:else}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto">
     <table class="min-w-full divide-y divide-slate-100">
       <thead>
         <tr class="bg-slate-50">
@@ -198,7 +198,7 @@
               {/if}
               <button
                 onclick={() => goto(`/ot/${ot.id_ot}`)}
-                class="text-blue-600 hover:text-blue-800 text-sm font-semibold hover:underline transition-colors whitespace-nowrap"
+                class="btn-texto hover:underline whitespace-nowrap"
               >
                 Ver →
               </button>

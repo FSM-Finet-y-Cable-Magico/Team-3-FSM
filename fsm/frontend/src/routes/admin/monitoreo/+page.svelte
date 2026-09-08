@@ -183,7 +183,7 @@
 
 <svelte:head><title>Monitoreo de red</title></svelte:head>
 
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
+<div class="space-y-5">
 
   <!-- Cabecera -->
   <div class="flex flex-wrap items-start justify-between gap-3">
@@ -282,18 +282,14 @@
         role="tab"
         aria-selected={vista === 'cajas'}
         onclick={() => (vista = 'cajas')}
-        class="px-4 py-1.5 text-sm font-medium cursor-pointer transition-colors duration-200
-               focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500
-               {vista === 'cajas' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}"
+        class="btn-pestana {vista === 'cajas' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}"
       >Por caja NAP</button>
       <button
         type="button"
         role="tab"
         aria-selected={vista === 'onts'}
         onclick={() => (vista = 'onts')}
-        class="px-4 py-1.5 text-sm font-medium cursor-pointer transition-colors duration-200
-               focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500
-               {vista === 'onts' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}"
+        class="btn-pestana {vista === 'onts' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}"
       >Todas las ONT</button>
     </div>
 
@@ -404,8 +400,7 @@
                 <td class="px-3 py-2 text-right">
                   <a
                     href="/admin/topologia/{c.id_caja_nap}"
-                    class="text-blue-700 hover:text-blue-900 font-medium cursor-pointer rounded
-                           focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    class="btn-texto"
                   >Caja</a>
                 </td>
               </tr>

@@ -150,7 +150,7 @@
           <button
             type="submit"
             disabled={loading}
-            class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center"
+            class="flex-1 btn btn-primario flex items-center justify-center"
           >
             {#if loading}
               <Spinner class="-ml-1 mr-2 h-4 w-4 text-white" />
@@ -159,7 +159,7 @@
           </button>
           <a
             href="/admin/clientes"
-            class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors text-center"
+            class="flex-1 btn btn-secundario text-center"
           >
             Cancelar
           </a>

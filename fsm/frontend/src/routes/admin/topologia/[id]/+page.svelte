@@ -212,11 +212,11 @@
 
         <div class="flex justify-end gap-3 mt-5">
           <button type="button" onclick={() => (editando = false)}
-            class="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer">
+            class="btn btn-secundario border-transparent shadow-none">
             Cancelar
           </button>
           <button type="submit" disabled={guardando}
-            class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer">
+            class="btn btn-primario">
             {guardando ? 'Guardando...' : 'Guardar'}
           </button>
         </div>
