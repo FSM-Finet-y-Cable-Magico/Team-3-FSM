@@ -111,8 +111,27 @@ describe('topologia de planta externa', () => {
     });
 
     it('rechaza un PATCH vacío en vez de auditar un cambio que no ocurrió', async () => {
-      await expect(service.editarCaja(1, {}, 1, 1)).rejects.toBeInstanceOf(BadRequestException);
+      // Se prueba con la FORMA REAL que entrega ValidationPipe, no con un {}.
+      // Con `target: ES2023` un DTO transformado trae todas las claves de la
+      // clase con valor `undefined`, asi que `Object.keys(dto).length === 0`
+      // nunca se cumple. Con un `{}` literal el test pasaba y el endpoint
+      // devolvia 200 igual: el doble era mas benevolo que la realidad.
+      const cuerpoVacio = Object.fromEntries(
+        ['id_mufa', 'identificador_unico', 'numero_poste', 'zona', 'capacidad_puertos', 'latitud', 'longitud']
+          .map((k) => [k, undefined]),
+      );
+
+      await expect(service.editarCaja(1, cuerpoVacio, 1, 1)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       expect(auditoriaCreate).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un PATCH de puerto vacío, con la misma forma real', async () => {
+      const cuerpoVacio = { estado: undefined, id_cliente_asociado: undefined };
+      await expect(service.editarPuerto(1, cuerpoVacio, 1, 1)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
 
     it('audita la edición con el valor anterior y el nuevo', async () => {

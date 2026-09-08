@@ -11,6 +11,18 @@ import type { CrearCajaDto, CrearMufaDto, CrearOltDto, CrearTarjetaDto } from '.
 import { ESTADO_PUERTO, type EditarCajaDto, type EditarPuertoDto } from './dto/editar-topologia.dto.js';
 
 /**
+ * `true` si el cuerpo no trae ni un campo con valor.
+ *
+ * No sirve `Object.keys(dto).length === 0`: con `target: ES2023` TypeScript
+ * define los campos declarados como propiedades reales, asi que un DTO
+ * transformado por ValidationPipe SIEMPRE tiene todas las claves, con valor
+ * `undefined`. Contarlas da el numero de campos de la clase, nunca cero.
+ */
+function sinCambios(dto: object): boolean {
+  return Object.values(dto).every((v) => v === undefined);
+}
+
+/**
  * Alta y edicion de la topologia de planta externa (CU-18, CU-19 y CU-20).
  *
  * Va aparte de `PlantaExternaService`, que es de lectura y del importador de
@@ -126,7 +138,7 @@ export class TopologiaService {
     id_usuario: number,
     id_empresa: number,
   ) {
-    if (Object.keys(dto).length === 0) {
+    if (sinCambios(dto)) {
       throw new BadRequestException('No se envió ningún campo para editar');
     }
 
@@ -193,7 +205,7 @@ export class TopologiaService {
     id_usuario: number,
     id_empresa: number,
   ) {
-    if (Object.keys(dto).length === 0) {
+    if (sinCambios(dto)) {
       throw new BadRequestException('No se envió ningún campo para editar');
     }
 
