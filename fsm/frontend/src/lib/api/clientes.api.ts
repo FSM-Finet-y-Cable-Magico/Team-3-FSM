@@ -48,6 +48,10 @@ export interface ClienteConHistorial {
     activa: boolean;
     total_reparaciones_30_dias: number;
     desde: string;
+    /** Momento de evaluacion: la ventana es [desde, hasta]. */
+    hasta: string;
+    /** RF-08 pide la lista de OT asociadas, no solo el total. */
+    ots: { id_ot: number; fecha_completada: string | null; categoria_falla: string | null }[];
   };
 }
 

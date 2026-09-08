@@ -8,6 +8,7 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module.js';
 import { FAN_OUT_CIERRE, type FanOutCierre } from './fan-out/fan-out-cierre.js';
 import { WebhookFanOut } from './fan-out/webhook-fan-out.js';
 import { NoOpFanOut } from './fan-out/noop-fan-out.js';
+import { ReparacionesRecurrentesModule } from './reparaciones-recurrentes.module.js';
 
 /**
  * Elige el mecanismo de fan-out del cierre según haya URLs de webhook
@@ -38,7 +39,7 @@ const fanOutProvider = {
 };
 
 @Module({
-  imports: [ClientesModule, CloudinaryModule, forwardRef(() => DashboardModule)],
+  imports: [ReparacionesRecurrentesModule, ClientesModule, CloudinaryModule, forwardRef(() => DashboardModule)],
   controllers: [OrdenesController],
   providers: [OrdenesService, fanOutProvider],
   exports: [OrdenesService],

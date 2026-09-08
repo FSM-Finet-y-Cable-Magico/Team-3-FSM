@@ -203,8 +203,31 @@
                     <p class="text-sm font-semibold">Alerta por reparaciones recurrentes</p>
                     <p class="text-sm mt-0.5">
                       {alertaReparaciones.total_reparaciones_30_dias}
-                      reparaciones registradas en los ultimos 30 dias.
+                      reparaciones completadas en los ultimos 30 dias.
                     </p>
+                    <!-- RF-08 pide "la lista de OT asociadas". Antes solo se veia
+                         el numero: el jefe tecnico leia "5 reparaciones" y no
+                         tenia como saber cuales eran ni de que fueron. -->
+                    {#if alertaReparaciones.ots?.length}
+                      <ul class="mt-2 space-y-1">
+                        {#each alertaReparaciones.ots as ot (ot.id_ot)}
+                          <li class="text-sm">
+                            <a
+                              href="/admin/ot/{ot.id_ot}"
+                              class="font-medium underline cursor-pointer rounded
+                                     hover:text-orange-950 focus:outline-none
+                                     focus-visible:ring-2 focus-visible:ring-orange-500"
+                            >OT #{ot.id_ot}</a>
+                            {#if ot.fecha_completada}
+                              · {new Date(ot.fecha_completada).toLocaleDateString('es-CL')}
+                            {/if}
+                            {#if ot.categoria_falla}
+                              · {ot.categoria_falla}
+                            {/if}
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
                   </div>
                 {/if}
                 {#if cliente.email}
