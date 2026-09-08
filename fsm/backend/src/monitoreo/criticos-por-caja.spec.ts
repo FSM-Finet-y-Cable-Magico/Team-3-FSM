@@ -36,8 +36,8 @@ describe('CU-15 · clientes criticos por caja', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     cajas = [
-      { id_caja_nap: 1, identificador_unico: 'NAP 1', zona: 'ZONA 3', latitud: null, longitud: null },
-      { id_caja_nap: 2, identificador_unico: 'NAP 2', zona: 'ZONA 7', latitud: null, longitud: null },
+      { id_caja_nap: 1, identificador_unico: 'NAP 1', zona: 'ZONA 3', latitud: null, longitud: null, capacidad_puertos: 16 },
+      { id_caja_nap: 2, identificador_unico: 'NAP 2', zona: 'ZONA 7', latitud: null, longitud: null, capacidad_puertos: 16 },
     ];
     const mod = await Test.createTestingModule({
       providers: [
@@ -65,16 +65,53 @@ describe('CU-15 · clientes criticos por caja', () => {
     expect(r.cajas[1]).toMatchObject({ identificador_unico: 'NAP 2', criticos: 1, pct_afectado: 25 });
   });
 
-  it('ordena por caja mas comprometida, que es el orden en que se despacha', async () => {
+  it('ordena por cantidad de gente afectada, no por porcentaje', async () => {
+    // NAP 1: 6 criticos de 12 = 50%. NAP 2: 2 criticos de 2 = 100%.
+    //
+    // Es el caso que rompia la pantalla: 216 de las 262 cajas de FiNet tienen
+    // menos de cinco ONT registradas y capacidad declarada de 16 puertos, asi
+    // que ordenar por porcentaje llenaba todo con cajas de 2/2 al 100% --que
+    // son las de padron incompleto-- y enterraba las que tienen seis clientes
+    // caidos de verdad.
     estado = [
-      ont(1, 1, 'ONLINE', -21), ont(2, 1, 'LOS', null),
-      ont(3, 2, 'LOS', null), ont(4, 2, 'LOS', null),
+      ...Array.from({ length: 6 }, (_, i) => ont(i + 1, 1, 'LOS', null)),
+      ...Array.from({ length: 6 }, (_, i) => ont(i + 7, 1, 'ONLINE', -21)),
+      ont(13, 2, 'LOS', null), ont(14, 2, 'LOS', null),
     ];
 
     const r = await service.criticosPorCaja(1);
 
-    // NAP 2 esta al 100% y NAP 1 al 50%: primero la que esta peor.
+    expect(r.cajas.map((c) => c.identificador_unico)).toEqual(['NAP 1', 'NAP 2']);
+    expect(r.cajas[0]).toMatchObject({ criticos: 6, pct_afectado: 50 });
+    expect(r.cajas[1]).toMatchObject({ criticos: 2, pct_afectado: 100 });
+  });
+
+  it('a igual cantidad de afectados, primero la proporcionalmente peor', async () => {
+    // NAP 1: 2 de 4 = 50%. NAP 2: 2 de 2 = 100%.
+    estado = [
+      ont(1, 1, 'LOS', null), ont(2, 1, 'LOS', null),
+      ont(3, 1, 'ONLINE', -21), ont(4, 1, 'ONLINE', -20),
+      ont(5, 2, 'LOS', null), ont(6, 2, 'LOS', null),
+    ];
+
+    const r = await service.criticosPorCaja(1);
+
     expect(r.cajas.map((c) => c.identificador_unico)).toEqual(['NAP 2', 'NAP 1']);
+  });
+
+  it('marca las cajas de padron incompleto para no leer su 100% como firme', async () => {
+    // Una caja de 16 puertos con 2 ONT conocidas no esta "caida al 100%": se
+    // sabe de dos. Mismo criterio con el que CU-17 se niega a declararla caida.
+    estado = [
+      ont(1, 1, 'LOS', null), ont(2, 1, 'LOS', null),
+      ...Array.from({ length: 5 }, (_, i) => ont(i + 3, 2, 'LOS', null)),
+    ];
+
+    const r = await service.criticosPorCaja(1);
+    const porNombre = Object.fromEntries(r.cajas.map((c) => [c.identificador_unico, c]));
+
+    expect(porNombre['NAP 1'].padron_chico).toBe(true);
+    expect(porNombre['NAP 2'].padron_chico).toBe(false);
   });
 
   it('separa los caidos de los que tienen potencia fuera de rango', async () => {

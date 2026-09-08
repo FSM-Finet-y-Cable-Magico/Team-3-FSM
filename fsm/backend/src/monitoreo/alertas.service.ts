@@ -5,6 +5,7 @@ import { descomponerFicha } from './ficha-cliente.js';
 import { evaluar, type EstadoOnt } from './reglas-alerta.js';
 import {
   DIAS_MAX_INCIDENTE,
+  MIN_ONT_PARA_FALLA_CAJA,
   TIPO_ALERTA,
   SILENCIO_TRAS_REVISION_H,
   UMBRAL_DESCONEXION_MIN_DEFECTO,
@@ -633,6 +634,7 @@ export class AlertasService {
         zona: true,
         latitud: true,
         longitud: true,
+        capacidad_puertos: true,
       },
     });
     const infoCaja = new Map(cajas.map((c) => [c.id_caja_nap, c]));
@@ -651,6 +653,14 @@ export class AlertasService {
           latitud: info?.latitud ?? null,
           longitud: info?.longitud ?? null,
           clientes_en_la_caja: miembros.length,
+          capacidad_puertos: info?.capacidad_puertos ?? null,
+          // El padron esta incompleto: 216 de las 262 cajas de FiNet tienen
+          // menos de cinco ONT registradas y capacidad declarada de 16 puertos.
+          // En esas, "100%" quiere decir "las dos que conocemos", no "la caja
+          // entera". Es el mismo motivo por el que CU-17 no declara caida una
+          // caja bajo `MIN_ONT_PARA_FALLA_CAJA`, y se marca para que el panel
+          // no presente ese 100% como si fuera un dato firme.
+          padron_chico: miembros.length < MIN_ONT_PARA_FALLA_CAJA,
           criticos: criticos.length,
           sin_senal: sinSenal,
           potencia_fuera_de_rango: criticos.length - sinSenal,
@@ -662,9 +672,16 @@ export class AlertasService {
       })
       .filter((f) => f.criticos > 0)
       .filter((f) => !zona || (f.zona ?? '').toLowerCase().includes(zona.toLowerCase()))
-      // Primero la caja mas comprometida, y a igual porcentaje la que afecta a
-      // mas gente: es el orden en que conviene despachar.
-      .sort((a, b) => b.pct_afectado - a.pct_afectado || b.criticos - a.criticos);
+      // Primero la caja que afecta a MAS GENTE, y a igual cantidad la que esta
+      // proporcionalmente peor.
+      //
+      // Antes se ordenaba al reves --primero el porcentaje-- y el resultado
+      // sobre los datos reales era que la pantalla entera se llenaba de cajas
+      // de 2/2 y 3/3 al 100%, que son justo las de padron incompleto, dejando
+      // abajo las que tienen doce clientes caidos. RF-13 pregunta "cuantos
+      // clientes afectados": doce pesan mas que dos, aunque esos dos sean el
+      // 100% de lo poco que sabemos de esa caja.
+      .sort((a, b) => b.criticos - a.criticos || b.pct_afectado - a.pct_afectado);
 
     return {
       cajas: filas,

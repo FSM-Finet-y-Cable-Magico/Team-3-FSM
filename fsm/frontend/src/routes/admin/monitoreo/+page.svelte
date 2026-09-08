@@ -360,10 +360,10 @@
             <tr>
               <th scope="col" class="px-3 py-2 text-left font-semibold">Caja</th>
               <th scope="col" class="px-3 py-2 text-left font-semibold">Zona</th>
-              <th scope="col" class="px-3 py-2 text-left font-semibold w-64">Afectación</th>
+              <th scope="col" class="px-3 py-2 text-left font-semibold w-80">Afectación</th>
               <th scope="col" class="px-3 py-2 text-right font-semibold">Sin señal</th>
               <th scope="col" class="px-3 py-2 text-right font-semibold">Potencia</th>
-              <th scope="col" class="px-3 py-2 text-right font-semibold">Clientes</th>
+              <th scope="col" class="px-3 py-2 text-right font-semibold">Registradas</th>
               <th scope="col" class="px-3 py-2 text-right font-semibold">Ver</th>
             </tr>
           </thead>
@@ -382,11 +382,25 @@
                     <span class="tabular-nums font-semibold text-slate-900 w-24 text-right">
                       {c.pct_afectado}% ({c.criticos}/{c.clientes_en_la_caja})
                     </span>
+                    <!-- Sin esta marca, "100% (2/2)" se lee como "la caja
+                         entera esta caida" cuando en realidad son las dos
+                         unicas ONT que tenemos registradas de una caja de 16. -->
+                    {#if c.padron_chico}
+                      <span
+                        class="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-medium
+                               bg-slate-100 text-slate-700 border border-slate-300"
+                        title="Sólo {c.clientes_en_la_caja} ONT registradas{c.capacidad_puertos
+                          ? ` de ${c.capacidad_puertos} puertos`
+                          : ''}: el porcentaje habla de esas, no de la caja entera."
+                      >padrón parcial</span>
+                    {/if}
                   </div>
                 </td>
                 <td class="px-3 py-2 text-right tabular-nums text-red-700">{c.sin_senal}</td>
                 <td class="px-3 py-2 text-right tabular-nums text-amber-700">{c.potencia_fuera_de_rango}</td>
-                <td class="px-3 py-2 text-right tabular-nums text-slate-700">{c.clientes_en_la_caja}</td>
+                <td class="px-3 py-2 text-right tabular-nums text-slate-700">
+                  {c.clientes_en_la_caja}{c.capacidad_puertos ? ` / ${c.capacidad_puertos}` : ''}
+                </td>
                 <td class="px-3 py-2 text-right">
                   <a
                     href="/admin/topologia/{c.id_caja_nap}"

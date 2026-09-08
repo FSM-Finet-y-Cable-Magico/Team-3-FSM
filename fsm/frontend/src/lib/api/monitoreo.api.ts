@@ -30,6 +30,14 @@ export interface CajaCritica {
   latitud: string | null;
   longitud: string | null;
   clientes_en_la_caja: number;
+  /** Puertos que declara la caja, para contrastar con lo que hay registrado. */
+  capacidad_puertos: number | null;
+  /**
+   * Menos de 5 ONT registradas: el "100%" de esa caja habla de lo poco que se
+   * sabe de ella, no de la caja entera. Mismo umbral con el que CU-17 se niega
+   * a declararla caida.
+   */
+  padron_chico: boolean;
   criticos: number;
   sin_senal: number;
   potencia_fuera_de_rango: number;
