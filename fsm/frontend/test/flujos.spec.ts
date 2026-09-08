@@ -12,7 +12,7 @@ const ot = { id_ot: 1, id_tecnico: 7, id_empresa: 1, id_cliente: 1, tipo_ot: 'IN
 
 async function preparar(page: Page) {
   page.on('pageerror', error => console.error('Error de navegador:', error.message));
-  const registro = { cierres: [] as unknown[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok' };
+  const registro = { cierres: [] as unknown[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok', equiposCaidos: false };
   await page.addInitScript(() => {
     const urls = { creadas: [] as string[], liberadas: [] as string[] };
     Object.assign(window, { urlsDePrueba: urls });
@@ -44,6 +44,21 @@ async function preparar(page: Page) {
       historial: [{ ...ot, tipo_ot: 'REPARACION', estado: 'COMPLETADA', fotos: [{ url_cloudinary: remota, formato: 'png' }], materiales: [], resuelto_remotamente: false }],
       categoria_frecuente: null, estadisticas: { total_reparaciones: 1, reparaciones_completadas: 1, tiempo_promedio_dias: 1, potencia_promedio_dbm: -21 },
     });
+    if (ruta === '/api/ordenes/acciones-equipo') {
+      // Se sirven los literales tal cual los manda el backend, con tildes: si
+      // la Vista los deformara al mostrarlos, G1 rechazaria el cierre.
+      if (registro.equiposCaidos) return responder({ message: 'no disponible' }, 503);
+      return responder({
+        acciones: [
+          { accion: 'INSTALADO_EN_CLIENTE', es_retiro: false, estado_g1: 'Instalado en cliente' },
+          { accion: 'RETIRADO_A_BODEGA', es_retiro: true, estado_g1: 'En bodega' },
+          { accion: 'RETIRADO_PARA_DIAGNOSTICO', es_retiro: true, estado_g1: 'En revisión' },
+          { accion: 'BAJA_EN_TERRENO', es_retiro: true, estado_g1: 'Dado de baja' },
+        ],
+        diagnosticos: ['No enciende', 'Sin señal óptica', 'Daño físico visible', 'Causa desconocida', 'Otro'],
+        diagnostico_por_defecto: 'Causa desconocida',
+      });
+    }
     if (ruta === '/api/ordenes/materiales' || ruta === '/api/ordenes/categorias-falla' || ruta === '/api/ordenes/tecnicos' || ruta === '/api/auth/usuarios') return responder([]);
     if (ruta === '/api/ordenes') return responder({ data: [ot], page: 1, limit: 20, total: 1 });
     if (/\/ordenes\/\d+\/foto$/.test(ruta)) {
@@ -165,6 +180,80 @@ test('el cierre envía la URL remota y libera la previsualización al terminar',
   expect(registro.cierres[0]).toMatchObject({ fotos: [{ url_cloudinary: remota, formato: 'png', tamano_kb: 1 }] });
   const estado = await urls(page); expect(estado.liberadas).toContain(estado.creadas[0]);
 });
+test('el retiro de un equipo viaja con su diagnostico y separado de lo instalado', async ({ page }) => {
+  // El acuerdo con G1: los equipos van por numero de serie, y el retiro lleva
+  // que le pasa al equipo. Se separan instalados de retirados porque G1 les
+  // aplica transiciones distintas.
+  const registro = await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+
+  await page.getByRole('button', { name: '+ Agregar' }).click();
+  // Minusculas y simbolos: el formulario normaliza al formato que exige G1.
+  await page.locator('#serie-0').fill('altx retirada/01');
+  await expect(page.locator('#serie-0')).toHaveValue('ALTXRETIRADA01');
+  await page.locator('#accion-0').selectOption('RETIRADO_PARA_DIAGNOSTICO');
+  await page.locator('#diag-0').selectOption('Sin señal óptica');
+
+  await page.getByRole('button', { name: '+ Agregar' }).click();
+  await page.locator('#serie-1').fill('ONT-NUEVA-02');
+  await page.locator('#accion-1').selectOption('INSTALADO_EN_CLIENTE');
+  // La instalacion no pregunta diagnostico: no hay nada que diagnosticar.
+  await expect(page.locator('#diag-1')).toHaveCount(0);
+
+  await page.locator('input[type=number]').fill('-21');
+  await page.getByRole('button', { name: 'Cerrar OT', exact: true }).click();
+  await expect(page).toHaveURL(/\/terreno$/);
+
+  expect(registro.cierres[0]).toMatchObject({
+    equipos_retirados: [{
+      numero_serie: 'ALTXRETIRADA01',
+      accion: 'RETIRADO_PARA_DIAGNOSTICO',
+      diagnostico: 'Sin señal óptica',
+    }],
+    equipos_instalados: [{ numero_serie: 'ONT-NUEVA-02', accion: 'INSTALADO_EN_CLIENTE' }],
+  });
+});
+
+test('un retiro sin diagnostico no deja cerrar, y el boton dice que falta', async ({ page }) => {
+  // El contrato con G1 acepta el retiro sin diagnostico --asume "Causa
+  // desconocida"-- pero el formulario lo exige: el tecnico es el unico que
+  // tiene el equipo en la mano. Y el boton no puede quedar gris y mudo.
+  await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.locator('input[type=number]').fill('-21');
+
+  await page.getByRole('button', { name: '+ Agregar' }).click();
+  await page.locator('#serie-0').fill('ALTX-SIN-DIAG');
+  await page.locator('#accion-0').selectOption('BAJA_EN_TERRENO');
+
+  await expect(page.getByRole('button', { name: 'Cerrar OT', exact: true })).toBeDisabled();
+  await expect(page.getByText(/Para cerrar falta.*diagnostico del equipo 1/)).toBeVisible();
+
+  await page.locator('#diag-0').selectOption('Daño físico visible');
+  await expect(page.getByRole('button', { name: 'Cerrar OT', exact: true })).toBeEnabled();
+});
+
+test('si no se pueden leer las opciones de equipo, el cierre sigue disponible', async ({ page }) => {
+  // Declarar equipos es secundario frente a cerrar la OT. Antes esta llamada
+  // estaba dentro del Promise.all de carga y su fallo tumbaba la pantalla
+  // entera: el tecnico quedaba sin poder cerrar nada, parado en el domicilio.
+  const registro = await preparar(page); registro.equiposCaidos = true;
+  await login(page); await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+
+  await expect(page.getByText(/No se pudieron cargar las opciones de equipos/)).toBeVisible();
+  await page.locator('input[type=number]').fill('-21');
+  await page.getByRole('button', { name: 'Cerrar OT', exact: true }).click();
+  await expect(page).toHaveURL(/\/terreno$/);
+  expect(registro.cierres).toHaveLength(1);
+});
+
 test('navegar entre dos cierres desmonta el anterior aunque comparta la ruta', async ({ page }) => {
   const registro = await preparar(page); registro.modo = 'pendiente'; await login(page); await page.goto('/terreno/cerrar/1');
   await page.locator('input[type=file]').setInputFiles(archivo);

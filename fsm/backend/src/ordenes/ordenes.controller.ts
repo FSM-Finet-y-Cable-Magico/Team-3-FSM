@@ -16,6 +16,13 @@ import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
+import {
+  ACCION_EQUIPO,
+  ACCIONES_EQUIPO_RETIRO,
+  ACCION_A_ESTADO_G1,
+  DIAGNOSTICO_RETIRO,
+  DIAGNOSTICO_POR_DEFECTO,
+} from './estado-equipo.constants.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
@@ -86,6 +93,31 @@ export class OrdenesController {
   @Get('categorias-falla')
   listarCategoriasFalla() {
     return this.ordenesService.listarCategoriasFalla();
+  }
+
+  /**
+   * Acciones de equipo y diagnosticos, para el formulario de cierre del tecnico.
+   *
+   * Sale del backend y no de una copia en la Vista porque los literales los
+   * compara G1 con tildes ("Sin senal optica" no es "Sin señal óptica"): un
+   * typo del lado del navegador rompe la integracion en silencio. Es la misma
+   * fuente que sirve `GET /integraciones/estados-equipo` a G1, asi que los dos
+   * lados leen exactamente lo mismo.
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
+  @Get('acciones-equipo')
+  accionesEquipo() {
+    return {
+      acciones: Object.values(ACCION_EQUIPO).map((accion) => ({
+        accion,
+        // Para que el formulario sepa cuando exigir el diagnostico sin tener
+        // que repetir aca cuales son las acciones de retiro.
+        es_retiro: (ACCIONES_EQUIPO_RETIRO as readonly string[]).includes(accion),
+        estado_g1: ACCION_A_ESTADO_G1[accion],
+      })),
+      diagnosticos: Object.values(DIAGNOSTICO_RETIRO),
+      diagnostico_por_defecto: DIAGNOSTICO_POR_DEFECTO,
+    };
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')

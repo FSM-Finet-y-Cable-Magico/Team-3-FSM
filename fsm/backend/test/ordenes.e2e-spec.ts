@@ -182,6 +182,37 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
       caso === 'firma' ? { secret: 'otro-secreto' } : { expiresIn: -1 });
     await request(app.getHttpServer()).get('/api/ordenes/1').auth(invalido, { type: 'bearer' }).expect(401);
   });
+  it('sirve las acciones y diagnosticos de equipo con los literales exactos de G1', async () => {
+    // La Vista los pide de aca en vez de tener su propia copia: G1 los compara
+    // con tildes, y una copia en el navegador se desincroniza sin que nadie se
+    // entere hasta que G1 rechaza un cierre. Si alguien edita las constantes
+    // sin avisarle a G1, esta prueba cae primero.
+    const res = await request(app.getHttpServer())
+      .get('/api/ordenes/acciones-equipo').auth(token(), { type: 'bearer' }).expect(200);
+
+    expect(res.body.diagnosticos).toEqual([
+      'No enciende', 'Se reinicia continuamente', 'Sin señal óptica', 'Copla o puerto dañado',
+      'Falla de configuración', 'Daño físico visible', 'Causa desconocida', 'Otro',
+    ]);
+    expect(res.body.diagnostico_por_defecto).toBe('Causa desconocida');
+
+    // `es_retiro` es lo que decide si el formulario exige diagnostico: si se
+    // marcara mal, el tecnico podria dar de baja un equipo sin decir por que.
+    const porAccion = Object.fromEntries(res.body.acciones.map((a: any) => [a.accion, a]));
+    expect(porAccion.INSTALADO_EN_CLIENTE).toMatchObject({ es_retiro: false, estado_g1: 'Instalado en cliente' });
+    expect(porAccion.RETIRADO_A_BODEGA).toMatchObject({ es_retiro: true, estado_g1: 'En bodega' });
+    expect(porAccion.RETIRADO_PARA_DIAGNOSTICO).toMatchObject({ es_retiro: true, estado_g1: 'En revisión' });
+    expect(porAccion.BAJA_EN_TERRENO).toMatchObject({ es_retiro: true, estado_g1: 'Dado de baja' });
+  });
+
+  it('no confunde "acciones-equipo" con el detalle de una OT', async () => {
+    // `@Get(':id')` esta declarada despues a proposito. Si alguien la sube de
+    // lugar, esta ruta pasaria a buscar la OT numero "acciones-equipo".
+    const res = await request(app.getHttpServer())
+      .get('/api/ordenes/acciones-equipo').auth(token(), { type: 'bearer' }).expect(200);
+    expect(res.body.acciones).toBeDefined();
+  });
+
   it('un handler sin @Roles permanece cerrado', async () => {
     await request(app.getHttpServer()).get('/api/test-denegado').auth(token('ADMIN'), { type: 'bearer' }).expect(403);
   });
