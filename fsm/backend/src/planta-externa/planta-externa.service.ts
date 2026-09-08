@@ -299,6 +299,105 @@ export class PlantaExternaService {
     this.logger.log(`Demo sembrada: ${demo.length} clientes ligados a ONT + caja NAP`);
     return { ok: true, clientes: demo.length };
   }
+
+  /**
+   * Deriva `caja_nap.zona` desde las ONT ya ligadas a cada caja.
+   *
+   * El KML de Tomodat no trae zona: la unica fuente es el campo `zona` que
+   * SmartOLT informa por ONT. Por eso esto corre DESPUES de `ligar-cajas`; sin
+   * ese paso no hay de donde sacarla.
+   *
+   * Solo rellena las cajas que tienen la zona en null. Una zona ya puesta --por
+   * el KML o a mano-- vale mas que una deducida, y pisarla convertiria el dato
+   * de una persona en el resultado de una heuristica.
+   *
+   * Cuando las ONT de una misma caja no coinciden se toma la mayoria, pero el
+   * caso se INFORMA en `conflictos` en vez de resolverse en silencio: sobre los
+   * datos reales de FiNet pasa en 12 de 262 cajas, y son justo las que conviene
+   * mirar --puede ser una caja en el limite de dos zonas, o una ONT mal ligada.
+   */
+  async derivarZonas(id_empresa: number) {
+    const t0 = Date.now();
+
+    const cajas = await this.prisma.caja_nap.findMany({
+      where: { id_empresa, zona: null },
+      select: { id_caja_nap: true, identificador_unico: true },
+    });
+    if (cajas.length === 0) {
+      return {
+        cajas_sin_zona: 0,
+        actualizadas: 0,
+        sin_ont_ligada: 0,
+        conflictos: [] as { caja: string | null; elegida: string; descartadas: string[] }[],
+        ms: Date.now() - t0,
+      };
+    }
+
+    const onts = await this.prisma.registro_ont.findMany({
+      where: {
+        id_empresa,
+        id_caja_nap: { in: cajas.map((c) => c.id_caja_nap) },
+        zona: { not: null },
+      },
+      select: { id_caja_nap: true, zona: true },
+    });
+
+    // Por caja, cuantas ONT dicen cada zona.
+    const votos = new Map<number, Map<string, number>>();
+    for (const o of onts) {
+      if (o.id_caja_nap == null || !o.zona) continue;
+      const z = o.zona.replace(/\s+/g, ' ').trim();
+      if (!z) continue;
+      const m = votos.get(o.id_caja_nap) ?? new Map<string, number>();
+      m.set(z, (m.get(z) ?? 0) + 1);
+      votos.set(o.id_caja_nap, m);
+    }
+
+    const conflictos: { caja: string | null; elegida: string; descartadas: string[] }[] = [];
+    const actualizaciones: { id: number; zona: string }[] = [];
+
+    for (const c of cajas) {
+      const m = votos.get(c.id_caja_nap);
+      if (!m || m.size === 0) continue;
+
+      // A igual cantidad de votos se ordena por nombre, para que dos corridas
+      // sobre los mismos datos den el mismo resultado y no uno al azar.
+      const ordenadas = [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const [elegida] = ordenadas[0];
+      actualizaciones.push({ id: c.id_caja_nap, zona: elegida });
+
+      if (ordenadas.length > 1) {
+        conflictos.push({
+          caja: c.identificador_unico,
+          elegida,
+          descartadas: ordenadas.slice(1).map(([z, n]) => `${z} (${n})`),
+        });
+      }
+    }
+
+    // Una por una y no en lote: `updateMany` no permite un valor distinto por
+    // fila, y son cientos de filas como mucho.
+    for (const u of actualizaciones) {
+      await this.prisma.caja_nap.update({
+        where: { id_caja_nap: u.id },
+        data: { zona: u.zona },
+      });
+    }
+
+    const resumen = {
+      cajas_sin_zona: cajas.length,
+      actualizadas: actualizaciones.length,
+      // Sin ONT ligada no hay de donde deducirla: quedan en null y se cuentan.
+      sin_ont_ligada: cajas.length - actualizaciones.length,
+      conflictos,
+      ms: Date.now() - t0,
+    };
+    this.logger.log(
+      `Zonas derivadas: ${resumen.actualizadas} de ${resumen.cajas_sin_zona} cajas, ` +
+        `${resumen.sin_ont_ligada} sin ONT ligada, ${conflictos.length} con zonas en conflicto, ${resumen.ms}ms`,
+    );
+    return resumen;
+  }
 }
 
 function coordsATexto(n: NodoTopologia): string | null {

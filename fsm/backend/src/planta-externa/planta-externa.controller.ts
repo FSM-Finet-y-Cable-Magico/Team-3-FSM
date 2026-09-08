@@ -153,6 +153,22 @@ export class PlantaExternaController {
    * Importa un KML de topología (exportado de Tomodat o cualquier GIS).
    * Campo `kml` en multipart/form-data. `empresa` opcional en el query.
    */
+  /**
+   * Rellena la zona de las cajas que no la tienen, deduciendola de las ONT ya
+   * ligadas. Va DESPUES de `POST /monitoreo/ligar-cajas`: sin ese paso no hay
+   * de donde sacarla, porque el KML de Tomodat no trae zona.
+   *
+   * Es un endpoint y no un script suelto por el mismo motivo que `ligar-cajas`:
+   * asi queda repetible, con permisos, y sin depender de que alguien corra SQL
+   * a mano sobre la base compartida.
+   */
+  @Roles('ADMIN')
+  @Post('derivar-zonas')
+  derivarZonas(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.planta.derivarZonas(id);
+  }
+
   @Roles('ADMIN')
   @Post('importar-kml')
   @UseInterceptors(FileInterceptor('kml', { storage: memoryStorage() }))
