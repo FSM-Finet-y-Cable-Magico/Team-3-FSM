@@ -526,14 +526,14 @@
           <table class="min-w-full text-sm">
             <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
               <tr>
-                <th scope="col" class="px-3 py-2.5 w-10">
+                <th scope="col" class="relative px-3 py-2.5 w-10">
                   <span class="sr-only">Seleccionar</span>
                 </th>
                 <th scope="col" class="px-3 py-2.5 text-left font-semibold">Alerta</th>
                 <th scope="col" class="px-3 py-2.5 text-left font-semibold">Cliente y dirección</th>
                 <th scope="col" class="px-3 py-2.5 text-left font-semibold">Ubicación de red</th>
                 <th scope="col" class="px-3 py-2.5 text-left font-semibold">Detectada</th>
-                <th scope="col" class="px-3 py-2.5"><span class="sr-only">Acciones</span></th>
+                <th scope="col" class="relative px-3 py-2.5"><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
