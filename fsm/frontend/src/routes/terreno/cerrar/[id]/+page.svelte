@@ -310,7 +310,7 @@
     <!-- Header -->
     <header class="bg-slate-900 text-white px-4 py-3 sticky top-0 z-10 shadow-lg">
       <div class="flex items-center gap-3">
-        <button aria-label="Volver a terreno" onclick={() => goto('/terreno')} class="btn-texto p-1 text-slate-300 hover:text-white focus-visible:ring-slate-400">
+        <button aria-label="Volver a terreno" onclick={() => goto('/terreno')} class="btn-texto justify-center min-h-11 min-w-11 text-slate-300 hover:text-white focus-visible:ring-slate-400">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
@@ -387,7 +387,7 @@
                   {/if}
                     <button aria-label="Eliminar evidencia {i + 1}"
                       onclick={() => eliminarFoto(i)}
-                      class="absolute top-1 right-1 bg-black/60 rounded-full p-0.5 cursor-pointer"
+                      class="absolute top-1 right-1 flex min-h-11 min-w-11 items-center justify-center rounded-full bg-black/60 cursor-pointer"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -444,13 +444,13 @@
                     <div class="flex items-center gap-2">
                       <button
                         onclick={() => cantidades[mat.id_tipo_equipo] = Math.max(0, (cantidades[mat.id_tipo_equipo] ?? 0) - 1)}
-                        class="w-8 h-8 rounded-lg bg-slate-100 text-slate-600 font-bold text-lg flex items-center justify-center active:bg-slate-200 cursor-pointer"
+                        class="w-11 h-11 rounded-lg bg-slate-100 text-slate-600 font-bold text-lg flex items-center justify-center active:bg-slate-200 cursor-pointer"
                       >-</button>
                       <span class="w-8 text-center font-semibold text-slate-800">{cantidad}</span>
                       <button
                         onclick={() => cantidades[mat.id_tipo_equipo] = Math.min(stockDisp, (cantidades[mat.id_tipo_equipo] ?? 0) + 1)}
                         disabled={cantidad >= stockDisp}
-                        class="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 font-bold text-lg flex items-center justify-center active:bg-blue-200 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                        class="w-11 h-11 rounded-lg bg-blue-100 text-blue-600 font-bold text-lg flex items-center justify-center active:bg-blue-200 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                       >+</button>
                     </div>
                   </div>
@@ -515,7 +515,7 @@
             <button
               type="button"
               onclick={agregarEquipo}
-              class="btn btn-secundario btn-chico shrink-0 border-blue-200 bg-blue-50 text-blue-700
+              class="btn btn-secundario btn-chico min-h-11 shrink-0 border-blue-200 bg-blue-50 text-blue-700
                      hover:bg-blue-100 focus-visible:ring-blue-500"
             >+ Agregar</button>
           </div>
@@ -710,7 +710,7 @@
             <span class="text-sm font-medium text-slate-700">Resuelto remotamente</span>
             <button
               onclick={() => (resueltoRemotamente = !resueltoRemotamente)}
-              class="relative inline-flex h-7 w-12 items-center rounded-full transition-colors cursor-pointer
+              class="relative inline-flex h-7 w-12 items-center rounded-full transition-colors cursor-pointer after:absolute after:-inset-2.5 after:content-['']
                 {resueltoRemotamente ? 'bg-blue-600' : 'bg-slate-200'}"
             >
               <span
@@ -787,13 +787,13 @@
         <div class="flex gap-3">
           <button
             onclick={() => goto('/terreno')}
-            class="btn btn-secundario flex-1"
+            class="btn btn-secundario btn-grande flex-1"
           >
             Volver
           </button>
           <button
             onclick={confirmarCierrePotencia}
-            class="btn flex-1 bg-amber-500 text-white shadow-sm hover:bg-amber-600 focus-visible:ring-amber-500"
+            class="btn btn-grande flex-1 bg-amber-500 text-white shadow-sm hover:bg-amber-600 focus-visible:ring-amber-500"
           >
             Entendido
           </button>

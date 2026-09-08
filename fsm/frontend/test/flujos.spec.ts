@@ -12,7 +12,7 @@ const ot = { id_ot: 1, id_tecnico: 7, id_empresa: 1, id_cliente: 1, tipo_ot: 'IN
 
 async function preparar(page: Page) {
   page.on('pageerror', error => console.error('Error de navegador:', error.message));
-  const registro = { cierres: [] as unknown[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok', equiposCaidos: false, tokenVencido: false };
+  const registro = { cierres: [] as unknown[], estados: [] as Record<string, unknown>[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok', equiposCaidos: false, tokenVencido: false, estadoFalla: false };
   await page.addInitScript(() => {
     const urls = { creadas: [] as string[], liberadas: [] as string[] };
     Object.assign(window, { urlsDePrueba: urls });
@@ -64,7 +64,12 @@ async function preparar(page: Page) {
         diagnostico_por_defecto: 'Causa desconocida',
       });
     }
-    if (ruta === '/api/ordenes/materiales' || ruta === '/api/ordenes/categorias-falla' || ruta === '/api/ordenes/tecnicos' || ruta === '/api/auth/usuarios') return responder([]);
+    // Con al menos un material la vista dibuja los contadores - / +, que es
+    // lo que mide la prueba de tamano tactil.
+    if (ruta === '/api/ordenes/materiales') return responder([
+      { id_tipo_equipo: 3, nombre: 'Conector SC/APC', categoria: 'Fibra', requiere_serie_individual: false, stock: { cantidad_disponible: 12 } },
+    ]);
+    if (ruta === '/api/ordenes/categorias-falla' || ruta === '/api/ordenes/tecnicos' || ruta === '/api/auth/usuarios') return responder([]);
     if (ruta === '/api/ordenes') return responder({ data: [ot], page: 1, limit: 20, total: 1 });
     if (/\/ordenes\/\d+\/foto$/.test(ruta)) {
       registro.fotos++;
@@ -73,6 +78,11 @@ async function preparar(page: Page) {
       return responder({ url_cloudinary: remota, formato: 'png', tamano_kb: 1 }, 201);
     }
     if (/\/ordenes\/\d+\/cerrar$/.test(ruta)) { registro.cierres.push(req.postDataJSON()); return responder({ ...ot, estado: 'COMPLETADA' },201); }
+    if (/\/ordenes\/\d+\/estado$/.test(ruta)) {
+      registro.estados.push(req.postDataJSON());
+      if (registro.estadoFalla) return responder({ message: 'Sin conexión con el servidor' }, 503);
+      return responder({ ...ot, estado: req.postDataJSON().estado });
+    }
     if (/\/ordenes\/\d+$/.test(ruta)) return responder({ ...ot, id_ot: Number(ruta.split('/').pop()) });
     // Dashboard no participa en estas pruebas. No se hace ninguna petición real al backend.
     return responder({ message: 'Sin datos de prueba para esta vista' }, 400);
@@ -362,3 +372,91 @@ for (const respuestaRecibida of [false, true]) {
     if (!respuestaRecibida) await registro.pendientes[0].abort().catch(() => undefined);
   });
 }
+
+test('cliente ausente pide la observacion en la vista y no en un dialogo del navegador', async ({ page }) => {
+  // Antes esto era un window.prompt: el dialogo nativo no dice cuanto texto
+  // exige el Controlador, asi que el tecnico escribia de menos, perdia lo
+  // escrito y solo veia un error en rojo. Si alguien vuelve a poner un
+  // prompt, el manejador de abajo lo delata haciendo fallar la prueba.
+  const registro = await preparar(page);
+  let hubieraSidoUnDialogoNativo = false;
+  page.on('dialog', async (d) => { hubieraSidoUnDialogoNativo = true; await d.dismiss(); });
+
+  await login(page);
+  await page.getByRole('button', { name: 'Cliente ausente' }).click();
+
+  const registrar = page.getByRole('button', { name: 'Registrar cliente ausente' });
+  await expect(registrar).toBeDisabled();
+  await expect(page.getByText('Faltan 10 caracteres')).toBeVisible();
+
+  // Con menos del minimo sigue bloqueado, y dice exactamente cuanto falta.
+  await page.locator('#obs-ausente').fill('no estaba');
+  await expect(page.getByText('Falta 1 carácter')).toBeVisible();
+  await expect(registrar).toBeDisabled();
+
+  await page.locator('#obs-ausente').fill('Se toco el timbre tres veces y no hubo respuesta');
+  await expect(registrar).toBeEnabled();
+  await registrar.click();
+
+  await expect(page.getByRole('dialog')).toBeHidden();
+  expect(registro.estados[0]).toMatchObject({
+    estado: 'PENDIENTE_CLIENTE_AUSENTE',
+    obs_cliente_ausente: 'Se toco el timbre tres veces y no hubo respuesta',
+  });
+  expect(hubieraSidoUnDialogoNativo).toBe(false);
+});
+
+test('si falla el envio de cliente ausente, la observacion escrita no se pierde', async ({ page }) => {
+  // El caso real: el tecnico esta en terreno, con mala senal. Volver a
+  // escribir la observacion de cero es justo lo que no puede pasar.
+  const registro = await preparar(page);
+  registro.estadoFalla = true;
+  await login(page);
+
+  await page.getByRole('button', { name: 'Cliente ausente' }).click();
+  await page.locator('#obs-ausente').fill('Porton cerrado, nadie responde el citofono');
+  await page.getByRole('button', { name: 'Registrar cliente ausente' }).click();
+
+  await expect(page.getByText('Sin conexión con el servidor')).toBeVisible();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.locator('#obs-ausente')).toHaveValue('Porton cerrado, nadie responde el citofono');
+});
+
+async function controlesChicos(page: Page) {
+  return page.evaluate(() => {
+    const fuera: string[] = [];
+    for (const e of document.querySelectorAll('button')) {
+      const r = e.getBoundingClientRect();
+      if (r.width === 0) continue;
+      // El area de toque puede venir de un pseudo-elemento que agranda el
+      // control sin deformarlo, asi que se mide tambien esa caja.
+      const despues = getComputedStyle(e, '::after');
+      const extra = despues.content !== 'none' ? Math.abs(parseFloat(despues.top || '0')) * 2 : 0;
+      if (r.height + extra < 44) fuera.push((e.textContent || e.getAttribute('aria-label') || '?').trim().slice(0, 24) + ' -> ' + Math.round(r.height + extra) + 'px');
+    }
+    return fuera;
+  });
+}
+
+test('los controles de terreno alcanzan el tamano minimo para tocarlos', async ({ page }) => {
+  // 44px es el minimo recomendado para un objetivo tactil. Estas pantallas
+  // se usan de pie, en la calle y a veces con guantes.
+  await preparar(page); await login(page);
+  await page.setViewportSize({ width: 390, height: 780 });
+  expect(await controlesChicos(page), 'lista del dia').toEqual([]);
+
+  // La hoja de cliente ausente trae sus propios controles.
+  await page.getByRole('button', { name: 'Cliente ausente' }).click();
+  expect(await controlesChicos(page), 'hoja de cliente ausente').toEqual([]);
+  await page.keyboard.press('Escape');
+
+  // Cierre de OT: los contadores de material y el borrar foto eran los mas
+  // chicos de todos, con 32 y 24 px.
+  await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  expect(await controlesChicos(page), 'cierre paso 1, con evidencia').toEqual([]);
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  expect(await controlesChicos(page), 'cierre paso 2').toEqual([]);
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  expect(await controlesChicos(page), 'cierre paso 3').toEqual([]);
+});
