@@ -59,6 +59,22 @@ export interface Reporte {
   }[];
 }
 
+export interface MetricaComparada {
+  metrica: string;
+  /** Una entrada por empresa, en el mismo orden que `reportes`. */
+  valores: { id_empresa: number; empresa: string | null; valor: number | null }[];
+  /** Si un valor mas alto es mejor. Sirve para saber a quien destacar. */
+  mas_es_mejor: boolean;
+  unidad?: string;
+}
+
+export interface ReporteComparativo {
+  periodo: { desde: string; hasta: string; etiqueta: string };
+  generado_en: string;
+  reportes: Reporte[];
+  comparacion: MetricaComparada[];
+}
+
 const HORA_MS = 3_600_000;
 
 /**
@@ -367,4 +383,80 @@ export class ReportesService {
 
     return salida.sort((a, b) => b.reparaciones - a.reparaciones);
   }
+
+  // ---------------------------------------------------------------------------
+  // RF-41 / CU-47 — Panel comparativo entre empresas
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Compara las metricas de RF-41 entre todas las empresas del sistema.
+   *
+   * Reusa `construir` por empresa en vez de tener su propio calculo: si el
+   * comparativo contara distinto que el reporte de cada empresa, los numeros
+   * del panel no cuadrarian con los del reporte y no habria como saber cual
+   * mirar.
+   *
+   * Hoy solo FiNet tiene operacion, asi que Cable Magico sale en cero. Eso es
+   * correcto y hay que mostrarlo: una empresa sin actividad en el periodo es
+   * informacion, y omitirla haria parecer que el panel esta incompleto.
+   */
+  async comparativo(rango: RangoReporte, etiqueta: string): Promise<ReporteComparativo> {
+    const empresas = await this.prisma.empresa.findMany({
+      select: { id_empresa: true },
+      orderBy: { id_empresa: 'asc' },
+    });
+
+    const reportes = await Promise.all(
+      empresas.map((e) => this.construir(e.id_empresa, rango, { etiqueta })),
+    );
+
+    // Tiempo promedio de cierre a nivel empresa: se pondera por la cantidad de
+    // OT de cada tecnico, no se promedia el promedio. Promediar promedios le da
+    // el mismo peso a un tecnico con una OT que a uno con veinte.
+    const promedioEmpresa = (r: Reporte) => {
+      const conDato = r.por_tecnico.filter((t) => t.tiempo_promedio_horas != null);
+      const total = conDato.reduce((n, t) => n + t.completadas, 0);
+      if (total === 0) return null;
+      const suma = conDato.reduce((n, t) => n + t.tiempo_promedio_horas! * t.completadas, 0);
+      return Math.round((suma / total) * 10) / 10;
+    };
+
+    const metrica = (
+      nombre: string,
+      valor: (r: Reporte) => number | null,
+      mas_es_mejor: boolean,
+      unidad?: string,
+    ): MetricaComparada => ({
+      metrica: nombre,
+      mas_es_mejor,
+      unidad,
+      valores: reportes.map((r) => ({
+        id_empresa: r.empresa.id_empresa,
+        empresa: r.empresa.nombre,
+        valor: valor(r),
+      })),
+    });
+
+    return {
+      periodo: { desde: rango.desde.toISOString(), hasta: rango.hasta.toISOString(), etiqueta },
+      generado_en: new Date().toISOString(),
+      reportes,
+      comparacion: [
+        metrica('Instalaciones', (r) => r.totales.instalaciones, true),
+        metrica('Reparaciones', (r) => r.totales.reparaciones, true),
+        metrica('OT completadas', (r) => r.totales.ot_completadas, true),
+        // Menos horas es mejor: es lo que tarda en cerrarse una OT.
+        metrica('Tiempo promedio de cierre', promedioEmpresa, false, 'h'),
+        metrica(
+          'Consumo de materiales',
+          (r) => r.materiales.reduce((n, m) => n + m.cantidad, 0),
+          // Ni mas ni menos es "mejor" en si: se marca en false para no premiar
+          // gastar mas, pero lo que importa es compararlo contra las OT hechas.
+          false,
+        ),
+        metrica('Técnicos con actividad', (r) => r.por_tecnico.length, true),
+      ],
+    };
+  }
+
 }

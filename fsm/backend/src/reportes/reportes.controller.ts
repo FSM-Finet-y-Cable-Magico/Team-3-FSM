@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Get, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
-import { ReportesService, type Reporte } from './reportes.service.js';
+import { ReportesService, type Reporte, type ReporteComparativo } from './reportes.service.js';
 import { ExportacionService } from './exportacion.service.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
@@ -25,7 +25,7 @@ export class ReportesController {
   @Get('opciones')
   opciones() {
     return {
-      tipos: ['diario', 'on-demand', 'semanal', 'mensual'],
+      tipos: ['diario', 'on-demand', 'semanal', 'mensual', 'comparativo'],
       formatos: ['json', 'pdf', 'xlsx'],
       filtros: ['id_tecnico', 'desde', 'hasta'],
     };
@@ -116,6 +116,33 @@ export class ReportesController {
     return this.responder(r, formato, res);
   }
 
+  /**
+   * RF-41 / CU-47: panel comparativo entre empresas.
+   *
+   * Solo ADMIN, como fija el RF. Es el unico reporte que NO acepta el parametro
+   * `empresa`: comparar es justamente ver todas, y dejar elegir una haria del
+   * comparativo un reporte normal con otro nombre.
+   */
+  @Roles('ADMIN')
+  @Get('comparativo')
+  async comparativo(
+    @Res({ passthrough: true }) res: Response,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+    @Query('formato') formato?: string,
+  ) {
+    if (!desde || !hasta) throw new BadRequestException('Indique desde y hasta');
+    const d = this.fecha(desde);
+    const h = this.fecha(hasta);
+    if (h < d) throw new BadRequestException('El rango termina antes de empezar');
+
+    const c = await this.reportes.comparativo(
+      { desde: this.reportes.rangoDeDia(d).desde, hasta: this.reportes.rangoDeDia(h).hasta },
+      `${d.toLocaleDateString('es-CL')} a ${h.toLocaleDateString('es-CL')}`,
+    );
+    return this.responderComparativo(c, formato, res);
+  }
+
   // ---------------------------------------------------------------------------
 
   private async responder(r: Reporte, formato: string | undefined, res: Response) {
@@ -127,6 +154,27 @@ export class ReportesController {
     res.setHeader('Content-Type', archivo.contentType);
     // `filename*` ademas del `filename` para que un nombre con tildes no se
     // corrompa en la descarga.
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${archivo.nombre}"; filename*=UTF-8''${encodeURIComponent(archivo.nombre)}`,
+    );
+    res.setHeader('Content-Length', String(archivo.contenido.length));
+    res.end(archivo.contenido);
+    return undefined;
+  }
+
+  private async responderComparativo(
+    c: ReporteComparativo,
+    formato: string | undefined,
+    res: Response,
+  ) {
+    const f = (formato ?? 'json') as Formato;
+    if (f === 'json') return c;
+    if (f !== 'pdf' && f !== 'xlsx') throw new BadRequestException("formato debe ser 'pdf' o 'xlsx'");
+
+    const archivo =
+      f === 'pdf' ? await this.exportacion.comparativoAPdf(c) : await this.exportacion.comparativoAExcel(c);
+    res.setHeader('Content-Type', archivo.contentType);
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${archivo.nombre}"; filename*=UTF-8''${encodeURIComponent(archivo.nombre)}`,

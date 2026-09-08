@@ -46,7 +46,13 @@ describe('Reportes', () => {
         {
           provide: PrismaService,
           useValue: {
-            empresa: { findUnique: jest.fn(async () => ({ id_empresa: 1, nombre: 'FiNet Limitada' })) },
+            empresa: {
+              findUnique: jest.fn(async (a: any) => ({
+                id_empresa: a.where.id_empresa,
+                nombre: a.where.id_empresa === 1 ? 'FiNet Limitada' : 'Cable Mágico Litoral',
+              })),
+              findMany: jest.fn(async () => [{ id_empresa: 1 }, { id_empresa: 2 }]),
+            },
             orden_trabajo: { findMany: otFindMany, count: otCount },
             contrato: { findMany: contratoFindMany },
             cliente: { findFirst: jest.fn(async () => ({ nombre_completo: 'Vicente Diaz' })) },
@@ -243,5 +249,68 @@ describe('Reportes', () => {
     const xlsx = await exportacion.aExcel(r);
     expect(xlsx.contenido.length).toBeGreaterThan(0);
     expect(r.por_tecnico).toEqual([]);
+  });
+
+  // --- RF-41 ------------------------------------------------------------------
+
+  describe('panel comparativo entre empresas', () => {
+    const rango = () => ({
+      desde: new Date('2026-04-01T00:00:00'),
+      hasta: new Date('2026-05-01T00:00:00'),
+    });
+
+    it('incluye a TODAS las empresas, tambien las que no tuvieron actividad', async () => {
+      // Cable Magico todavia no opera. Omitirla haria parecer que al panel le
+      // falta algo; mostrarla en cero dice lo que realmente pasa.
+      ots = [];
+
+      const c = await service.comparativo(rango(), 'abril');
+
+      expect(c.reportes.map((r) => r.empresa.id_empresa)).toEqual([1, 2]);
+      expect(c.comparacion[0].valores).toHaveLength(2);
+    });
+
+    it('el tiempo promedio se pondera por OT, no promedia promedios', async () => {
+      // Un tecnico con 1 OT de 10 h y otro con 9 de 1 h dan 1,9 h ponderado y
+      // 5,5 h promediando promedios. Lo segundo le da el mismo peso al que hizo
+      // una que al que hizo nueve.
+      ots = [
+        ot({ fecha_creacion: new Date('2026-04-10T00:00:00'), fecha_completada: new Date('2026-04-10T10:00:00') }),
+        ...Array.from({ length: 9 }, () =>
+          ot({
+            tecnico: { id_usuario: 6, nombre_completo: 'Ana Soto' },
+            fecha_creacion: new Date('2026-04-10T00:00:00'),
+            fecha_completada: new Date('2026-04-10T01:00:00'),
+          }),
+        ),
+      ];
+
+      const c = await service.comparativo(rango(), 'abril');
+      const tiempo = c.comparacion.find((m) => m.metrica === 'Tiempo promedio de cierre')!;
+
+      expect(tiempo.valores[0].valor).toBe(1.9);
+      expect(tiempo.mas_es_mejor).toBe(false);
+    });
+
+    it('el tiempo promedio es null cuando la empresa no cerro ninguna OT', async () => {
+      ots = [];
+
+      const c = await service.comparativo(rango(), 'abril');
+      const tiempo = c.comparacion.find((m) => m.metrica === 'Tiempo promedio de cierre')!;
+
+      expect(tiempo.valores.every((v) => v.valor === null)).toBe(true);
+    });
+
+    it('exporta el comparativo con una columna por empresa', async () => {
+      ots = [ot()];
+
+      const c = await service.comparativo(rango(), '2026-04');
+      const xlsx = await exportacion.comparativoAExcel(c);
+      const pdf = await exportacion.comparativoAPdf(c);
+
+      expect(xlsx.nombre).toBe('Comparativo_FSM_2026-04.xlsx');
+      expect(xlsx.contenido.subarray(0, 2).toString()).toBe('PK');
+      expect(pdf.contenido.subarray(0, 5).toString()).toBe('%PDF-');
+    });
   });
 });

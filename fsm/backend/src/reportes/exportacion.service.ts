@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
-import type { Reporte } from './reportes.service.js';
+import type { Reporte, ReporteComparativo } from './reportes.service.js';
 
 export interface ArchivoExportado {
   nombre: string;
@@ -144,6 +144,63 @@ export class ExportacionService {
     doc.end();
     return {
       nombre: this.nombreArchivo(r, 'pdf'),
+      contentType: 'application/pdf',
+      contenido: await listo,
+    };
+  }
+
+  /** RF-41 / CU-47: el comparativo, con una columna por empresa. */
+  async comparativoAExcel(c: ReporteComparativo): Promise<ArchivoExportado> {
+    const libro = new ExcelJS.Workbook();
+    libro.creator = 'FSM';
+    libro.created = new Date(c.generado_en);
+
+    const h = libro.addWorksheet('Comparación');
+    const empresas = c.reportes.map((r) => r.empresa.nombre ?? `Empresa ${r.empresa.id_empresa}`);
+    h.columns = [{ width: 32 }, ...empresas.map(() => ({ width: 22 }))];
+    h.addRow([`Comparativo ${c.periodo.etiqueta}`]).font = { bold: true, size: 14 };
+    h.addRow([`Generado el ${new Date(c.generado_en).toLocaleString('es-CL')}`]);
+    h.addRow([]);
+    h.addRow(['Métrica', ...empresas]).font = { bold: true };
+    for (const m of c.comparacion) {
+      h.addRow([
+        m.unidad ? `${m.metrica} (${m.unidad})` : m.metrica,
+        // "No aplica" y no cero: sin OT cerradas no hay un promedio.
+        ...m.valores.map((v) => (v.valor == null ? 'No aplica' : v.valor)),
+      ]);
+    }
+
+    return {
+      nombre: `Comparativo_FSM_${c.periodo.etiqueta.replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')}.xlsx`,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      contenido: Buffer.from(await libro.xlsx.writeBuffer()),
+    };
+  }
+
+  async comparativoAPdf(c: ReporteComparativo): Promise<ArchivoExportado> {
+    const doc = new PDFDocument({ size: 'A4', margin: 48, layout: 'landscape' });
+    const trozos: Buffer[] = [];
+    doc.on('data', (t: Buffer) => trozos.push(t));
+    const listo = new Promise<Buffer>((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(trozos)));
+      doc.on('error', reject);
+    });
+
+    const empresas = c.reportes.map((r) => r.empresa.nombre ?? `Empresa ${r.empresa.id_empresa}`);
+    doc.fontSize(16).text(`Comparativo ${c.periodo.etiqueta}`);
+    doc.moveDown(0.2).fontSize(10).fillColor('#555')
+       .text(`Generado el ${new Date(c.generado_en).toLocaleString('es-CL')}`);
+    doc.fillColor('#000').moveDown();
+
+    this.tablaPdf(doc, 'Métricas', ['Métrica', ...empresas],
+      c.comparacion.map((m) => [
+        m.unidad ? `${m.metrica} (${m.unidad})` : m.metrica,
+        ...m.valores.map((v) => (v.valor == null ? 'No aplica' : String(v.valor))),
+      ]));
+
+    doc.end();
+    return {
+      nombre: `Comparativo_FSM_${c.periodo.etiqueta.replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '')}.pdf`,
       contentType: 'application/pdf',
       contenido: await listo,
     };
