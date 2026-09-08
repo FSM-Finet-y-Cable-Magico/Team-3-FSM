@@ -49,6 +49,8 @@
 
   // Grafico de barras: es un reporte, no un documento suelto.
   const ICON_REPORTE = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 20h18M7 20V10m5 10V4m5 16v-7"/></svg>`;
+  // Campana: es un aviso, no una alerta de red (esa ya tiene su triangulo).
+  const ICON_CAMPANA = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0a3 3 0 11-6 0m6 0H9"/></svg>`;
 
   const navLinks = $derived([
     { href: '/admin/dashboard', label: 'Dashboard', icon: ICON_HOME, roles: ['ADMIN', 'JEFE_TECNICO'] },
@@ -58,6 +60,7 @@
     { href: '/admin/monitoreo', label: 'Monitoreo', icon: ICON_SENAL, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/topologia', label: 'Topología', icon: ICON_RED, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/reportes', label: 'Reportes', icon: ICON_REPORTE, roles: ['ADMIN', 'JEFE_TECNICO'] },
+    { href: '/admin/notificaciones', label: 'Notificaciones', icon: ICON_CAMPANA, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/usuarios', label: 'Usuarios', icon: ICON_GROUP, roles: ['ADMIN'] },
   ]);
 

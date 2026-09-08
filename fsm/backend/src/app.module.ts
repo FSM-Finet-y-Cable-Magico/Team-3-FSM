@@ -10,6 +10,7 @@ import { MonitoreoModule } from './monitoreo/monitoreo.module.js';
 import { PlantaExternaModule } from './planta-externa/planta-externa.module.js';
 import { IntegracionesModule } from './integraciones/integraciones.module.js';
 import { ReportesModule } from './reportes/reportes.module.js';
+import { NotificacionesModule } from './notificaciones/notificaciones.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 
@@ -25,6 +26,7 @@ import { RolesGuard } from './common/guards/roles.guard.js';
     PlantaExternaModule,
     IntegracionesModule,
     ReportesModule,
+    NotificacionesModule,
   ],
   providers: [
     // Ambos guards son globales: todo endpoint nace exigiendo token y rol, y
