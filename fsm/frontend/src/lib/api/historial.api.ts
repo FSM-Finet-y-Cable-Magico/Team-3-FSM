@@ -1,4 +1,5 @@
 import { API_URL } from './config.js';
+import { pedirJson } from './http.js';
 
 export interface HistorialFalla {
   id_ot: number;
@@ -40,12 +41,5 @@ export async function obtenerHistorialFallas(
   token: string,
   id_cliente: number,
 ): Promise<HistorialFallasResponse> {
-  const res = await fetch(`${API_URL}/api/ordenes/historial-fallas/${id_cliente}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status >= 400) {
-    const data = await res.json();
-    throw new Error(data.message || 'Error al obtener historial');
-  }
-  return res.json();
+  return pedirJson(token, `${API_URL}/api/ordenes/historial-fallas/${id_cliente}`, undefined, 'Error al obtener historial');
 }

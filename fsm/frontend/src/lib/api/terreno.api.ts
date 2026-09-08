@@ -1,4 +1,5 @@
 import { API_URL } from './config.js';
+import { pedirJson, pedirCrudo } from './http.js';
 
 
 export interface MaterialDisponible {
@@ -53,20 +54,9 @@ export interface CerrarOTDto {
   equipos_retirados?: EquipoOt[];
 }
 
-async function fetchApi(token: string, url: string, options?: RequestInit) {
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...options?.headers,
-    },
-  });
-  if (res.status >= 400) {
-    const data = await res.json();
-    throw new Error(data.message || 'Error en la solicitud');
-  }
-  return res.json();
+/** Delega en el envoltorio compartido, que ademas cierra la sesion en un 401. */
+async function fetchApi<T>(token: string, url: string, init?: RequestInit): Promise<T> {
+  return pedirJson<T>(token, url, init, 'Error en la solicitud');
 }
 
 export async function obtenerMateriales(token: string): Promise<MaterialDisponible[]> {
@@ -93,15 +83,13 @@ export async function subirFoto(
   const formData = new FormData();
   formData.append('file', file);
 
-  const res = await fetch(`${API_URL}/api/ordenes/${id_ot}/foto`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-    signal,
-  });
-  if (res.status >= 400) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || 'Error al subir foto');
-  }
+  // `pedirCrudo` no fija Content-Type a proposito: con FormData lo pone el
+  // navegador junto con el boundary, y fijarlo a mano rompe la subida.
+  const res = await pedirCrudo(
+    token,
+    `${API_URL}/api/ordenes/${id_ot}/foto`,
+    { method: 'POST', body: formData, signal },
+    'Error al subir foto',
+  );
   return res.json();
 }

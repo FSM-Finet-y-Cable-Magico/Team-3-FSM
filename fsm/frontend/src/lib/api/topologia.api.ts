@@ -1,4 +1,5 @@
 import { API_URL } from './config.js';
+import { pedirJson } from './http.js';
 
 /**
  * Cliente de la topologia de planta externa (CU-18, CU-19 y CU-20).
@@ -58,23 +59,9 @@ export interface CrearCaja {
   longitud?: number;
 }
 
-async function fetchApi(token: string, url: string, options?: RequestInit) {
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...options?.headers,
-    },
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    // El backend manda `message` como texto o como arreglo (los de
-    // class-validator). Se junta para no mostrar "[object Object]".
-    const m = Array.isArray(data.message) ? data.message.join('. ') : data.message;
-    throw new Error(m || 'Error en la solicitud');
-  }
-  return data;
+/** Delega en el envoltorio compartido, que ademas cierra la sesion en un 401. */
+async function fetchApi<T>(token: string, url: string, init?: RequestInit): Promise<T> {
+  return pedirJson<T>(token, url, init, 'Error en la solicitud');
 }
 
 /** Todas las cajas, con su ocupación. */
@@ -92,15 +79,19 @@ export async function puertosDeCaja(token: string, id: number): Promise<DetalleP
   return fetchApi(token, `${API_URL}/api/planta-externa/cajas/${id}/puertos`);
 }
 
-export async function crearCaja(token: string, dto: CrearCaja) {
-  return fetchApi(token, `${API_URL}/api/planta-externa/cajas`, {
+export async function crearCaja(token: string, dto: CrearCaja): Promise<CajaListada> {
+  return fetchApi<CajaListada>(token, `${API_URL}/api/planta-externa/cajas`, {
     method: 'POST',
     body: JSON.stringify(dto),
   });
 }
 
-export async function editarCaja(token: string, id: number, dto: Partial<CrearCaja>) {
-  return fetchApi(token, `${API_URL}/api/planta-externa/cajas/${id}`, {
+export async function editarCaja(
+  token: string,
+  id: number,
+  dto: Partial<CrearCaja>,
+): Promise<CajaListada> {
+  return fetchApi<CajaListada>(token, `${API_URL}/api/planta-externa/cajas/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(dto),
   });

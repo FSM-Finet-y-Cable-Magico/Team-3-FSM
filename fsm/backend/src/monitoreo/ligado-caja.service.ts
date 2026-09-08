@@ -120,8 +120,7 @@ export class LigadoCajaService {
     const t0 = Date.now();
 
     // Solo cajas de la empresa (o sin empresa asignada, mismo criterio que
-    // `PlantaExternaService.listarCajas`): el aislamiento del ligado sale de
-    // acá, porque `registro_ont` no tiene `id_empresa` propio todavía.
+    // `PlantaExternaService.listarCajas`).
     const cajas = await this.prisma.caja_nap.findMany({
       where: { OR: [{ id_empresa }, { id_empresa: null }] },
       select: { id_caja_nap: true, identificador_unico: true, latitud: true, longitud: true },

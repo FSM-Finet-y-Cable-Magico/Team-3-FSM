@@ -1,4 +1,5 @@
 import { API_URL } from './config.js';
+import { pedirJson } from './http.js';
 
 export interface OT {
   id_ot: number;
@@ -66,22 +67,9 @@ export interface CategoriaFalla {
   sla_horas: number | null;
 }
 
-async function fetchApi(token: string, url: string, options?: RequestInit) {
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...options?.headers,
-    },
-  });
-
-  if (res.status >= 400) {
-    const data = await res.json();
-    throw new Error(data.message || 'Error en la solicitud');
-  }
-
-  return res.json();
+/** Delega en el envoltorio compartido, que ademas cierra la sesion en un 401. */
+async function fetchApi<T>(token: string, url: string, init?: RequestInit): Promise<T> {
+  return pedirJson<T>(token, url, init, 'Error en la solicitud');
 }
 
 export async function listarOT(

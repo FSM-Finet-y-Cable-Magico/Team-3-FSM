@@ -1,4 +1,5 @@
 import { API_URL } from './config.js';
+import { pedirJson } from './http.js';
 
 export interface IndicadoresDashboard {
   ot_por_estado: {
@@ -39,34 +40,13 @@ export interface Empresa {
 
 export async function obtenerIndicadores(token: string, id_empresa?: number): Promise<IndicadoresDashboard> {
   const params = id_empresa ? `?empresa=${id_empresa}` : '';
-  const res = await fetch(`${API_URL}/api/dashboard${params}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status >= 400) {
-    const data = await res.json();
-    throw new Error(data.message || 'Error al obtener indicadores');
-  }
-  return res.json();
+  return pedirJson(token, `${API_URL}/api/dashboard${params}`, undefined, 'Error al obtener indicadores');
 }
 
 export async function listarEmpresas(token: string): Promise<Empresa[]> {
-  const res = await fetch(`${API_URL}/api/dashboard/empresas`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status >= 400) {
-    const data = await res.json();
-    throw new Error(data.message || 'Error al listar empresas');
-  }
-  return res.json();
+  return pedirJson(token, `${API_URL}/api/dashboard/empresas`, undefined, 'Error al listar empresas');
 }
 
 export async function obtenerDatosEmpresa(token: string, id_empresa: number): Promise<{ empresa: unknown; total_clientes: number; ot_activas: number }> {
-  const res = await fetch(`${API_URL}/api/dashboard/empresa/${id_empresa}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status >= 400) {
-    const data = await res.json();
-    throw new Error(data.message || 'Error al obtener datos de empresa');
-  }
-  return res.json();
+  return pedirJson(token, `${API_URL}/api/dashboard/empresa/${id_empresa}`, undefined, 'Error al obtener datos de empresa');
 }

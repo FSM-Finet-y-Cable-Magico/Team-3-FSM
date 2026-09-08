@@ -1,4 +1,5 @@
 import { API_URL } from './config.js';
+import { pedirJson } from './http.js';
 
 /** Monitoreo de red en vivo (CU-12 / RF-10) y criticos por caja (CU-15 / RF-13). */
 
@@ -64,20 +65,9 @@ export interface ActualizacionMonitoreo {
   medido_en: string;
 }
 
+/** Delega en el envoltorio compartido, que ademas cierra la sesion en un 401. */
 async function pedir<T>(token: string, url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...init?.headers,
-    },
-  });
-  if (res.status >= 400) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || 'Error en la solicitud');
-  }
-  return res.json();
+  return pedirJson<T>(token, url, init, 'Error en la solicitud');
 }
 
 export function obtenerResumenMonitoreo(token: string) {

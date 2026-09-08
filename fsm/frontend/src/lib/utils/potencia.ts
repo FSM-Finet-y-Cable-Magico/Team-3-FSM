@@ -8,6 +8,13 @@
 export const POTENCIA_MINIMA_DBM = -24;
 export const POTENCIA_MAXIMA_DBM = -19;
 
+/**
+ * Franja de degradacion previa a la falla (CU-16): la senal todavia sirve pero
+ * viene cayendo. Es donde conviene una OT preventiva antes de que el cliente se
+ * quede sin servicio. Va de -22 hasta el borde del rango operativo.
+ */
+export const POTENCIA_PREVENTIVA_DESDE = -22;
+
 export type EstadoPotencia = 'BAJA' | 'OPTIMA' | 'ALTA' | 'SIN_DATO';
 
 /** Clasifica una medicion; `SIN_DATO` cuando la OT todavia no tiene lectura. */
@@ -20,4 +27,10 @@ export function estadoPotencia(dbm: number | null | undefined): EstadoPotencia {
 
 export function potenciaEnRango(dbm: number | null | undefined): boolean {
   return estadoPotencia(dbm) === 'OPTIMA';
+}
+
+/** Dentro del rango operativo, pero degradandose (CU-16). */
+export function potenciaDegradandose(dbm: number | null | undefined): boolean {
+  if (dbm === null || dbm === undefined || Number.isNaN(dbm)) return false;
+  return dbm <= POTENCIA_PREVENTIVA_DESDE && dbm > POTENCIA_MINIMA_DBM;
 }
