@@ -257,12 +257,4 @@ export class MonitoreoService {
       medido_en: ultima?.timestamp_medicion ?? null,
     };
   }
-
-  /**
-   * Aísla por empresa. `registro_ont` no tiene `id_empresa` propio ni relación
-   * FK a `cliente` (apunta a tabla de otro grupo), así que se resuelven los
-   * clientes de la empresa y se filtra por id. Mismo criterio que inventario
-   * con `id_bodega IS NULL`: se incluyen también las ONT sin cliente resuelto
-   * (no son dato de otro tenant). Cuando toda ONT tenga cliente, pasa a estricto.
-   */
 }
