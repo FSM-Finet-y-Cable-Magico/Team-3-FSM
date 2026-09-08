@@ -64,7 +64,7 @@
       return;
     }
     if (!['ADMIN', 'JEFE_TECNICO', 'TECNICO'].includes(state.usuario?.rol ?? '')) {
-      goto('/dashboard');
+      goto('/admin/dashboard');
       return;
     }
 
@@ -203,7 +203,7 @@
 {:else if ot}
   <div class="max-w-3xl mx-auto space-y-5">
     <div class="flex items-center gap-3">
-      <button onclick={() => goto('/ot')} class="text-gray-400 hover:text-gray-600 text-lg">&larr;</button>
+      <button onclick={() => goto('/admin/ot')} class="text-gray-400 hover:text-gray-600 text-lg">&larr;</button>
       <h2 class="text-xl font-bold text-gray-800">Orden de Trabajo #{ot.id_ot}</h2>
     </div>
 

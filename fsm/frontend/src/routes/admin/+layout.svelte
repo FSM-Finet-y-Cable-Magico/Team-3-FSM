@@ -20,8 +20,12 @@
     usuario = state.usuario;
   });
 
-  const accesoClientesDenegado = $derived.by(() => usuario?.rol === 'TECNICO' && $page.url.pathname.startsWith('/clientes'));
-  $effect(() => { if (accesoClientesDenegado) goto('/terreno'); });
+  // MOD RF-34: /admin es el area de oficina. Un TECNICO que llegue aca --por
+  // un enlace viejo, un favorito o escribiendo la URL-- se va a /terreno.
+  // Antes esto cubria solo /clientes; ahora el area entera, que es el punto
+  // de separar por segmento de ruta.
+  const areaDenegada = $derived.by(() => usuario?.rol === 'TECNICO');
+  $effect(() => { if (areaDenegada) goto('/terreno'); });
 
   function cerrarSesion() {
     authStore.logout();
@@ -34,11 +38,15 @@
 
   const ICON_ALERTA = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0l-7.1 12.25A2 2 0 005 19z"/></svg>`;
 
+  // TECNICO ya no figura en ninguno, y no es un descuido: /admin es el area de
+  // oficina y el tecnico trabaja en /terreno. Antes aparecia en Dashboard y en
+  // Ordenes de Trabajo, pero el backend responde 403 a un TECNICO en
+  // GET /dashboard, asi que el enlace lo llevaba a una pantalla rota.
   const navLinks = $derived([
-    { href: '/dashboard', label: 'Dashboard', icon: ICON_HOME, roles: ['ADMIN', 'JEFE_TECNICO', 'TECNICO'] },
-    { href: '/clientes', label: 'Clientes', icon: ICON_USERS, roles: ['ADMIN', 'JEFE_TECNICO'] },
-    { href: '/ot', label: 'Ordenes de Trabajo', icon: ICON_CLIP, roles: ['ADMIN', 'JEFE_TECNICO', 'TECNICO'] },
-    { href: '/alertas', label: 'Alertas de Red', icon: ICON_ALERTA, roles: ['ADMIN', 'JEFE_TECNICO'] },
+    { href: '/admin/dashboard', label: 'Dashboard', icon: ICON_HOME, roles: ['ADMIN', 'JEFE_TECNICO'] },
+    { href: '/admin/clientes', label: 'Clientes', icon: ICON_USERS, roles: ['ADMIN', 'JEFE_TECNICO'] },
+    { href: '/admin/ot', label: 'Ordenes de Trabajo', icon: ICON_CLIP, roles: ['ADMIN', 'JEFE_TECNICO'] },
+    { href: '/admin/alertas', label: 'Alertas de Red', icon: ICON_ALERTA, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/usuarios', label: 'Usuarios', icon: ICON_GROUP, roles: ['ADMIN'] },
   ]);
 
@@ -55,7 +63,7 @@
   let { children } = $props();
 </script>
 
-{#if isAuthenticated && usuario && !accesoClientesDenegado}
+{#if isAuthenticated && usuario && !areaDenegada}
   <div class="min-h-screen bg-slate-50">
     <!-- Navbar -->
     <nav class="bg-slate-900 shadow-lg sticky top-0 z-50">
@@ -64,7 +72,7 @@
 
           <!-- Logo + links desktop -->
           <div class="flex items-center gap-8">
-            <a href="/dashboard" class="flex items-center">
+            <a href="/admin/dashboard" class="flex items-center">
               <div class="bg-white rounded-lg px-2.5 py-1">
                 <img src="/logo_finet.png" alt="FiNet" class="h-7 w-auto" />
               </div>
@@ -161,7 +169,7 @@
       {@render children?.()}
     </main>
   </div>
-{:else if accesoClientesDenegado}
+{:else if areaDenegada}
   <p role="alert" class="p-8 text-center text-slate-600">No tienes acceso a esta sección.</p>
 {:else}
   <p role="status" class="p-8 text-center text-slate-600">Verificando sesión...</p>

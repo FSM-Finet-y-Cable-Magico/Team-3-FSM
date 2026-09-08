@@ -54,7 +54,7 @@
       return;
     }
     if (state.usuario?.rol !== 'TECNICO') {
-      goto('/dashboard');
+      goto('/admin/dashboard');
       return;
     }
 

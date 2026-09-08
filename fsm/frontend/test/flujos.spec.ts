@@ -83,7 +83,7 @@ test('miniaturas conservan URLs históricas o no transformables', () => {
   }
 });
 test('paginación de clientes conserva mensajes y permite ir y volver', async ({ page }, info) => {
-  await preparar(page); await login(page, 'admin'); await page.goto('/clientes');
+  await preparar(page); await login(page, 'admin'); await page.goto('/admin/clientes');
   await expect(page.getByText('Cliente 1', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '← Anterior' })).toBeDisabled();
   await page.screenshot({ path: info.outputPath('clientes-desktop.png'), fullPage: true });
@@ -95,15 +95,15 @@ test('paginación de clientes conserva mensajes y permite ir y volver', async ({
 });
 test('TECNICO no consulta Clientes mediante navegación directa', async ({ page }) => {
   const registro = await preparar(page); await login(page);
-  for (const ruta of ['/clientes', '/clientes/12345678-5', '/clientes/nuevo']) {
+  for (const ruta of ['/admin/clientes', '/admin/clientes/12345678-5', '/admin/clientes/nuevo']) {
     await page.goto(ruta); await expect(page).toHaveURL(/\/terreno$/);
   }
   expect(registro.clientes).toBe(0);
-  await page.goto('/ot');
+  await page.goto('/admin/ot');
   await expect(page.getByRole('link', { name: 'Clientes', exact: true })).toHaveCount(0);
 });
 test('historial usa miniaturas diferidas con formato y calidad automáticos', async ({ page }, info) => {
-  await preparar(page); await login(page, 'admin'); await page.goto('/clientes/12345678-5');
+  await preparar(page); await login(page, 'admin'); await page.goto('/admin/clientes/12345678-5');
   await page.getByRole('row').filter({ hasText: 'COMPLETADA' }).click();
   const foto = page.getByAltText('evidencia', { exact: true });
   await expect(foto).toHaveAttribute('src', /f_auto,q_auto,w_128,h_128,c_fill/);
@@ -180,7 +180,7 @@ test('navegar entre dos cierres desmonta el anterior aunque comparta la ruta', a
 
 test('sin sesión no se montan las vistas de Clientes antes de redirigir', async ({ page }) => {
   const registro = await preparar(page);
-  for (const ruta of ['/clientes', '/clientes/12345678-5', '/clientes/nuevo']) {
+  for (const ruta of ['/admin/clientes', '/admin/clientes/12345678-5', '/admin/clientes/nuevo']) {
     await page.goto(ruta);
     await expect(page).toHaveURL(/\/login$/);
   }
