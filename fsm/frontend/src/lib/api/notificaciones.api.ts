@@ -1,4 +1,5 @@
 import { API_URL } from './config.js';
+import { pedirJson } from './http.js';
 
 /** Notificaciones a clientes y avisos internos (RF-42, RF-43, RF-45). */
 
@@ -69,20 +70,9 @@ export interface OtDetenida {
   sin_tecnico: boolean;
 }
 
+/** Delega en el envoltorio compartido, que ademas cierra la sesion en un 401. */
 async function pedir<T>(token: string, url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...init?.headers,
-    },
-  });
-  if (res.status >= 400) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || 'Error en la solicitud');
-  }
-  return res.json();
+  return pedirJson<T>(token, url, init, 'Error en la solicitud');
 }
 
 export const obtenerOpciones = (token: string) =>

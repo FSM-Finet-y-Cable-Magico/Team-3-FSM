@@ -20,11 +20,14 @@
     type ResumenMonitoreo, type LecturaOnt, type CriticosPorCaja, type ActualizacionMonitoreo,
   } from '$lib/api/monitoreo.api';
 
-  // Mismos umbrales que el backend (monitoreo.constants.ts). Estan duplicados
-  // porque la Vista no comparte codigo con el backend; si FiNet confirma otro
-  // rango hay que tocar los dos lados.
-  const RANGO = { min: -24, max: -19 };
-  const PREVENTIVA_DESDE = -22;
+  // Los umbrales salen de `lib/utils/potencia`, que ya los tenia para la ficha
+  // de OT y el historial. Repetirlos aca era una tercera copia del mismo
+  // numero: si FiNet confirma otro rango, con tocar ese archivo alcanza.
+  import {
+    POTENCIA_MINIMA_DBM,
+    POTENCIA_MAXIMA_DBM,
+    potenciaDegradandose,
+  } from '$lib/utils/potencia';
 
   let resumen = $state<ResumenMonitoreo | null>(null);
   let lecturas = $state<LecturaOnt[]>([]);
@@ -116,7 +119,7 @@
   function prioridad(o: LecturaOnt) {
     if ((o.estado_conexion ?? 'ONLINE') !== 'ONLINE') return 0;
     if (o.potencia_fuera_de_rango) return 1;
-    if (o.potencia_actual_dbm != null && o.potencia_actual_dbm <= PREVENTIVA_DESDE) return 2;
+    if (potenciaDegradandose(o.potencia_actual_dbm)) return 2;
     return 3;
   }
 
@@ -165,8 +168,8 @@
   /** Color de la potencia: fuera de rango, degradandose, o sana. */
   function clasePotencia(dbm: number | null) {
     if (dbm == null) return 'text-slate-400';
-    if (dbm < RANGO.min || dbm > RANGO.max) return 'text-red-700 font-semibold';
-    if (dbm <= PREVENTIVA_DESDE) return 'text-amber-700 font-semibold';
+    if (dbm < POTENCIA_MINIMA_DBM || dbm > POTENCIA_MAXIMA_DBM) return 'text-red-700 font-semibold';
+    if (potenciaDegradandose(dbm)) return 'text-amber-700 font-semibold';
     return 'text-green-700';
   }
 
@@ -265,7 +268,7 @@
       <div class="bg-white rounded-xl border p-4">
         <p class="text-xs uppercase tracking-wide text-slate-600 font-semibold">Potencia fuera de rango</p>
         <p class="text-3xl font-bold text-amber-700 mt-1 tabular-nums">{resumen.potencia_fuera_de_rango}</p>
-        <p class="text-xs text-slate-600 mt-0.5">Operativo: {RANGO.min} a {RANGO.max} dBm</p>
+        <p class="text-xs text-slate-600 mt-0.5">Operativo: {POTENCIA_MINIMA_DBM} a {POTENCIA_MAXIMA_DBM} dBm</p>
       </div>
     </div>
   {/if}

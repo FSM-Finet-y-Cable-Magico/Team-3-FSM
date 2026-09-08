@@ -1,4 +1,5 @@
 import { API_URL } from './config.js';
+import { pedirJson } from './http.js';
 
 /** Alertas del monitoreo de red (CU-13 / CU-15 / CU-17 / CU-52 / CU-53). */
 
@@ -32,20 +33,9 @@ export interface ResumenAlertas {
   por_tipo: Record<string, number>;
 }
 
+/** Delega en el envoltorio compartido, que ademas cierra la sesion en un 401. */
 async function pedir<T>(token: string, url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...init?.headers,
-    },
-  });
-  if (res.status >= 400) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || 'Error en la solicitud');
-  }
-  return res.json();
+  return pedirJson<T>(token, url, init, 'Error en la solicitud');
 }
 
 export function obtenerResumenAlertas(token: string) {

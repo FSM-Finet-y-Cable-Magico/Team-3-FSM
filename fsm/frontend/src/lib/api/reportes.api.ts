@@ -1,4 +1,5 @@
 import { API_URL } from './config.js';
+import { pedirJson, pedirCrudo } from './http.js';
 
 /** Reportería (RF-38, RF-39, RF-40, RF-41). */
 
@@ -60,13 +61,9 @@ export interface ReporteComparativo {
 export type TipoReporte = 'diario' | 'on-demand' | 'semanal' | 'mensual' | 'comparativo';
 export type Formato = 'pdf' | 'xlsx';
 
-async function pedir<T>(token: string, url: string): Promise<T> {
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (res.status >= 400) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || 'No se pudo generar el reporte');
-  }
-  return res.json();
+/** Delega en el envoltorio compartido, que ademas cierra la sesion en un 401. */
+async function pedir<T>(token: string, url: string, init?: RequestInit): Promise<T> {
+  return pedirJson<T>(token, url, init, 'No se pudo generar el reporte');
 }
 
 /** Arma la query de cada tipo. Se comparte con la descarga para no divergir. */
@@ -118,14 +115,12 @@ export async function descargar(
   p: { desde?: string; hasta?: string; fecha?: string; id_tecnico?: number },
 ) {
   const q = ruta(tipo, p);
-  const res = await fetch(`${API_URL}/api${q}${q.includes('?') ? '&' : '?'}formato=${formato}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (res.status >= 400) {
-    // El error viene en JSON aunque se haya pedido un archivo.
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || 'No se pudo generar el archivo. Inténtalo nuevamente en unos minutos.');
-  }
+  const res = await pedirCrudo(
+    token,
+    `${API_URL}/api${q}${q.includes('?') ? '&' : '?'}formato=${formato}`,
+    undefined,
+    'No se pudo generar el archivo. Inténtalo nuevamente en unos minutos.',
+  );
 
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

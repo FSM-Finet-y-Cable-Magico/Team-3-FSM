@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { ReparacionesRecurrentesService } from '../ordenes/reparaciones-recurrentes.service.js';
+import {
+  DIAS_VENTANA_RECURRENCIA,
+  UMBRAL_REPARACIONES_RECURRENTES,
+} from '../ordenes/reparaciones-recurrentes.service.js';
 
 export interface RangoReporte {
   desde: Date;
@@ -93,10 +96,10 @@ const HORA_MS = 3_600_000;
 export class ReportesService {
   private readonly logger = new Logger(ReportesService.name);
 
-  constructor(
-    private prisma: PrismaService,
-    private recurrentes: ReparacionesRecurrentesService,
-  ) {}
+  // Ya no se inyecta `ReparacionesRecurrentesService`: la regla de RF-08 entra
+  // por sus constantes (umbral y ancho de ventana), y el recorrido se hace en
+  // memoria sobre una unica consulta.
+  constructor(private prisma: PrismaService) {}
 
   // ---------------------------------------------------------------------------
   // Rangos
@@ -336,47 +339,98 @@ export class ReportesService {
   /**
    * RF-39: clientes que alcanzaron el umbral de RF-08 dentro del período.
    *
-   * Se evalua a la fecha de cada reparacion cerrada en el periodo, no al final:
-   * un cliente que fue recurrente en la primera semana del mes y despues se
-   * arreglo igual tiene que aparecer. Por eso `ReparacionesRecurrentesService`
-   * acepta un `hasta`.
+   * Un cliente cuenta si en ALGUN momento del periodo acumulo tres o mas
+   * reparaciones completadas en los treinta dias corridos anteriores. Se evalua
+   * en cada cierre suyo dentro del periodo, no solo al final: uno que fue
+   * recurrente a mitad de mes y despues se arreglo igual tiene que aparecer.
+   *
+   * Se resuelve con UNA consulta y una ventana movil en memoria. La version
+   * anterior llamaba a `ReparacionesRecurrentesService.evaluar` una vez por
+   * cada reparacion del periodo --y otra por cada cliente para su nombre--, o
+   * sea decenas de consultas en un reporte mensual y cientos en uno anual. El
+   * comentario que tenia decia que bastaba con el ultimo cierre, pero el codigo
+   * recorria todos igual: decia una cosa y hacia otra.
+   *
+   * El umbral y el ancho de la ventana se importan de
+   * `ReparacionesRecurrentesService`: la regla de RF-08 sigue viviendo en un
+   * solo lugar, aca solo cambia como se recorre.
    */
   private async clientesRecurrentes(
     reparaciones: { id_cliente: number | null; fecha_completada: Date | null }[],
     id_empresa: number,
     finPeriodo: Date,
   ) {
-    // Por cliente, los momentos a evaluar: cada cierre suyo dentro del periodo.
-    const momentos = new Map<number, Date[]>();
-    for (const r of reparaciones) {
-      if (r.id_cliente == null || !r.fecha_completada) continue;
-      const l = momentos.get(r.id_cliente) ?? [];
-      l.push(r.fecha_completada);
-      momentos.set(r.id_cliente, l);
+    const cierresDelPeriodo = reparaciones.filter(
+      (r): r is { id_cliente: number; fecha_completada: Date } =>
+        r.id_cliente != null && r.fecha_completada != null,
+    );
+    if (cierresDelPeriodo.length === 0) return [];
+
+    const ids = [...new Set(cierresDelPeriodo.map((r) => r.id_cliente))];
+
+    // La ventana de cada cierre mira treinta dias hacia atras, asi que hay que
+    // traer tambien las reparaciones ANTERIORES al periodo: un cliente puede
+    // llegar al umbral el dia 2 del mes contando dos cierres del mes pasado.
+    const desde = new Date(Math.min(...cierresDelPeriodo.map((r) => r.fecha_completada.getTime())));
+    desde.setDate(desde.getDate() - DIAS_VENTANA_RECURRENCIA);
+
+    const historial = await this.prisma.orden_trabajo.findMany({
+      where: {
+        id_empresa,
+        id_cliente: { in: ids },
+        tipo_ot: 'REPARACION',
+        estado: 'COMPLETADA',
+        fecha_completada: { gte: desde, lte: finPeriodo },
+      },
+      orderBy: { fecha_completada: 'asc' },
+      select: {
+        id_ot: true,
+        id_cliente: true,
+        fecha_completada: true,
+        cliente: { select: { nombre_completo: true } },
+      },
+    });
+
+    const porCliente = new Map<number, typeof historial>();
+    for (const o of historial) {
+      if (o.id_cliente == null) continue;
+      const l = porCliente.get(o.id_cliente) ?? [];
+      l.push(o);
+      porCliente.set(o.id_cliente, l);
+    }
+
+    // Momentos a evaluar por cliente: solo sus cierres DENTRO del periodo.
+    const evaluables = new Map<number, Set<number>>();
+    for (const r of cierresDelPeriodo) {
+      const s = evaluables.get(r.id_cliente) ?? new Set<number>();
+      s.add(r.fecha_completada.getTime());
+      evaluables.set(r.id_cliente, s);
     }
 
     const salida: { id_cliente: number; cliente: string; reparaciones: number; ots: number[] }[] = [];
-    for (const [id_cliente, fechas] of momentos) {
-      // Basta con el ultimo cierre de cada cliente dentro del periodo para
-      // saber si en algun momento llego al umbral: la ventana movil alcanza su
-      // maximo en alguno de los cierres, y evaluar todos seria una consulta por
-      // reparacion. Se evalua el maximo entre los cierres del periodo.
-      let mejor: Awaited<ReturnType<ReparacionesRecurrentesService['evaluar']>> | null = null;
-      for (const f of fechas) {
-        const hasta = f > finPeriodo ? finPeriodo : f;
-        const r = await this.recurrentes.evaluar(id_cliente, id_empresa, hasta);
-        if (!mejor || r.total_reparaciones_30_dias > mejor.total_reparaciones_30_dias) mejor = r;
+
+    for (const [id_cliente, momentos] of evaluables) {
+      const suyas = porCliente.get(id_cliente) ?? [];
+      let mejor: { total: number; ots: number[] } | null = null;
+
+      for (const t of momentos) {
+        const hasta = new Date(t);
+        const inicio = new Date(hasta);
+        inicio.setDate(inicio.getDate() - DIAS_VENTANA_RECURRENCIA);
+        const enVentana = suyas.filter(
+          (o) => o.fecha_completada! > inicio && o.fecha_completada! <= hasta,
+        );
+        if (!mejor || enVentana.length > mejor.total) {
+          mejor = { total: enVentana.length, ots: enVentana.map((o) => o.id_ot).reverse() };
+        }
       }
-      if (mejor?.activa) {
-        const cliente = await this.prisma.cliente.findFirst({
-          where: { id_cliente, id_empresa },
-          select: { nombre_completo: true },
-        });
+
+      if (mejor && mejor.total >= UMBRAL_REPARACIONES_RECURRENTES) {
         salida.push({
           id_cliente,
-          cliente: cliente?.nombre_completo ?? `Cliente ${id_cliente}`,
-          reparaciones: mejor.total_reparaciones_30_dias,
-          ots: mejor.ots.map((o) => o.id_ot),
+          cliente: suyas[0]?.cliente?.nombre_completo ?? `Cliente ${id_cliente}`,
+          reparaciones: mejor.total,
+          ots: mejor.ots,
         });
       }
     }

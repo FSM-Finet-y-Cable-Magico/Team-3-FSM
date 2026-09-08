@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { ReparacionesRecurrentesService } from '../ordenes/reparaciones-recurrentes.service.js';
 import { ReportesService } from './reportes.service.js';
 import { ExportacionService } from './exportacion.service.js';
 
@@ -17,12 +16,13 @@ describe('Reportes', () => {
   let exportacion: ExportacionService;
   let ots: any[];
 
-  const otFindMany = jest.fn(async (_a: unknown) => ots);
+  let historialRecurrencia: any[] = [];
+  // El mismo `findMany` sirve a dos consultas: la del periodo y la del
+  // historial de recurrencia. Se distinguen porque la segunda filtra por
+  // `id_cliente`, que la primera no usa.
+  const otFindMany = jest.fn(async (a: any) => (a?.where?.id_cliente ? historialRecurrencia : ots));
   const otCount = jest.fn(async (_a: unknown) => 0);
   const contratoFindMany = jest.fn(async (_a: unknown) => [] as any[]);
-  const evaluar = jest.fn(async (_c: number, _e: number, _h?: Date) => ({
-    activa: false, total_reparaciones_30_dias: 0, desde: new Date(), hasta: new Date(), ots: [] as any[],
-  }));
 
   const ot = (over: Record<string, unknown> = {}) => ({
     id_ot: 1,
@@ -39,6 +39,7 @@ describe('Reportes', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     ots = [];
+    historialRecurrencia = [];
     const mod = await Test.createTestingModule({
       providers: [
         ReportesService,
@@ -58,7 +59,6 @@ describe('Reportes', () => {
             cliente: { findFirst: jest.fn(async () => ({ nombre_completo: 'Vicente Diaz' })) },
           },
         },
-        { provide: ReparacionesRecurrentesService, useValue: { evaluar } },
       ],
     }).compile();
     service = mod.get(ReportesService);
@@ -192,29 +192,71 @@ describe('Reportes', () => {
     expect(periodico.clientes_recurrentes).toBeDefined();
   });
 
-  it('evalua la recurrencia a la fecha de cada cierre, no al final del periodo', async () => {
-    // Es lo que permite ver a un cliente que fue recurrente a mitad de mes y
-    // despues se arreglo. Por eso el servicio de RF-08 acepta un `hasta`.
-    const cierre = new Date('2026-04-10T12:00:00');
-    ots = [ot({ fecha_completada: cierre })];
-
-    await construir({ incluirPeriodico: true });
-
-    expect(evaluar).toHaveBeenCalledWith(1, 1, cierre);
+  const rep = (id_ot: number, dia: string) => ({
+    id_ot,
+    id_cliente: 1,
+    fecha_completada: new Date(dia),
+    cliente: { nombre_completo: 'Vicente Diaz' },
   });
 
-  it('lista al cliente recurrente con sus OT', async () => {
-    ots = [ot()];
-    evaluar.mockResolvedValueOnce({
-      activa: true, total_reparaciones_30_dias: 4, desde: new Date(), hasta: new Date(),
-      ots: [{ id_ot: 20 }, { id_ot: 18 }] as any,
-    });
+  it('lista al cliente que alcanza el umbral, con sus OT', async () => {
+    ots = [ot({ fecha_completada: new Date('2026-04-10T12:00:00') })];
+    historialRecurrencia = [rep(14, '2026-04-01'), rep(18, '2026-04-05'), rep(20, '2026-04-10')];
 
     const r = await construir({ incluirPeriodico: true });
 
     expect(r.clientes_recurrentes).toEqual([
-      { id_cliente: 1, cliente: 'Vicente Diaz', reparaciones: 4, ots: [20, 18] },
+      { id_cliente: 1, cliente: 'Vicente Diaz', reparaciones: 3, ots: [20, 18, 14] },
     ]);
+  });
+
+  it('no lo lista con dos reparaciones: el umbral es 3', async () => {
+    ots = [ot({ fecha_completada: new Date('2026-04-10T12:00:00') })];
+    historialRecurrencia = [rep(18, '2026-04-05'), rep(20, '2026-04-10')];
+
+    const r = await construir({ incluirPeriodico: true });
+
+    expect(r.clientes_recurrentes).toEqual([]);
+  });
+
+  it('cuenta las reparaciones anteriores al periodo que caen en la ventana', async () => {
+    // Un cliente puede llegar al umbral el dia 2 del mes contando dos cierres
+    // del mes pasado. Si la consulta no mirara hacia atras, no aparecerian.
+    ots = [ot({ fecha_completada: new Date('2026-04-02T12:00:00') })];
+    historialRecurrencia = [rep(10, '2026-03-20'), rep(12, '2026-03-28'), rep(14, '2026-04-02')];
+
+    const r = await construir({ incluirPeriodico: true });
+
+    expect(r.clientes_recurrentes![0]).toMatchObject({ reparaciones: 3 });
+    // La consulta arranca 30 dias antes del primer cierre del periodo.
+    const where = (otFindMany.mock.calls.find((c: any) => c[0]?.where?.id_cliente)![0] as any).where;
+    expect(where.fecha_completada.gte.getTime()).toBeLessThan(new Date('2026-03-20').getTime());
+  });
+
+  it('deja fuera las reparaciones mas viejas que la ventana de 30 dias', async () => {
+    // Tres reparaciones no alcanzan si estan repartidas en dos meses.
+    ots = [ot({ fecha_completada: new Date('2026-04-10T12:00:00') })];
+    historialRecurrencia = [rep(10, '2026-02-01'), rep(12, '2026-03-01'), rep(14, '2026-04-10')];
+
+    const r = await construir({ incluirPeriodico: true });
+
+    expect(r.clientes_recurrentes).toEqual([]);
+  });
+
+  it('resuelve la recurrencia con UNA sola consulta, no una por reparacion', async () => {
+    // La version anterior llamaba una vez por cada cierre del periodo: decenas
+    // de consultas en un reporte mensual, cientos en uno anual.
+    ots = [
+      ot({ id_ot: 1, fecha_completada: new Date('2026-04-05T10:00:00') }),
+      ot({ id_ot: 2, fecha_completada: new Date('2026-04-07T10:00:00') }),
+      ot({ id_ot: 3, fecha_completada: new Date('2026-04-10T10:00:00') }),
+    ];
+    historialRecurrencia = [rep(1, '2026-04-05'), rep(2, '2026-04-07'), rep(3, '2026-04-10')];
+
+    await construir({ incluirPeriodico: true });
+
+    const deRecurrencia = otFindMany.mock.calls.filter((c: any) => c[0]?.where?.id_cliente);
+    expect(deRecurrencia).toHaveLength(1);
   });
 
   // --- RF-40 ------------------------------------------------------------------

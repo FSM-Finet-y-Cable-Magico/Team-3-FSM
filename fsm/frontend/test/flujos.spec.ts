@@ -12,7 +12,7 @@ const ot = { id_ot: 1, id_tecnico: 7, id_empresa: 1, id_cliente: 1, tipo_ot: 'IN
 
 async function preparar(page: Page) {
   page.on('pageerror', error => console.error('Error de navegador:', error.message));
-  const registro = { cierres: [] as unknown[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok', equiposCaidos: false };
+  const registro = { cierres: [] as unknown[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok', equiposCaidos: false, tokenVencido: false };
   await page.addInitScript(() => {
     const urls = { creadas: [] as string[], liberadas: [] as string[] };
     Object.assign(window, { urlsDePrueba: urls });
@@ -27,6 +27,11 @@ async function preparar(page: Page) {
   await page.route('http://127.0.0.1:3000/api/**', async route => {
     const req = route.request(), url = new URL(req.url()), ruta = url.pathname;
     const responder = (json: unknown, status = 200) => route.fulfill({ json, status });
+    // Cualquier ruta autenticada pasa a responder 401 cuando se simula el
+    // vencimiento. El login se deja fuera: su 401 es "clave incorrecta".
+    if (registro.tokenVencido && ruta !== '/api/auth/login') {
+      return responder({ message: 'Unauthorized', statusCode: 401 }, 401);
+    }
     if (ruta === '/api/auth/login') {
       const rol = req.postDataJSON().nombre_usuario.startsWith('tecnico') ? 'TECNICO' : 'ADMIN';
       const payload = { rol, id_empresa: 1, userId: 7, nombre_usuario: 'prueba.usuario', exp: Math.floor(Date.now()/1000) + 3600 };
@@ -265,6 +270,24 @@ test('navegar entre dos cierres desmonta el anterior aunque comparta la ruta', a
   await expect(page.locator('img[src^="blob:"]')).toHaveCount(0);
   const estado = await urls(page); expect(estado.creadas).toHaveLength(1); expect(estado.liberadas).toContain(estado.creadas[0]);
   await registro.pendientes[0].fulfill({ json: { url_cloudinary: remota, formato: 'png', tamano_kb: 1 } }).catch(() => undefined);
+});
+
+test('un token vencido devuelve al login en vez de dejar la pantalla con un error', async ({ page }) => {
+  // El token dura ocho horas: vencerse en media jornada no es raro. Antes cada
+  // cliente de API trataba el 401 como un error cualquiera, la pantalla mostraba
+  // "Error en la solicitud" y el usuario quedaba mirando una vista vacia sin
+  // entender por que. `authStore.checkAuth()` no ayudaba: corre al montar la
+  // aplicacion, no despues.
+  const registro = await preparar(page);
+  await login(page, 'admin');
+  await page.goto('/admin/clientes');
+  await expect(page.getByRole('heading', { name: 'Clientes' })).toBeVisible();
+
+  // A partir de aca el Controlador responde 401, como si el token hubiera vencido.
+  registro.tokenVencido = true;
+  await page.goto('/admin/clientes');
+
+  await expect(page).toHaveURL(/\/login$/);
 });
 
 test('sin sesión no se montan las vistas de Clientes antes de redirigir', async ({ page }) => {

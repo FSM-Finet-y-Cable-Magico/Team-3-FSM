@@ -1,4 +1,5 @@
 import { API_URL } from './config.js';
+import { pedirJson, pedirCrudo } from './http.js';
 
 export interface LoginResponse {
   token: string;
@@ -37,35 +38,31 @@ export async function cambiarPassword(
   nueva_password: string,
   confirmar_password: string
 ): Promise<void> {
-  const res = await fetch(`${API_URL}/api/auth/cambiar-password`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  // `pedirCrudo` y no `pedirJson`: este endpoint responde sin cuerpo, y
+  // parsearlo como JSON fallaria en el caso exitoso.
+  await pedirCrudo(
+    token,
+    `${API_URL}/api/auth/cambiar-password`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nueva_password, confirmar_password }),
     },
-    body: JSON.stringify({ nueva_password, confirmar_password }),
-  });
-
-  if (res.status >= 400) {
-    const data = await res.json();
-    throw new Error(data.message || 'Error al cambiar contraseña');
-  }
+    'Error al cambiar contraseña',
+  );
 }
 
 export async function crearUsuario(token: string, dto: CrearUsuarioDto): Promise<void> {
-  const res = await fetch(`${API_URL}/api/auth/usuarios`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+  await pedirCrudo(
+    token,
+    `${API_URL}/api/auth/usuarios`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dto),
     },
-    body: JSON.stringify(dto),
-  });
-
-  if (res.status >= 400) {
-    const data = await res.json();
-    throw new Error(data.message || 'Error al crear usuario');
-  }
+    'Error al crear usuario',
+  );
 }
 
 export async function listarUsuarios(token: string): Promise<
@@ -79,15 +76,5 @@ export async function listarUsuarios(token: string): Promise<
     rol: string;
   }>
 > {
-  const res = await fetch(`${API_URL}/api/auth/usuarios`, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  if (res.status >= 400) {
-    const data = await res.json();
-    throw new Error(data.message || 'Error al listar usuarios');
-  }
-
-  return res.json();
+  return pedirJson(token, `${API_URL}/api/auth/usuarios`, undefined, 'Error al listar usuarios');
 }
