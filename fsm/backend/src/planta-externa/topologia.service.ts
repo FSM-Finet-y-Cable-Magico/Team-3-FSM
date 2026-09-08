@@ -11,6 +11,24 @@ import type { CrearCajaDto, CrearMufaDto, CrearOltDto, CrearTarjetaDto } from '.
 import { ESTADO_PUERTO, type EditarCajaDto, type EditarPuertoDto } from './dto/editar-topologia.dto.js';
 
 /**
+ * Dos cajas con el mismo nombre a menos de esto se disputan las mismas ONT: el
+ * ligado desambigua por distancia y por grupo PON, y a esta escala ya no puede.
+ * Mas lejos son cajas distintas que comparten nombre, que es lo normal en la
+ * red real de FiNet.
+ */
+const RADIO_COLISION_M = 300;
+
+/** Distancia aproximada en metros. Basta a esta escala. */
+function metrosEntre(aLat: number, aLon: number, bLat: number, bLon: number): number {
+  const R = 6371000;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLon = ((bLon - aLon) * Math.PI) / 180;
+  const m = (((aLat + bLat) / 2) * Math.PI) / 180;
+  const x = dLon * Math.cos(m);
+  return Math.round(R * Math.sqrt(dLat * dLat + x * x));
+}
+
+/**
  * `true` si el cuerpo no trae ni un campo con valor.
  *
  * No sirve `Object.keys(dto).length === 0`: con `target: ES2023` TypeScript
@@ -95,15 +113,26 @@ export class TopologiaService {
       if (!mufa) throw new NotFoundException(`Mufa ${dto.id_mufa} no encontrada`);
     }
 
-    await this.exigirNombreDeCajaLibre(dto.identificador_unico, id_empresa);
+    await this.exigirNombreDeCajaLibre(dto.identificador_unico, id_empresa, {
+      latitud: dto.latitud,
+      longitud: dto.longitud,
+      zona: dto.zona,
+    });
 
     const capacidad = dto.capacidad_puertos ?? 16;
+    // `identificador_unico` tiene un @unique GLOBAL sobre el texto crudo, y eso
+    // choca con la realidad: la red tiene nueve cajas que se llaman "NAP 5" en
+    // zonas distintas. El importador de KML lo esquiva agregando " (n)" al
+    // repetido; aca se hace lo mismo, para que las cajas manuales y las
+    // importadas queden con la misma forma y el ligado las trate igual.
+    const identificador = await this.identificadorLibre(dto.identificador_unico.trim());
+
     const caja = await this.prisma.$transaction(async (tx) => {
       const creada = await tx.caja_nap.create({
         data: {
           id_empresa,
           id_mufa: dto.id_mufa ?? null,
-          identificador_unico: dto.identificador_unico.trim(),
+          identificador_unico: identificador,
           numero_poste: dto.numero_poste ?? null,
           zona: dto.zona ?? null,
           capacidad_puertos: capacidad,
@@ -149,7 +178,16 @@ export class TopologiaService {
     if (!caja) throw new NotFoundException(`Caja ${id_caja_nap} no encontrada`);
 
     if (dto.identificador_unico != null && dto.identificador_unico !== caja.identificador_unico) {
-      await this.exigirNombreDeCajaLibre(dto.identificador_unico, id_empresa, id_caja_nap);
+      await this.exigirNombreDeCajaLibre(
+        dto.identificador_unico,
+        id_empresa,
+        {
+          latitud: dto.latitud ?? (caja.latitud == null ? null : Number(caja.latitud)),
+          longitud: dto.longitud ?? (caja.longitud == null ? null : Number(caja.longitud)),
+          zona: dto.zona ?? caja.zona,
+        },
+        id_caja_nap,
+      );
     }
     if (dto.id_mufa != null) {
       const mufa = await this.prisma.mufa.findUnique({ where: { id_mufa: dto.id_mufa } });
@@ -355,20 +393,29 @@ export class TopologiaService {
   }
 
   /**
-   * Rechaza un nombre de caja que colisione con uno existente.
+   * Rechaza un nombre de caja que colisione con otra CERCANA.
    *
-   * La comparacion es sobre el nombre NORMALIZADO, no sobre el crudo, y esa es
-   * la parte que importa. La columna tiene un @unique de base, pero es sobre el
-   * texto tal cual: "NAP06" y "NAP 6" lo pasan sin problema. El ligado
-   * ONT->caja, en cambio, compara normalizado (`normalizarNombreCaja`), asi que
-   * esas dos filas serian DOS cajas peleandose las mismas ONT, y la
-   * exclusividad del algoritmo le daria las ONT a una de las dos al azar.
+   * La comparacion es sobre el nombre NORMALIZADO, no sobre el crudo: la
+   * columna tiene un @unique de base, pero es literal, y "NAP06" y "NAP 6" lo
+   * pasan sin problema. El ligado ONT->caja compara normalizado
+   * (`normalizarNombreCaja`), asi que esas dos filas serian dos cajas
+   * peleandose las mismas ONT.
    *
-   * Es exactamente el tipo de duplicado que el @unique no ve.
+   * PERO LA CERCANIA IMPORTA, y esto costo entenderlo. Los datos reales de
+   * FiNet tienen NUEVE cajas que normalizan a "NAP 5", repartidas en 7 km y en
+   * zonas distintas: ZONA 3, ZONA 5, ZONA 4, ZONA CC 37. No son un error --
+   * asi numera la red, cada zona tiene su propia NAP 5. Rechazar por nombre a
+   * secas impediria crear una NAP 5 legitima en una zona nueva, que es
+   * justamente lo que hace falta para las 166 cajas sin numerar.
+   *
+   * Lo que confunde al ligado no es el nombre repetido, es el nombre repetido
+   * CERCA: el matcher desambigua por distancia y por grupo PON, asi que dos
+   * "NAP 5" a 7 km nunca se disputan una ONT. Dos a 20 m, si.
    */
   private async exigirNombreDeCajaLibre(
     identificador: string,
     id_empresa: number,
+    contexto: { latitud?: number | null; longitud?: number | null; zona?: string | null } = {},
     exceptoId?: number,
   ) {
     const clave = normalizarNombreCaja(identificador);
@@ -378,23 +425,70 @@ export class TopologiaService {
       );
     }
 
-    // Se comparan las de la empresa; las cajas sin empresa (importadas antes de
-    // que se supiera de quien eran) tambien cuentan, porque el ligado las ve.
+    // Las cajas sin empresa tambien cuentan: el ligado las ve igual.
     const candidatas = await this.prisma.caja_nap.findMany({
       where: { OR: [{ id_empresa }, { id_empresa: null }] },
-      select: { id_caja_nap: true, identificador_unico: true },
+      select: {
+        id_caja_nap: true,
+        identificador_unico: true,
+        zona: true,
+        latitud: true,
+        longitud: true,
+      },
     });
 
-    const choque = candidatas.find(
+    const mismoNombre = candidatas.filter(
       (c) => c.id_caja_nap !== exceptoId && normalizarNombreCaja(c.identificador_unico) === clave,
     );
+    if (mismoNombre.length === 0) return;
+
+    const choque = mismoNombre.find((c) => {
+      if (contexto.latitud != null && contexto.longitud != null && c.latitud != null && c.longitud != null) {
+        return (
+          metrosEntre(contexto.latitud, contexto.longitud, Number(c.latitud), Number(c.longitud)) <=
+          RADIO_COLISION_M
+        );
+      }
+      // Sin coordenadas de un lado no se puede medir: se cae a la zona, que es
+      // el otro criterio con el que la red numera sus cajas.
+      return !!contexto.zona && !!c.zona && contexto.zona.trim() === c.zona.trim();
+    });
+
     if (choque) {
       throw new ConflictException(
-        `Ya existe la caja "${choque.identificador_unico}", que es el mismo identificador ` +
-          `una vez normalizado ("${clave}"). Dos cajas con el mismo nombre se disputarían ` +
-          `las mismas ONT al ligar.`,
+        `Ya existe la caja "${choque.identificador_unico}" cerca de esta ubicación, y es el ` +
+          `mismo identificador una vez normalizado ("${clave}"). Dos cajas con el mismo nombre ` +
+          `en la misma zona se disputarían las mismas ONT al ligar. Si es otra caja, dale un ` +
+          `identificador que la distinga.`,
       );
     }
+  }
+
+  /**
+   * Devuelve el identificador tal cual, o con un sufijo " (n)" si el texto
+   * exacto ya esta tomado.
+   *
+   * No es cosmetico: la columna tiene un @unique global sobre el texto crudo,
+   * asi que sin esto crear una segunda "NAP 5" --legitima, en otra zona-- se
+   * cae con un 500 de Prisma. El sufijo es el mismo que usa el importador de
+   * KML para las cajas homonimas de Tomodat, y `normalizarNombreCaja` lo
+   * ignora a proposito, asi que el ligado sigue viendo "NAP 5".
+   */
+  private async identificadorLibre(base: string): Promise<string> {
+    const tomados = new Set(
+      (
+        await this.prisma.caja_nap.findMany({
+          where: { identificador_unico: { startsWith: base } },
+          select: { identificador_unico: true },
+        })
+      ).map((c) => c.identificador_unico),
+    );
+    if (!tomados.has(base)) return base;
+    for (let n = 2; n < 1000; n++) {
+      const intento = `${base} (${n})`;
+      if (!tomados.has(intento)) return intento;
+    }
+    throw new ConflictException(`Demasiadas cajas llamadas "${base}"`);
   }
 
   private async auditar(

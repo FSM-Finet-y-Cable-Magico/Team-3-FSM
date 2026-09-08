@@ -28,7 +28,13 @@ describe('topologia de planta externa', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    cajas = [{ id_caja_nap: 1, identificador_unico: 'NAP 6' }];
+    // Dos "NAP 5" reales de FiNet, a ~7 km: son cajas DISTINTAS que comparten
+    // nombre porque cada zona numera las suyas. Mas una "NAP 6" sin coordenadas.
+    cajas = [
+      { id_caja_nap: 1, identificador_unico: 'NAP 6', zona: 'ZONA 3', latitud: null, longitud: null },
+      { id_caja_nap: 2, identificador_unico: 'NAP 5', zona: 'ZONA 3', latitud: -33.6142, longitud: -70.6255 },
+      { id_caja_nap: 3, identificador_unico: 'nap 5 (2)', zona: 'ZONA 5', latitud: -33.5811, longitud: -70.5939 },
+    ];
     puertos = [];
     const mod = await Test.createTestingModule({
       providers: [
@@ -60,16 +66,44 @@ describe('topologia de planta externa', () => {
   });
 
   describe('CU-18 · crear caja', () => {
-    it('rechaza un nombre que colisiona SOLO al normalizar', async () => {
-      // El @unique de la base deja pasar "NAP06" existiendo "NAP 6": son textos
-      // distintos. Pero el ligado ONT->caja compara normalizado, asi que serian
-      // dos cajas disputandose las mismas ONT.
+    it('rechaza un nombre que colisiona al normalizar, si esta CERCA', async () => {
+      // El @unique de la base deja pasar "NAP05" existiendo "NAP 5": son textos
+      // distintos. Pero el ligado compara normalizado, y a 40 m las dos se
+      // disputarian las mismas ONT.
       await expect(
-        service.crearCaja({ identificador_unico: 'NAP06' } as any, 1, 1),
+        service.crearCaja(
+          { identificador_unico: 'NAP05', latitud: -33.6145, longitud: -70.6255 } as any,
+          1,
+          1,
+        ),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
-    it('acepta un nombre que no colisiona', async () => {
+    it('PERMITE el mismo nombre lejos: asi numera la red de verdad', async () => {
+      // Los datos reales de FiNet tienen NUEVE cajas que normalizan a "NAP 5",
+      // repartidas en 7 km y en zonas distintas. No es un error: cada zona
+      // tiene su propia NAP 5. Rechazar por nombre a secas impediria crear una
+      // caja legitima, que es justo lo que hace falta para las 166 sin numerar.
+      await service.crearCaja(
+        { identificador_unico: 'NAP 5', latitud: -33.5100, longitud: -70.7500 } as any,
+        1,
+        1,
+      );
+      expect(cajaCreate).toHaveBeenCalled();
+    });
+
+    it('sin coordenadas cae a la zona: misma zona y mismo nombre choca', async () => {
+      await expect(
+        service.crearCaja({ identificador_unico: 'NAP06', zona: 'ZONA 3' } as any, 1, 1),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('sin coordenadas y en otra zona, se permite', async () => {
+      await service.crearCaja({ identificador_unico: 'NAP06', zona: 'ZONA 9' } as any, 1, 1);
+      expect(cajaCreate).toHaveBeenCalled();
+    });
+
+    it('acepta un nombre que no existe en ninguna parte', async () => {
       await service.crearCaja({ identificador_unico: 'NAP 7' } as any, 1, 1);
       expect(cajaCreate).toHaveBeenCalled();
     });
