@@ -43,7 +43,7 @@
       return;
     }
     if (!['ADMIN', 'JEFE_TECNICO'].includes(state.usuario?.rol ?? '')) {
-      goto(state.usuario?.rol === 'TECNICO' ? '/terreno' : '/dashboard');
+      goto(state.usuario?.rol === 'TECNICO' ? '/terreno' : '/admin/dashboard');
       return;
     }
 
@@ -156,9 +156,9 @@
       <div class="text-center py-8 text-gray-500">Cargando...</div>
     {:else if errorMsg}
       <Alert class="rounded-lg">{errorMsg}</Alert>
-      <a href="/clientes" class="text-blue-600 hover:text-blue-800 text-sm mt-4 inline-block">&larr; Volver a clientes</a>
+      <a href="/admin/clientes" class="text-blue-600 hover:text-blue-800 text-sm mt-4 inline-block">&larr; Volver a clientes</a>
     {:else if cliente}
-      <a href="/clientes" class="text-blue-600 hover:text-blue-800 text-sm mb-4 inline-block">&larr; Volver a clientes</a>
+      <a href="/admin/clientes" class="text-blue-600 hover:text-blue-800 text-sm mb-4 inline-block">&larr; Volver a clientes</a>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-2">
         <!-- Columna izquierda: Datos del cliente -->
@@ -324,7 +324,7 @@
               <div class="space-y-3">
                 {#each historialOT as ot (ot.id_ot)}
                   <a
-                    href="/ot/{ot.id_ot}"
+                    href="/admin/ot/{ot.id_ot}"
                     class="block border-b border-gray-100 pb-3 last:border-0 hover:bg-gray-50 rounded-lg px-2 -mx-2 transition-colors"
                   >
                     <div class="flex items-center justify-between">

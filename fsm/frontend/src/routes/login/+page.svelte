@@ -16,7 +16,10 @@
     authStore.checkAuth();
     const state = get(authStore);
     if (state.isAuthenticated) {
-      goto('/dashboard');
+      // Con sesion abierta, cada rol vuelve a SU area. Antes mandaba a todos al
+      // dashboard, asi que un tecnico que volvia al login aterrizaba en el area
+      // de oficina y de ahi lo rebotaba el guard.
+      goto(state.usuario?.rol === 'TECNICO' ? '/terreno' : '/admin/dashboard');
     }
   });
 

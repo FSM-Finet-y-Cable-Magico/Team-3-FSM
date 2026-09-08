@@ -130,7 +130,7 @@
   </div>
   {#if rol !== 'TECNICO'}
     <a
-      href="/clientes/nuevo"
+      href="/admin/clientes/nuevo"
       class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-5 rounded-xl shadow-sm transition-all duration-150 text-sm"
     >
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

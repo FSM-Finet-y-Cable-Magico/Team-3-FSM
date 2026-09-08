@@ -54,10 +54,14 @@ function createAuthStore() {
     if (cambiar_password) {
       return '/cambiar-password';
     }
+    // Un area por rol (MOD RF-34): el tecnico trabaja en /terreno y el resto
+    // en /admin. Esta funcion es el UNICO lugar que decide eso tras el login;
+    // la raiz y el layout de /admin lo repiten para el caso de volver con la
+    // sesion ya abierta.
     if (rol === 'TECNICO') {
       return '/terreno';
     }
-    return '/dashboard';
+    return '/admin/dashboard';
   }
 
   function logout() {
