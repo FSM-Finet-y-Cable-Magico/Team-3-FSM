@@ -11,34 +11,39 @@
 export const ACCION_EQUIPO = {
   /** El técnico instaló este equipo en el domicilio del cliente. */
   INSTALADO_EN_CLIENTE: 'INSTALADO_EN_CLIENTE',
-  /** El técnico retiró el equipo y vuelve a bodega operativo. */
-  RETIRADO_A_BODEGA: 'RETIRADO_A_BODEGA',
-  /** El técnico retiró el equipo con falla; va a revisión/diagnóstico. */
+  /**
+   * Todo retiro, sin distinguir por qué.
+   *
+   * Antes había tres (`RETIRADO_A_BODEGA`, `BAJA_EN_TERRENO` y este). Se
+   * eliminaron los dos primeros por decisión de G1 del 8-sept-2026: todo lo que
+   * el técnico retira entra a su taller como "En revisión", y son ellos quienes
+   * después deciden si vuelve a bodega o se da de baja, con su propio flujo.
+   *
+   * El motivo es de fondo y conviene no revertirlo sin hablarlo: un técnico en
+   * el domicilio no puede saber si un equipo es recuperable. Pedirle que elija
+   * entre "a bodega" y "de baja" es pedirle un diagnóstico que se hace en el
+   * taller, y cada vez que se equivoque hay que corregir la máquina de estados
+   * de G1 desde afuera. Con un solo destino, el retiro queda trazado y la
+   * decisión la toma quien tiene el equipo en la mano y tiempo para mirarlo.
+   *
+   * Para el técnico esto significa un solo botón de retiro en vez de tres.
+   */
   RETIRADO_PARA_DIAGNOSTICO: 'RETIRADO_PARA_DIAGNOSTICO',
-  /** El equipo quedó inutilizable en terreno. */
-  BAJA_EN_TERRENO: 'BAJA_EN_TERRENO',
 } as const;
 
 export type AccionEquipo = (typeof ACCION_EQUIPO)[keyof typeof ACCION_EQUIPO];
 
 /**
- * Mapeo tentativo a los literales de G1 (los 6 estados de su máquina, del JSON
- * de casos de uso de G1). `RETIRADO_PARA_DIAGNOSTICO` → "En revisión" está
- * PENDIENTE de confirmar con G1 en el doc global.
+ * A qué estado de la máquina de G1 mueve cada acción. Confirmado por Javier el
+ * 8-sept-2026: ya no es tentativo.
  */
 export const ACCION_A_ESTADO_G1: Record<AccionEquipo, string> = {
   INSTALADO_EN_CLIENTE: 'Instalado en cliente',
-  RETIRADO_A_BODEGA: 'En bodega',
-  RETIRADO_PARA_DIAGNOSTICO: 'En revisión', // CONFIRMAR con G1
-  BAJA_EN_TERRENO: 'Dado de baja',
+  RETIRADO_PARA_DIAGNOSTICO: 'En revisión',
 };
 
 export const ACCIONES_EQUIPO_INSTALACION: AccionEquipo[] = ['INSTALADO_EN_CLIENTE'];
-export const ACCIONES_EQUIPO_RETIRO: AccionEquipo[] = [
-  'RETIRADO_A_BODEGA',
-  'RETIRADO_PARA_DIAGNOSTICO',
-  'BAJA_EN_TERRENO',
-];
+export const ACCIONES_EQUIPO_RETIRO: AccionEquipo[] = ['RETIRADO_PARA_DIAGNOSTICO'];
 
 /**
  * Diagnostico de un equipo retirado. Lista fija de G1, confirmada por Javier el
@@ -89,19 +94,21 @@ export const TRANSICIONES_G1: { origen: string; destinos: string[] }[] = [
 /**
  * Desde que estado admite G1 cada accion nuestra.
  *
- * OJO, y esto esta planteado a G1 y sin responder: cruzando esto con los
- * estados que un equipo puede tener MIENTRAS EL TECNICO ESTA EN EL DOMICILIO
- * --solo dos: "Asignado a técnico" el que lleva encima, "Instalado en cliente"
- * el que ya esta en la casa-- resulta que:
+ * RESUELTO el 8-sept-2026. Se le habia planteado a G1 que, cruzando su maquina
+ * de estados con los estados que un equipo puede tener MIENTRAS EL TECNICO ESTA
+ * EN EL DOMICILIO --solo dos: "Asignado a técnico" el que lleva encima,
+ * "Instalado en cliente" el que ya esta en la casa-- dos de nuestras cuatro
+ * acciones no se podian emitir nunca:
  *
- *   - BAJA_EN_TERRENO es INEMITIBLE: sus dos origenes son de trastienda.
- *   - RETIRADO_A_BODEGA no sirve para retirar un equipo del cliente, que es lo
+ *   - BAJA_EN_TERRENO era INEMITIBLE: sus dos origenes eran de trastienda.
+ *   - RETIRADO_A_BODEGA no servia para retirar un equipo del cliente, que es lo
  *     que su nombre sugiere: ese origen seria "Instalado en cliente", que G1 no
- *     admite para esta accion.
+ *     admitia para esa accion.
+ *
+ * La respuesta fue eliminar las dos y dejar un unico retiro. Por eso este mapa
+ * tiene ahora solo dos entradas, y las dos son emitibles desde el domicilio.
  */
 export const ORIGENES_VALIDOS_G1: Record<AccionEquipo, string[]> = {
   INSTALADO_EN_CLIENTE: ['Asignado a técnico'],
-  RETIRADO_A_BODEGA: ['Asignado a técnico', 'En revisión', 'En préstamo externo'],
   RETIRADO_PARA_DIAGNOSTICO: ['Asignado a técnico', 'Instalado en cliente'],
-  BAJA_EN_TERRENO: ['En bodega', 'En revisión'],
 };

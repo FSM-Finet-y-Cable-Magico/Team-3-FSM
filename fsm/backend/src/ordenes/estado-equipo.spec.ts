@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import {
   ACCION_A_ESTADO_G1,
   ACCION_EQUIPO,
+  ACCIONES_EQUIPO_RETIRO,
   DIAGNOSTICO_POR_DEFECTO,
   DIAGNOSTICO_RETIRO,
   ORIGENES_VALIDOS_G1,
@@ -60,27 +61,31 @@ describe('contrato de estados de equipo con G1', () => {
     }
   });
 
-  it('deja constancia de las dos acciones que hoy NO se pueden emitir en terreno', () => {
+  it('todas las acciones se pueden emitir desde el domicilio', () => {
     // En una visita un equipo solo puede estar en dos estados: el que el
     // tecnico lleva ("Asignado a técnico") y el que ya esta en la casa
     // ("Instalado en cliente"). Todo lo demas es trastienda.
+    //
+    // Esta prueba antes dejaba constancia de lo contrario: BAJA_EN_TERRENO y
+    // RETIRADO_A_BODEGA no se podian emitir nunca desde terreno, y decia que el
+    // dia que G1 lo corrigiera habria que actualizarla. Ese dia fue el
+    // 8-sept-2026: G1 elimino las dos y dejo un unico retiro.
     const EN_TERRENO = ['Asignado a técnico', 'Instalado en cliente'];
     const emitible = (accion: keyof typeof ORIGENES_VALIDOS_G1) =>
       ORIGENES_VALIDOS_G1[accion].some((o) => EN_TERRENO.includes(o));
 
-    expect(emitible('INSTALADO_EN_CLIENTE')).toBe(true);
-    expect(emitible('RETIRADO_PARA_DIAGNOSTICO')).toBe(true);
+    for (const accion of Object.keys(ORIGENES_VALIDOS_G1) as (keyof typeof ORIGENES_VALIDOS_G1)[]) {
+      expect(emitible(accion)).toBe(true);
+    }
+  });
 
-    // BAJA_EN_TERRENO se llama "en terreno" y no admite ningun estado de
-    // terreno. Esta planteado a G1 y sin responder; el dia que lo corrijan,
-    // esta prueba se cae y hay que actualizarla. Es el recordatorio.
-    expect(emitible('BAJA_EN_TERRENO')).toBe(false);
-
-    // RETIRADO_A_BODEGA sirve desde "Asignado a técnico" (equipo que el tecnico
-    // saco y no llego a instalar) pero NO desde "Instalado en cliente", que es
-    // el caso que su nombre sugiere.
-    expect(ORIGENES_VALIDOS_G1.RETIRADO_A_BODEGA).toContain('Asignado a técnico');
-    expect(ORIGENES_VALIDOS_G1.RETIRADO_A_BODEGA).not.toContain('Instalado en cliente');
+  it('hay un solo retiro, y lleva el equipo a revision', () => {
+    // Un tecnico en el domicilio no puede saber si un equipo es recuperable:
+    // esa decision se toma en el taller. Por eso todo retiro sale igual y G1
+    // resuelve despues si va a bodega o de baja.
+    expect(ACCIONES_EQUIPO_RETIRO).toEqual(['RETIRADO_PARA_DIAGNOSTICO']);
+    expect(ACCION_A_ESTADO_G1.RETIRADO_PARA_DIAGNOSTICO).toBe('En revisión');
+    expect(Object.keys(ACCION_EQUIPO)).toHaveLength(2);
   });
 
   it('la lista de diagnosticos es la de G1, con sus tildes', () => {

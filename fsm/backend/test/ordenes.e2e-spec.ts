@@ -196,13 +196,15 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
     ]);
     expect(res.body.diagnostico_por_defecto).toBe('Causa desconocida');
 
-    // `es_retiro` es lo que decide si el formulario exige diagnostico: si se
-    // marcara mal, el tecnico podria dar de baja un equipo sin decir por que.
+    // Son DOS, no cuatro. G1 elimino `RETIRADO_A_BODEGA` y `BAJA_EN_TERRENO` el
+    // 8-sept-2026: todo retiro entra a su taller como "En revisión" y ellos
+    // deciden despues si vuelve a bodega o se da de baja. Al tecnico le queda un
+    // solo boton de retiro.
     const porAccion = Object.fromEntries(res.body.acciones.map((a: any) => [a.accion, a]));
+    expect(Object.keys(porAccion).sort()).toEqual(['INSTALADO_EN_CLIENTE', 'RETIRADO_PARA_DIAGNOSTICO']);
+    // `es_retiro` es lo que decide si el formulario exige diagnostico.
     expect(porAccion.INSTALADO_EN_CLIENTE).toMatchObject({ es_retiro: false, estado_g1: 'Instalado en cliente' });
-    expect(porAccion.RETIRADO_A_BODEGA).toMatchObject({ es_retiro: true, estado_g1: 'En bodega' });
     expect(porAccion.RETIRADO_PARA_DIAGNOSTICO).toMatchObject({ es_retiro: true, estado_g1: 'En revisión' });
-    expect(porAccion.BAJA_EN_TERRENO).toMatchObject({ es_retiro: true, estado_g1: 'Dado de baja' });
   });
 
   it('no confunde "acciones-equipo" con el detalle de una OT', async () => {
