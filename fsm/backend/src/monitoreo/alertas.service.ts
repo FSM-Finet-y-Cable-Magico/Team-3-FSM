@@ -229,7 +229,12 @@ export class AlertasService {
     if (!alerta) throw new NotFoundException(`Alerta ${id_alerta} no encontrada`);
 
     // Una alerta individual ya trae su cliente; no hay grupo que desplegar.
-    if (!alerta.clave_caja) return { alerta, afectados: [] };
+    // Se devuelven igual los tres contadores, aunque vayan en cero: antes esta
+    // rama retornaba una forma DISTINTA de la otra, asi que `total`, `caidos` y
+    // `degradados` llegaban en undefined pese a estar declarados `number` en el
+    // tipo de la Vista. Cualquier consumidor tenia que adivinar en cual de las
+    // dos formas estaba parado.
+    if (!alerta.clave_caja) return { alerta, total: 0, caidos: 0, degradados: 0, afectados: [] };
 
     // `clave_caja` tiene TRES formatos, uno por nivel del agregado:
     //   caja  → "2/1/7|NAP 6"        (olt/placa/puerto + nombre normalizado)
@@ -284,7 +289,7 @@ export class AlertasService {
     const clientes = idsCliente.length
       ? await this.prisma.cliente.findMany({
           where: { id_cliente: { in: idsCliente }, id_empresa },
-          select: { id_cliente: true, nombre_completo: true, rut: true, telefono: true },
+          select: { id_cliente: true, nombre_completo: true, rut: true, telefono: true, email: true },
         })
       : [];
     const clientePorId = new Map(clientes.map((c) => [c.id_cliente, c]));
@@ -307,9 +312,16 @@ export class AlertasService {
         const ficha = descomponerFicha(c.nombre_cliente_ext, c.direccion_cliente_ext);
         return {
           numero_serie: c.numero_serie,
+          // Solo lo tienen los que estan ligados a un cliente nuestro. Hace
+          // falta para poder registrarles un aviso (CU-48): a un cliente que
+          // solo existe en la ficha de SmartOLT no se le puede anotar nada.
+          id_cliente: cli?.id_cliente ?? null,
           cliente: cli?.nombre_completo ?? ficha.nombre,
           rut: cli?.rut ?? ficha.rut,
           telefono: cli?.telefono ?? ficha.telefono,
+          // Sin fallback a la ficha: SmartOLT no trae correo, y devolver null
+          // es mas honesto que inventar que se puede escribir a alguien.
+          email: cli?.email ?? null,
           direccion: ficha.direccion,
           zona: c.zona,
           caja: c.odb,

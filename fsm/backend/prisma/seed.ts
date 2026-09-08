@@ -89,6 +89,46 @@ async function main() {
     if (!existe) await prisma.categoria_falla.create({ data: cat });
   }
 
+  // Plantillas base de notificacion (RF-43). Van con `id_empresa` en null: son
+  // del sistema, las dos empresas las ven y ninguna las puede editar --si una
+  // las tocara, cambiaria tambien las de la otra. Para tener una propia se
+  // duplican.
+  const plantillas = [
+    {
+      tipo_evento: 'FALLA_MASIVA',
+      canal: 'SMS',
+      contenido_texto:
+        'Hola {{cliente}}: detectamos una falla que afecta el servicio en {{zona}}. ' +
+        'Ya estamos trabajando en ella. {{empresa}}',
+    },
+    {
+      tipo_evento: 'OT_DESPACHADA',
+      canal: 'SMS',
+      contenido_texto:
+        'Hola {{cliente}}: enviamos una cuadrilla a revisar la falla de {{zona}} el {{fecha}}. {{empresa}}',
+    },
+    {
+      tipo_evento: 'SERVICIO_RESTABLECIDO',
+      canal: 'SMS',
+      contenido_texto:
+        'Hola {{cliente}}: el servicio en {{zona}} fue restablecido a las {{hora}}. ' +
+        'Si sigues sin conexion, avisanos. {{empresa}}',
+    },
+    {
+      tipo_evento: 'VISITA_AGENDADA',
+      canal: 'EMAIL',
+      contenido_texto:
+        'Hola {{cliente}}: tu visita tecnica quedo agendada para el {{fecha}}. ' +
+        'El tecnico llegara al domicilio ese dia. {{empresa}}',
+    },
+  ];
+  for (const pl of plantillas) {
+    const existe = await prisma.plantilla_notificacion.findFirst({
+      where: { tipo_evento: pl.tipo_evento, id_empresa: null },
+    });
+    if (!existe) await prisma.plantilla_notificacion.create({ data: pl });
+  }
+
   const planes = [
     { nombre_comercial: 'Plan 100 Mbps', velocidad_mbps: 100, precio_mensual: 19990, tipo_plan: 'FIBRA', tipo_cliente: 'RESIDENCIAL' },
     { nombre_comercial: 'Plan 200 Mbps', velocidad_mbps: 200, precio_mensual: 24990, tipo_plan: 'FIBRA', tipo_cliente: 'RESIDENCIAL' },
