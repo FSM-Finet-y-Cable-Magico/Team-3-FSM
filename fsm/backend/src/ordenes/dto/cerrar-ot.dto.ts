@@ -15,7 +15,12 @@ import {
   IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ACCION_EQUIPO, type AccionEquipo } from '../estado-equipo.constants.js';
+import {
+  ACCION_EQUIPO,
+  DIAGNOSTICO_RETIRO,
+  type AccionEquipo,
+  type DiagnosticoRetiro,
+} from '../estado-equipo.constants.js';
 
 export class FotoDto {
   @IsString()
@@ -71,6 +76,22 @@ export class EquipoOtDto {
   @IsString()
   @MaxLength(200)
   observacion_estado_fisico?: string;
+
+  /**
+   * Que le pasa al equipo, de la lista fija de G1 (confirmada el 4-sept).
+   *
+   * OPCIONAL a proposito, aunque G1 lo "exige" al retirar para diagnostico.
+   * Javier ofrecio asumir "Causa desconocida" si no viene, y se toma esa
+   * salida: un contrato que rechaza el cierre completo por un campo que el
+   * tecnico no lleno deja al cliente sin servicio y al tecnico atrapado en el
+   * domicilio. La obligatoriedad se impone en el formulario, donde se puede
+   * corregir en el momento, no en el contrato entre sistemas.
+   *
+   * Los literales van exactos, con tildes: los compara G1.
+   */
+  @IsOptional()
+  @IsIn(Object.values(DIAGNOSTICO_RETIRO))
+  diagnostico?: DiagnosticoRetiro;
 }
 
 export class CerrarOtDto {

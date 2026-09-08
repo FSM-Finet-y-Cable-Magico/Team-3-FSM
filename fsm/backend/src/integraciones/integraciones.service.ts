@@ -1,7 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ApiScope } from '../common/guards/api-key.guard.js';
-import { ACCION_A_ESTADO_G1, type AccionEquipo } from '../ordenes/estado-equipo.constants.js';
+import {
+  ACCION_A_ESTADO_G1,
+  DIAGNOSTICO_POR_DEFECTO,
+  DIAGNOSTICO_RETIRO,
+  ORIGENES_VALIDOS_G1,
+  TRANSICIONES_G1,
+  type AccionEquipo,
+} from '../ordenes/estado-equipo.constants.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 import type { PayloadCierre, EquipoDeclarado } from '../ordenes/fan-out/fan-out-cierre.js';
 
@@ -235,12 +242,27 @@ export class IntegracionesService {
     });
   }
 
-  /** Mapa acción → literal de G1, para que quede trazable vía API. */
+  /**
+   * Todo lo que G1 y G3 tienen que compartir sobre estados de equipo, en un
+   * solo lugar, para que ninguno de los dos copie literales a mano.
+   *
+   * Reemplaza al mapeo plano anterior, que Javier pidio actualizar con los
+   * origenes: aquella forma no tenia donde ponerlos. Ademas traia un
+   * `confirmado_por_g1` calculado a mano que ya habia quedado desactualizado
+   * --decia que "En revisión" seguia sin confirmar cuando G1 lo confirmo el
+   * 4-sept-- y por eso se elimina en vez de arreglarse: un flag que hay que
+   * recordar mantener vuelve a mentir.
+   */
   mapeoEstados() {
-    return Object.entries(ACCION_A_ESTADO_G1).map(([accion, estado_g1]) => ({
-      accion: accion as AccionEquipo,
-      estado_g1,
-      confirmado_por_g1: accion !== 'RETIRADO_PARA_DIAGNOSTICO',
-    }));
+    return {
+      acciones: Object.entries(ACCION_A_ESTADO_G1).map(([accion, estado_destino]) => ({
+        accion: accion as AccionEquipo,
+        estado_destino,
+        origenes_validos: ORIGENES_VALIDOS_G1[accion as AccionEquipo],
+      })),
+      transiciones: TRANSICIONES_G1,
+      diagnosticos: Object.values(DIAGNOSTICO_RETIRO),
+      diagnostico_por_defecto: DIAGNOSTICO_POR_DEFECTO,
+    };
   }
 }
