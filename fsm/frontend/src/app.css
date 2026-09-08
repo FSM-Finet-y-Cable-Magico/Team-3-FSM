@@ -3,6 +3,71 @@
 /* Patrones de acceso y navegación; las utilidades pueden ajustar cada uso. */
 @layer components {
   .login-input { @apply w-full px-4 py-2.5 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 transition-shadow duration-150 text-sm bg-white; }
-  .login-submit { @apply w-full bg-slate-800 hover:bg-slate-900 active:bg-black text-white font-medium py-2.5 px-4 rounded-lg transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer mt-1 text-sm; }
-  .nav-logout { @apply flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-red-600 transition-all duration-150 border border-slate-700 hover:border-red-600; }
+  .nav-logout { @apply flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-red-600 transition-all duration-150 border border-slate-700 hover:border-red-600 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500; }
+}
+
+/*
+ * Botones.
+ *
+ * Antes había una docena de variantes escritas a mano: distintos radios
+ * (`rounded-lg` y `rounded-xl`), rellenos (`py-2`, `py-2.5`, `py-3`, `py-4`),
+ * pesos de fuente, y varias sin `cursor-pointer` ni estado deshabilitado. Dos
+ * botones que hacen lo mismo en dos pantallas se veían distinto.
+ *
+ * La base son los valores del botón "Nuevo Cliente", que es el que se tomó como
+ * referencia: `rounded-xl`, `px-5 py-2.5`, `font-semibold`, `text-sm`.
+ *
+ * Se combinan: `btn` siempre, más UN color, más los modificadores que hagan
+ * falta. Ejemplo: `class="btn btn-primario btn-bloque"`.
+ */
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5
+           text-sm font-semibold transition-colors duration-150 cursor-pointer
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* La acción principal de la pantalla. Debería haber una sola a la vista. */
+  .btn-primario { @apply bg-blue-600 text-white shadow-sm hover:bg-blue-700 active:bg-blue-800 focus-visible:ring-blue-500; }
+
+  /* Acompaña a la principal: cancelar, volver, un filtro. */
+  .btn-secundario { @apply bg-white text-slate-800 border border-slate-300 hover:bg-slate-50 active:bg-slate-100 focus-visible:ring-slate-400; }
+
+  /* Acciones de sistema que no compiten con la principal (re-evaluar, actualizar). */
+  .btn-oscuro { @apply bg-slate-900 text-white shadow-sm hover:bg-slate-800 active:bg-black focus-visible:ring-slate-500; }
+
+  /* Destructivo o irreversible. */
+  .btn-peligro { @apply bg-red-600 text-white shadow-sm hover:bg-red-700 active:bg-red-800 focus-visible:ring-red-500; }
+
+  /* Confirmación final: cerrar una OT. Verde porque termina un flujo. */
+  .btn-exito { @apply bg-green-600 text-white shadow-sm hover:bg-green-700 active:bg-green-800 focus-visible:ring-green-500; }
+
+  .btn-bloque { @apply w-full; }
+
+  /*
+   * Para el celular del técnico. 56 px de alto: el mínimo recomendado para un
+   * objetivo táctil son 44, y acá se usa con guantes y a la intemperie.
+   */
+  .btn-grande { @apply py-4 text-base; }
+
+  /* Para filas densas de una tabla, donde un botón normal desalinea la fila. */
+  .btn-chico { @apply px-3 py-1.5 text-xs rounded-lg; }
+
+  /*
+   * Acción secundaria escrita como texto: "Editar", "Quitar", "Ver ficha".
+   * Lleva `cursor-pointer` y anillo de foco igual que un botón, porque lo es.
+   */
+  .btn-texto { @apply inline-flex items-center gap-1 text-sm font-medium cursor-pointer rounded transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 text-blue-700 hover:text-blue-900; }
+  .btn-texto-peligro { @apply inline-flex items-center gap-1 text-sm font-medium cursor-pointer rounded transition-colors duration-150 focus:outline-none focus-visible:ring-2 text-red-700 hover:text-red-900 focus-visible:ring-red-500; }
+
+  /*
+   * Control de pestañas. Lo repetian identico monitoreo, notificaciones y
+   * reportes: mismo relleno, mismo foco, mismo cambio de color al elegir.
+   * El color activo lo sigue poniendo cada pantalla porque depende del estado.
+   */
+  .btn-pestana {
+    @apply px-4 py-1.5 text-sm font-medium cursor-pointer transition-colors duration-200
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500;
+  }
 }

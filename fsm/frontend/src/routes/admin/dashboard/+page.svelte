@@ -164,7 +164,7 @@
       <button
         onclick={cargar}
         disabled={actualizando}
-        class="flex items-center gap-1.5 text-sm text-gray-600 hover:text-blue-600 border border-gray-300 hover:border-blue-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+        class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-600 hover:text-blue-600 border border-gray-300 hover:border-blue-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
       >
         <span class:animate-spin={actualizando}>{@html ICONO_REFRESH}</span>
         Actualizar
@@ -287,7 +287,7 @@
       <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-base font-semibold text-gray-800">Ultimas completadas</h3>
-          <a href="/admin/ot?estado=COMPLETADA" class="text-xs text-blue-600 hover:text-blue-800 font-medium">
+          <a href="/admin/ot?estado=COMPLETADA" class="btn-texto">
             Ver todas
           </a>
         </div>

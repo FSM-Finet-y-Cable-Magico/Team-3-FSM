@@ -134,7 +134,7 @@
       <button
         type="submit"
         disabled={isLoading}
-        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+        class="w-full btn btn-primario disabled:cursor-not-allowed flex items-center justify-center"
       >
         {#if isLoading}
           <Spinner class="-ml-1 mr-2 h-4 w-4 text-white" />

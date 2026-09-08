@@ -156,9 +156,9 @@
       <div class="text-center py-8 text-gray-500">Cargando...</div>
     {:else if errorMsg}
       <Alert class="rounded-lg">{errorMsg}</Alert>
-      <a href="/admin/clientes" class="text-blue-600 hover:text-blue-800 text-sm mt-4 inline-block">&larr; Volver a clientes</a>
+      <a href="/admin/clientes" class="btn-texto mt-4">&larr; Volver a clientes</a>
     {:else if cliente}
-      <a href="/admin/clientes" class="text-blue-600 hover:text-blue-800 text-sm mb-4 inline-block">&larr; Volver a clientes</a>
+      <a href="/admin/clientes" class="btn-texto mb-4">&larr; Volver a clientes</a>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-2">
         <!-- Columna izquierda: Datos del cliente -->
@@ -168,9 +168,9 @@
               <h2 class="text-xl font-bold text-gray-800">{cliente.nombre_completo}</h2>
               <div class="flex gap-2">
                 {#if rol !== 'TECNICO' && !editMode}
-                  <button onclick={iniciarEdicion} class="text-sm text-blue-600 hover:text-blue-800 font-medium">Editar ficha</button>
+                  <button onclick={iniciarEdicion} class="btn-texto">Editar ficha</button>
                   {#if !cliente.es_conflictivo}
-                    <button onclick={() => showConflictivoModal = true} class="text-sm text-red-600 hover:text-red-800 font-medium">
+                    <button onclick={() => showConflictivoModal = true} class="btn-texto-peligro">
                       Marcar conflictivo
                     </button>
                   {/if}
@@ -321,13 +321,13 @@
                   <button
                     onclick={guardarEdicion}
                     disabled={editLoading}
-                    class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
+                    class="btn btn-primario"
                   >
                     {editLoading ? 'Guardando...' : 'Guardar cambios'}
                   </button>
                   <button
                     onclick={cancelarEdicion}
-                    class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors"
+                    class="btn btn-secundario"
                   >
                     Cancelar
                   </button>
@@ -419,13 +419,13 @@
         <button
           onclick={confirmarConflictivo}
           disabled={conflictivoLoading || motivoConflictivo.length < 10}
-          class="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
+          class="btn btn-peligro btn-bloque flex-1"
         >
           {conflictivoLoading ? 'Confirmando...' : 'Confirmar'}
         </button>
         <button
           onclick={() => showConflictivoModal = false}
-          class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors"
+          class="flex-1 btn btn-secundario"
         >
           Cancelar
         </button>

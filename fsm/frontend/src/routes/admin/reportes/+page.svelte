@@ -143,9 +143,7 @@
             role="tab"
             aria-selected={tipo === t.valor}
             onclick={() => cambiarTipo(t.valor)}
-            class="px-4 py-1.5 text-sm font-medium cursor-pointer transition-colors duration-200
-                   focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500
-                   {tipo === t.valor ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}"
+            class="btn-pestana {tipo === t.valor ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}"
           >{t.etiqueta}</button>
         {/if}
       {/each}

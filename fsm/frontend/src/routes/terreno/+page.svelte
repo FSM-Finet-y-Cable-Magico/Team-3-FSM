@@ -150,7 +150,7 @@
       </div>
       <button
         onclick={cerrarSesion}
-        class="flex items-center gap-1.5 text-xs text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500 px-3 py-1.5 rounded-lg transition-colors"
+        class="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500 px-3 py-1.5 rounded-lg transition-colors"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -237,7 +237,7 @@
               {#if ot.tipo_ot === 'REPARACION' && ot.cliente?.id_cliente}
                 <button
                   onclick={() => historialClienteId = ot.cliente?.id_cliente ?? null}
-                  class="mt-2 flex items-center gap-1.5 text-xs text-orange-600 hover:text-orange-800 font-medium"
+                  class="btn-texto mt-2 gap-1.5 text-orange-700 hover:text-orange-900 focus-visible:ring-orange-500"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -253,7 +253,7 @@
                 <button
                   onclick={() => iniciarTrabajo(ot.id_ot)}
                   disabled={iniciando === ot.id_ot}
-                  class="w-full bg-blue-600 active:bg-blue-800 text-white font-semibold py-4 rounded-xl text-base transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  class="btn btn-primario btn-bloque btn-grande"
                 >
                   {#if iniciando === ot.id_ot}
                     <Spinner class="h-5 w-5" />
@@ -269,7 +269,7 @@
                 <button
                   onclick={() => marcarClienteAusente(ot.id_ot)}
                   disabled={marcandoAusente === ot.id_ot}
-                  class="w-full bg-amber-100 active:bg-amber-200 text-amber-800 font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-50"
+                  class="btn btn-bloque bg-amber-100 text-amber-800 hover:bg-amber-200 focus-visible:ring-amber-500 disabled:opacity-50"
                 >
                   {marcandoAusente === ot.id_ot ? 'Marcando...' : 'Cliente ausente'}
                 </button>
@@ -278,7 +278,7 @@
               <div class="px-4 pb-4 space-y-2">
                 <button
                   onclick={() => goto(`/terreno/cerrar/${ot.id_ot}`)}
-                  class="w-full bg-green-600 active:bg-green-800 text-white font-semibold py-4 rounded-xl text-base transition-colors flex items-center justify-center gap-2"
+                  class="btn btn-exito btn-bloque btn-grande"
                 >
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
@@ -288,7 +288,7 @@
                 <button
                   onclick={() => marcarClienteAusente(ot.id_ot)}
                   disabled={marcandoAusente === ot.id_ot}
-                  class="w-full bg-amber-100 active:bg-amber-200 text-amber-800 font-semibold py-3 rounded-xl text-sm transition-colors disabled:opacity-50"
+                  class="btn btn-bloque bg-amber-100 text-amber-800 hover:bg-amber-200 focus-visible:ring-amber-500 disabled:opacity-50"
                 >
                   {marcandoAusente === ot.id_ot ? 'Marcando...' : 'Cliente ausente'}
                 </button>
@@ -301,7 +301,7 @@
                 <button
                   onclick={() => reintentarVisita(ot.id_ot)}
                   disabled={reintentando === ot.id_ot}
-                  class="w-full bg-indigo-600 active:bg-indigo-800 text-white font-semibold py-4 rounded-xl text-base transition-colors disabled:opacity-50"
+                  class="btn btn-primario btn-bloque btn-grande"
                 >
                   {reintentando === ot.id_ot ? 'Reintentando...' : 'Reintentar visita'}
                 </button>
@@ -338,7 +338,7 @@
         <h3 class="font-semibold text-slate-800">Historial de Fallas</h3>
         <button
           onclick={() => historialClienteId = null}
-          class="text-slate-400 hover:text-slate-600 p-1"
+          class="btn-texto p-1 text-slate-400 hover:text-slate-600"
           aria-label="Cerrar"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">

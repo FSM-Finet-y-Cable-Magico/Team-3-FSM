@@ -317,8 +317,7 @@
     </label>
     {#if filtroTipo || filtroZona || filtroCaja}
       <button onclick={() => { filtroTipo = ''; filtroZona = ''; filtroCaja = ''; cargar(); }}
-        class="pb-1.5 text-sm text-blue-600 hover:text-blue-800 hover:underline cursor-pointer
-               transition-colors duration-200">Limpiar filtros</button>
+        class="btn-texto pb-1.5 hover:underline">Limpiar filtros</button>
     {/if}
   </div>
 
@@ -370,8 +369,7 @@
 
                     <div class="mt-2 flex items-center gap-3 flex-wrap text-sm">
                       {#if mapa(a)}
-                        <a class="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800
-                                  hover:underline cursor-pointer transition-colors duration-200"
+                        <a class="btn-texto gap-1.5 hover:underline"
                            href={mapa(a)} target="_blank" rel="noopener">
                           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                stroke-width="2" aria-hidden="true">
@@ -488,8 +486,7 @@
                                   </span>
                                 {:else}
                                   <button onclick={() => abrirConfirmacion(f)}
-                                    class="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer
-                                           transition-colors duration-200">
+                                    class="btn-texto hover:underline">
                                     {f.id_caja_nap ? 'confirmar' : 'asignar'}
                                   </button>
                                 {/if}
@@ -579,8 +576,7 @@
                     {#if nombreCaja(a)}
                       {#if mapa(a)}
                         <a href={mapa(a)} target="_blank" rel="noopener"
-                           class="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline
-                                  cursor-pointer transition-colors duration-200 text-xs mt-0.5">
+                           class="btn-texto hover:underline text-xs mt-0.5">
                           <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                stroke-width="2" aria-hidden="true">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>

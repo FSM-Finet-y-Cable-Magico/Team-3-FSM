@@ -23,7 +23,7 @@
     {#if type === 'password'}
       <button
         type="button"
-        class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+        class="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer text-gray-400 hover:text-gray-600"
         onclick={() => showPassword = !showPassword}
       >
         {showPassword ? '🙈' : '👁'}
