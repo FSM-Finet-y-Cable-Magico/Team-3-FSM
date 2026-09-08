@@ -15,7 +15,15 @@ async function bootstrap() {
   app.use(urlencoded({ extended: true, limit: '20mb' }));
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  app.enableCors({ origin: process.env.FRONTEND_URL, credentials: true });
+  app.enableCors({
+    origin: process.env.FRONTEND_URL,
+    credentials: true,
+    // Sin esto el navegador NO deja leer `Content-Disposition` desde fetch, y la
+    // descarga de un reporte pierde el nombre que fija CU-46
+    // (`Reporte_FSM_FiNet_2026-04.xlsx`): el archivo cae como "reporte.xlsx".
+    // Es solo de lectura de una cabecera que ya se manda; no abre nada nuevo.
+    exposedHeaders: ['Content-Disposition'],
+  });
   app.setGlobalPrefix('api');
 
   const config = new DocumentBuilder()
