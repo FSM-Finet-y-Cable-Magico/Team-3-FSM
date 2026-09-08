@@ -115,7 +115,13 @@
   function colorPuerto(estado: string | null): string {
     if (estado === 'OCUPADO') return 'bg-red-100 text-red-800 border-red-200';
     if (estado === 'RESERVADO') return 'bg-amber-100 text-amber-800 border-amber-200';
-    return 'bg-emerald-50 text-emerald-800 border-emerald-200';
+    // Gris, no verde: verde se lee como "disponible" y no lo sabemos.
+    return 'bg-slate-50 text-slate-600 border-slate-200';
+  }
+
+  /** Lo que se muestra en el chip del puerto. */
+  function etiquetaPuerto(estado: string | null): string {
+    return estado === 'LIBRE' || estado == null ? 'sin registro' : estado.toLowerCase();
   }
 </script>
 
@@ -162,7 +168,7 @@
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-5 pt-5 border-t border-slate-100">
         {#each [
           { l: 'Capacidad', v: detalle.capacidad_puertos, c: 'text-slate-900' },
-          { l: 'Libres', v: detalle.libres, c: 'text-emerald-700' },
+          { l: 'Sin registro', v: detalle.sin_registro, c: 'text-slate-600' },
           { l: 'Reservados', v: detalle.reservados, c: 'text-amber-700' },
           { l: 'Ocupados', v: detalle.ocupados, c: 'text-red-700' },
         ] as t}
@@ -226,7 +232,15 @@
 
   <div class="bg-white rounded-xl border border-slate-200 p-5">
     <h2 class="text-lg font-semibold text-slate-900 mb-1">Puertos</h2>
-    <p class="text-sm text-slate-500 mb-4">Haz clic en un puerto para cambiar su estado.</p>
+    <p class="text-sm text-slate-500 mb-3">Haz clic en un puerto para registrar lo que se encontró en terreno.</p>
+
+    <!-- El aviso no es decorativo: sin el, la grilla se lee como una promesa de
+         cupo, y la caja es del poste, no de FiNet. -->
+    <div class="mb-4 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+      <strong>«Sin registro» no es lo mismo que «libre».</strong> Las cajas están en
+      postes y las comparten varios operadores, así que la ocupación real solo se
+      confirma en terreno. Lo único seguro es lo marcado como ocupado.
+    </div>
 
     <div class="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
       {#each detalle.puertos as p (p.id_puerto)}
@@ -238,7 +252,7 @@
             class="w-full border rounded-lg px-2 py-3 text-center transition-colors cursor-pointer hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed {colorPuerto(p.estado)}"
           >
             <span class="block text-sm font-semibold tabular-nums">{p.numero_puerto}</span>
-            <span class="block text-[10px] uppercase tracking-wide mt-0.5">{p.estado ?? '—'}</span>
+            <span class="block text-[10px] uppercase tracking-wide mt-0.5">{etiquetaPuerto(p.estado)}</span>
           </button>
 
           {#if puertoAbierto === p.id_puerto}
