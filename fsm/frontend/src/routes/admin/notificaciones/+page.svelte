@@ -165,7 +165,7 @@
 
 <svelte:head><title>Notificaciones</title></svelte:head>
 
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
+<div class="space-y-5">
 
   <div>
     <h1 class="text-2xl font-bold text-slate-900">Notificaciones</h1>
