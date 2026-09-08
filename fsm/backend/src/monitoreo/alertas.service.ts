@@ -584,6 +584,100 @@ export class AlertasService {
   }
 
   /** Contadores para la cabecera del panel. */
+  /**
+   * Panel consolidado de clientes criticos, agrupado por caja NAP (CU-15).
+   *
+   * RF-13 lo pide para que el jefe tecnico vea "de un vistazo que cajas tienen
+   * problemas y cuantos clientes afectados". Por eso agrupa por CAJA y no lista
+   * clientes sueltos: 200 alertas individuales no dicen donde mandar la
+   * cuadrilla; "la NAP 6 tiene 12 de 14 clientes caidos" si.
+   *
+   * Reusa `cargarEstado`, el mismo lector que alimenta el motor de alertas, para
+   * que el panel y las alertas no puedan contradecirse. Si contaran por su
+   * cuenta, un dia dirian cosas distintas sobre la misma caja y nadie sabria
+   * cual creer.
+   *
+   * "Critico" son las dos condiciones que el jefe tecnico despacha: sin senal, o
+   * potencia fuera del rango operativo. La franja preventiva NO cuenta como
+   * critica -- es su propia alerta, y mezclarla inflaria el conteo con clientes
+   * que todavia tienen servicio.
+   */
+  async criticosPorCaja(id_empresa: number, zona?: string) {
+    const onts = await this.cargarEstado(id_empresa);
+
+    const esCritica = (o: EstadoOnt) =>
+      (o.estado_conexion != null && o.estado_conexion !== 'ONLINE') ||
+      potenciaFueraDeRango(o.potencia_dbm);
+
+    // Se agrupa por id_caja_nap y no por el nombre normalizado: dos cajas
+    // distintas pueden llamarse igual en zonas distintas -- la red real de FiNet
+    // tiene nueve "NAP 5" -- y juntarlas mezclaria clientes de barrios lejanos
+    // en una sola fila.
+    const porCaja = new Map<number, EstadoOnt[]>();
+    const sinCaja: EstadoOnt[] = [];
+    for (const o of onts) {
+      if (o.id_caja_nap == null) {
+        if (esCritica(o)) sinCaja.push(o);
+        continue;
+      }
+      const lista = porCaja.get(o.id_caja_nap);
+      if (lista) lista.push(o);
+      else porCaja.set(o.id_caja_nap, [o]);
+    }
+
+    const cajas = await this.prisma.caja_nap.findMany({
+      where: { id_caja_nap: { in: [...porCaja.keys()] } },
+      select: {
+        id_caja_nap: true,
+        identificador_unico: true,
+        zona: true,
+        latitud: true,
+        longitud: true,
+      },
+    });
+    const infoCaja = new Map(cajas.map((c) => [c.id_caja_nap, c]));
+
+    const filas = [...porCaja]
+      .map(([id, miembros]) => {
+        const criticos = miembros.filter(esCritica);
+        const info = infoCaja.get(id);
+        const sinSenal = criticos.filter(
+          (o) => o.estado_conexion != null && o.estado_conexion !== 'ONLINE',
+        ).length;
+        return {
+          id_caja_nap: id,
+          identificador_unico: info?.identificador_unico ?? null,
+          zona: info?.zona ?? null,
+          latitud: info?.latitud ?? null,
+          longitud: info?.longitud ?? null,
+          clientes_en_la_caja: miembros.length,
+          criticos: criticos.length,
+          sin_senal: sinSenal,
+          potencia_fuera_de_rango: criticos.length - sinSenal,
+          // Cuanto de la caja esta afectado. Es lo que decide si conviene
+          // mandar una cuadrilla a la caja o tecnicos a cada domicilio: el
+          // mismo criterio con el que CU-17 declara una falla de caja.
+          pct_afectado: Math.round((criticos.length / miembros.length) * 100),
+        };
+      })
+      .filter((f) => f.criticos > 0)
+      .filter((f) => !zona || (f.zona ?? '').toLowerCase().includes(zona.toLowerCase()))
+      // Primero la caja mas comprometida, y a igual porcentaje la que afecta a
+      // mas gente: es el orden en que conviene despachar.
+      .sort((a, b) => b.pct_afectado - a.pct_afectado || b.criticos - a.criticos);
+
+    return {
+      cajas: filas,
+      totales: {
+        cajas_afectadas: filas.length,
+        clientes_criticos: filas.reduce((n, f) => n + f.criticos, 0),
+        // Criticos que no se pudieron atribuir a ninguna caja: no participan de
+        // la agrupacion, pero esconderlos daria un total que no cuadra.
+        criticos_sin_caja: sinCaja.length,
+      },
+    };
+  }
+
   async resumen(id_empresa: number) {
     const abiertas = await this.prisma.alerta_monitoreo.groupBy({
       by: ['tipo', 'severidad'],

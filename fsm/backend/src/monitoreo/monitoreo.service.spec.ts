@@ -4,6 +4,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { MonitoreoGateway } from './monitoreo.gateway.js';
 import { RegistroOntService } from './registro-ont.service.js';
 import { MonitoreoService } from './monitoreo.service.js';
 import {
@@ -63,6 +64,10 @@ describe('MonitoreoService.ingestarLecturas', () => {
         { provide: PrismaService, useValue: prismaMock },
         { provide: RegistroOntService, useValue: registroMock },
         { provide: FUENTE_MONITOREO, useValue: fuenteMock },
+        // El gateway se dobla: estas pruebas son de la ingesta y del
+        // aislamiento, no del WebSocket. `publicar` se espia igual para poder
+        // afirmar que la ingesta avisa, y que una consulta NO avisa.
+        { provide: MonitoreoGateway, useValue: { publicar: jest.fn() } },
       ],
     }).compile();
 

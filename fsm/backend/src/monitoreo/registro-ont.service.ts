@@ -32,8 +32,13 @@ export class RegistroOntService {
    * empresa concreta, así que TODA la ONT que entra por ahí es de esa empresa —
    * no se deduce por fila. Configurable por si mañana hay una fuente por
    * empresa; hoy es una sola.
+   *
+   * Publico porque es la unica fuente de verdad sobre "de quien es lo que entra
+   * por la fuente", y `MonitoreoService` la necesita para saber a que sala del
+   * WebSocket publicar. Duplicar la lectura de la variable en dos servicios es
+   * como terminan desincronizados.
    */
-  private get idEmpresaFuente(): number {
+  get idEmpresaFuente(): number {
     return Number(this.config.get('MONITOREO_ID_EMPRESA') ?? 1);
   }
 

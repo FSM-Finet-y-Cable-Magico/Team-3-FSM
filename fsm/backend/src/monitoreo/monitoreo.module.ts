@@ -7,6 +7,8 @@ import { DescubrimientoService } from './descubrimiento.service.js';
 import { RegistroOntService } from './registro-ont.service.js';
 import { LigadoCajaService } from './ligado-caja.service.js';
 import { AlertasService } from './alertas.service.js';
+import { MonitoreoGateway } from './monitoreo.gateway.js';
+import { AuthModule } from '../auth/auth.module.js';
 import { FUENTE_MONITOREO, type FuenteMonitoreo } from './fuente/fuente-monitoreo.js';
 import { MockMonitoreo } from './fuente/mock-monitoreo.js';
 import { SmartOltClient } from './fuente/smartolt.client.js';
@@ -45,6 +47,9 @@ const fuenteProvider = {
 
 @Module({
   // PrismaModule es @Global y ConfigModule es global: no hace falta importarlos.
+  // AuthModule exporta JwtModule: MonitoreoGateway valida el token con el mismo
+  // secreto que el resto del sistema, igual que hace DashboardModule.
+  imports: [AuthModule],
   controllers: [MonitoreoController],
   providers: [
     fuenteProvider,
@@ -54,6 +59,7 @@ const fuenteProvider = {
     MonitoreoService,
     MonitoreoPollerService,
     DescubrimientoService,
+    MonitoreoGateway,
   ],
   exports: [MonitoreoService, AlertasService],
 })
