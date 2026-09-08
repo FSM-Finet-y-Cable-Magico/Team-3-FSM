@@ -31,6 +31,12 @@ export class MonitoreoController {
 
   /** Contadores de alertas abiertas, para la cabecera del panel. */
   @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('alertas/resumen')
+  resumenAlertas(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.alertas.resumen(id);
+  }
+
   /**
    * Panel consolidado de clientes criticos por caja NAP (CU-15 / RF-13).
    * `zona` acota a una zona geografica.
@@ -44,12 +50,6 @@ export class MonitoreoController {
   ) {
     const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
     return this.alertas.criticosPorCaja(id, zona);
-  }
-
-  @Get('alertas/resumen')
-  resumenAlertas(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
-    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
-    return this.alertas.resumen(id);
   }
 
   /** Zonas y cajas con alertas abiertas, para poblar los filtros del panel. */
