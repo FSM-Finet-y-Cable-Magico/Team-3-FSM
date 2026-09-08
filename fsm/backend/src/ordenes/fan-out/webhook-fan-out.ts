@@ -38,7 +38,13 @@ export class WebhookFanOut implements FanOutCierre {
         });
 
         if (res.ok) {
-          this.logger.log(`cierre ${payload.id_ot} → ${destino.nombre}: OK`);
+          // Un 200 no significa que todo salio bien. G1 confirmo el 8-sept-2026
+          // que responde `{ success, data }` con un `estado_proceso` que puede
+          // ser PROCESADO o PROCESADO_CON_DISCREPANCIAS, y en el segundo caso
+          // trae `discrepancias` con el detalle --por ejemplo, una serie que en
+          // su inventario no existe. Antes se registraba como "OK" a secas y
+          // esas discrepancias eran invisibles de nuestro lado.
+          await this.registrarRespuesta(destino, payload, res);
           return;
         }
         // 4xx = discrepancia de negocio, no se reintenta (G1 la registra como ajuste).
@@ -65,4 +71,64 @@ export class WebhookFanOut implements FanOutCierre {
       `cierre ${payload.id_ot} → ${destino.nombre}: agotados los reintentos. Queda para reconciliación por GET.`,
     );
   }
+
+  /**
+   * Lee la respuesta de un destino y registra lo que informe.
+   *
+   * Es best-effort a proposito: el cierre ya esta guardado y el fan-out no lo
+   * bloquea. Si el cuerpo no es el esperado --otro grupo, otra version-- se
+   * registra el exito y se sigue; fallar aca convertiria un cierre correcto en
+   * un error por culpa de un formato de respuesta.
+   */
+  private async registrarRespuesta(
+    destino: Destino,
+    payload: PayloadCierre,
+    res: Response,
+  ): Promise<void> {
+    const prefijo = `cierre ${payload.id_ot} → ${destino.nombre}`;
+    try {
+      const cuerpo = (await res.json()) as {
+        data?: {
+          estado_proceso?: string;
+          discrepancias?: unknown;
+          duplicado?: boolean;
+          srv?: string;
+        };
+      };
+      const d = cuerpo?.data;
+      if (!d) {
+        this.logger.log(`${prefijo}: OK`);
+        return;
+      }
+
+      // `discrepancias` llega como objeto cuando hay una y como arreglo vacio
+      // cuando no hay ninguna: se normaliza antes de contar.
+      const lista = Array.isArray(d.discrepancias)
+        ? d.discrepancias
+        : d.discrepancias
+          ? [d.discrepancias]
+          : [];
+
+      if (lista.length > 0) {
+        // WARN y no LOG: es lo unico de todo el fan-out que pide que alguien
+        // mire. Una serie que el inventario no reconoce se corrige a mano.
+        this.logger.warn(
+          `${prefijo}: ${d.estado_proceso ?? 'PROCESADO_CON_DISCREPANCIAS'} · ` +
+            `${lista.length} discrepancia(s): ${JSON.stringify(lista)}`,
+        );
+        return;
+      }
+
+      const extras = [
+        d.duplicado ? 'ya estaba procesado' : null,
+        d.srv ? `SRV ${d.srv}` : null,
+      ].filter(Boolean);
+      this.logger.log(
+        `${prefijo}: ${d.estado_proceso ?? 'OK'}${extras.length ? ' · ' + extras.join(' · ') : ''}`,
+      );
+    } catch {
+      this.logger.log(`${prefijo}: OK (respuesta no interpretable)`);
+    }
+  }
+
 }
