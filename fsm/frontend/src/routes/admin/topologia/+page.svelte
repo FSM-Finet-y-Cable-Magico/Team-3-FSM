@@ -105,7 +105,21 @@
         longitud: nLongitud.trim() ? Number(nLongitud) : undefined,
       });
       mostrarNueva = false;
-      aviso = `Caja ${creada.identificador_unico} creada con ${nCapacidad} puertos`;
+
+      // Limpiar los filtros al crear. Si no, la caja recien creada puede caer
+      // fuera del filtro vigente --lo tipico: se crea sin zona con el filtro
+      // puesto en una-- y parece que no se guardo, aunque el contador suba.
+      const filtrabaAlgo = !!busqueda || !!zonaFiltro || soloConLibres;
+      busqueda = '';
+      zonaFiltro = '';
+      soloConLibres = false;
+
+      aviso =
+        `Caja ${creada.identificador_unico} creada con ${nCapacidad} puertos` +
+        (creada.identificador_unico !== nIdentificador.trim()
+          ? `. Se le agregó el sufijo porque «${nIdentificador.trim()}» ya estaba en uso`
+          : '') +
+        (filtrabaAlgo ? '. Se limpiaron los filtros para que puedas verla' : '');
       await cargar();
     } catch (err) {
       // Acá aterriza el 409 de identificador duplicado, que explica por qué dos
