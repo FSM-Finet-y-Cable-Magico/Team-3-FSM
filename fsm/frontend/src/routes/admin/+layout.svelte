@@ -42,11 +42,14 @@
   // oficina y el tecnico trabaja en /terreno. Antes aparecia en Dashboard y en
   // Ordenes de Trabajo, pero el backend responde 403 a un TECNICO en
   // GET /dashboard, asi que el enlace lo llevaba a una pantalla rota.
+  const ICON_RED = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m-6-8h6M5 5a2 2 0 012-2h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5z"/></svg>`;
+
   const navLinks = $derived([
     { href: '/admin/dashboard', label: 'Dashboard', icon: ICON_HOME, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/clientes', label: 'Clientes', icon: ICON_USERS, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/ot', label: 'Ordenes de Trabajo', icon: ICON_CLIP, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/alertas', label: 'Alertas de Red', icon: ICON_ALERTA, roles: ['ADMIN', 'JEFE_TECNICO'] },
+    { href: '/admin/topologia', label: 'Topología', icon: ICON_RED, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/usuarios', label: 'Usuarios', icon: ICON_GROUP, roles: ['ADMIN'] },
   ]);
 
