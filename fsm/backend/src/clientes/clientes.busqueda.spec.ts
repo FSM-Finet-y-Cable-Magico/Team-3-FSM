@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClientesService } from './clientes.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ReparacionesRecurrentesService } from '../ordenes/reparaciones-recurrentes.service.js';
 
 describe('busqueda de clientes por criterios multiples', () => {
   const findMany = jest.fn(async (_args?: any) => []);
@@ -15,6 +16,11 @@ describe('busqueda de clientes por criterios multiples', () => {
     jest.clearAllMocks();
     moduleRef = await Test.createTestingModule({
       providers: [
+        {
+          // Doble: estas pruebas no son de RF-08. La regla tiene su propio spec.
+          provide: ReparacionesRecurrentesService,
+          useValue: { evaluar: jest.fn(async () => ({ activa: false, total_reparaciones_30_dias: 0, ots: [] })) },
+        },
         ClientesService,
         { provide: PrismaService, useValue: { cliente: { findMany, count } } },
       ],

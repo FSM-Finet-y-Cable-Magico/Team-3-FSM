@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ReparacionesRecurrentesService } from '../ordenes/reparaciones-recurrentes.service.js';
 import { validarRut } from '../common/utils/rut.util.js';
 import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
@@ -23,7 +24,8 @@ const MAX_CONTRATOS_ACTIVOS = 50;
 
 @Injectable()
 export class ClientesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private reparaciones: ReparacionesRecurrentesService,
+    private prisma: PrismaService) {}
 
   async registrarCliente(dto: RegistrarClienteDto, userId: number, id_empresa: number) {
     if (!validarRut(dto.rut)) {
@@ -131,18 +133,13 @@ export class ClientesService {
         fecha_completada: true,
       },
     });
-    const hace30Dias = new Date();
-    hace30Dias.setDate(hace30Dias.getDate() - 30);
-
-    const totalReparaciones30Dias = await this.prisma.orden_trabajo.count({
-      where: {
-        id_cliente: cliente.id_cliente,
-        id_empresa,
-        tipo_ot: 'REPARACION',
-        estado: { not: 'CANCELADA' },
-        fecha_creacion: { gte: hace30Dias },
-      },
-    });
+    // RF-08. La regla vive en `ReparacionesRecurrentesService` y no aca: antes
+    // estaba duplicada entre este archivo y `ordenes.service`, con el mismo
+    // error copiado en los dos.
+    const reparacionesRecurrentes = await this.reparaciones.evaluar(
+      cliente.id_cliente,
+      id_empresa,
+    );
 
     return {
       cliente: {
@@ -174,11 +171,7 @@ export class ClientesService {
         })),
       },
       historial_ot,
-      alerta_reparaciones_30_dias: {
-        activa: totalReparaciones30Dias >= 3,
-        total_reparaciones_30_dias: totalReparaciones30Dias,
-        desde: hace30Dias,
-      },
+      alerta_reparaciones_30_dias: reparacionesRecurrentes,
     };
   }
 

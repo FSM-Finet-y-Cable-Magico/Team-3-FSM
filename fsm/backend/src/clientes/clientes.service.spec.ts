@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test } from '@nestjs/testing';
 import { ClientesService } from './clientes.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ReparacionesRecurrentesService } from '../ordenes/reparaciones-recurrentes.service.js';
 
 const RUT = '11111111-1';
 
@@ -39,6 +40,11 @@ describe('servicios activos de la ficha de cliente', () => {
     };
     const moduleRef = await Test.createTestingModule({
       providers: [
+        {
+          // Doble: estas pruebas no son de RF-08. La regla tiene su propio spec.
+          provide: ReparacionesRecurrentesService,
+          useValue: { evaluar: jest.fn(async () => ({ activa: false, total_reparaciones_30_dias: 0, ots: [] })) },
+        },
         ClientesService,
         {
           provide: PrismaService,

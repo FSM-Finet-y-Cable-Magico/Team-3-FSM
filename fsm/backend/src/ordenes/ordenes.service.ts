@@ -2,6 +2,7 @@ import { normalizarPaginacion } from '../common/utils/paginacion.util.js';
 import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, forwardRef } from '@nestjs/common';
 import { Prisma, type orden_trabajo } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ReparacionesRecurrentesService } from './reparaciones-recurrentes.service.js';
 import { validarRut } from '../common/utils/rut.util.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
@@ -38,6 +39,7 @@ export class OrdenesService {
   private readonly logger = new Logger(OrdenesService.name);
 
   constructor(
+    private reparaciones: ReparacionesRecurrentesService,
     private prisma: PrismaService,
     private cloudinary: CloudinaryService,
     @Inject(forwardRef(() => DashboardGateway)) private dashboardGateway: DashboardGateway,
@@ -647,7 +649,7 @@ export class OrdenesService {
     const advertencia_potencia =
       dto.potencia_optica_dbm < -24 || dto.potencia_optica_dbm > -19;
     const alerta_reparaciones_30_dias = otActualizada?.id_cliente
-      ? await this.alertaReparacionesCliente(otActualizada.id_cliente, id_empresa)
+      ? await this.reparaciones.evaluar(otActualizada.id_cliente, id_empresa)
       : null;
 
     this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
@@ -758,24 +760,4 @@ export class OrdenesService {
     return Math.max(0, Math.floor((Date.now() - new Date(fecha).getTime()) / 86400000));
   }
 
-  private async alertaReparacionesCliente(id_cliente: number, id_empresa: number) {
-    const desde = new Date();
-    desde.setDate(desde.getDate() - 30);
-
-    const total = await this.prisma.orden_trabajo.count({
-      where: {
-        id_cliente,
-        id_empresa,
-        tipo_ot: 'REPARACION',
-        estado: { not: 'CANCELADA' },
-        fecha_creacion: { gte: desde },
-      },
-    });
-
-    return {
-      activa: total >= 3,
-      total_reparaciones_30_dias: total,
-      desde,
-    };
-  }
 }
