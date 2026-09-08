@@ -213,7 +213,7 @@ describe('topologia de planta externa', () => {
       expect(r[0].libres).toBe(2);
     });
 
-    it('cuenta libres, reservados y ocupados por separado', async () => {
+    it('separa lo confirmado ocupado de lo que solo no tiene registro', async () => {
       cajaFindFirst.mockImplementation(async () => ({
         id_caja_nap: 1,
         identificador_unico: 'NAP 6',
@@ -228,7 +228,10 @@ describe('topologia de planta externa', () => {
 
       const r = await service.puertosDeCaja(1, 1);
 
-      expect({ l: r.libres, r: r.reservados, o: r.ocupados }).toEqual({ l: 1, r: 1, o: 2 });
+      // `sin_registro`, no `libres`: las cajas son de los postes y las comparten
+      // varios operadores, asi que nadie puede afirmar que un puerto este libre
+      // sin haberlo mirado. Lo unico duro es lo OCUPADO, que alguien confirmo.
+      expect({ s: r.sin_registro, r: r.reservados, o: r.ocupados }).toEqual({ s: 1, r: 1, o: 2 });
       expect(r.puertos).toHaveLength(4);
     });
   });

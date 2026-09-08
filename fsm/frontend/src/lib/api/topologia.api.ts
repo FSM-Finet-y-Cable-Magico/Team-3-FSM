@@ -30,8 +30,14 @@ export interface DetallePuertos {
   identificador_unico: string | null;
   zona: string | null;
   capacidad_puertos: number;
-  libres: number;
+  /**
+   * Puertos SIN registro de ocupación. No significa "disponible": las cajas
+   * están en postes y las comparten varios operadores, así que nadie puede
+   * afirmar que un puerto esté libre hasta que un técnico lo mira.
+   */
+  sin_registro: number;
   reservados: number;
+  /** Confirmado en terreno, con cliente asociado. Es el único dato duro. */
   ocupados: number;
   puertos: PuertoNap[];
 }

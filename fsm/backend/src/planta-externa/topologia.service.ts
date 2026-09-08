@@ -256,8 +256,21 @@ export class TopologiaService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Puertos de una caja, con su estado. Es lo que mira quien va a conectar a un
-   * cliente nuevo: cuales quedan libres y cual toca.
+   * Puertos de una caja, con lo que se sabe de cada uno.
+   *
+   * OJO CON LA SEMANTICA, que no es la que sugiere el nombre del CU. Las cajas
+   * NAP estan en postes y NO son exclusivas de FiNet: otros operadores usan la
+   * misma caja. El sistema no puede saber si un puerto esta realmente libre
+   * hasta que un tecnico lo mira en terreno.
+   *
+   * Por eso `LIBRE` significa "sin registro", no "disponible garantizado", y
+   * `sin_registro` se llama asi a proposito: publicar 14.576 puertos como
+   * disponibles cuando nadie los ha visto seria una promesa que la realidad no
+   * respalda, y el jefe tecnico planificaria sobre humo.
+   *
+   * Lo que si es dato duro es `ocupados`: alguien lo confirmo y dejo el cliente
+   * asociado. Es el mismo criterio de la confirmacion de caja del monitoreo --
+   * el sistema no adivina, registra lo que alguien vio.
    */
   async puertosDeCaja(id_caja_nap: number, id_empresa: number) {
     const caja = await this.prisma.caja_nap.findFirst({
@@ -274,8 +287,10 @@ export class TopologiaService {
       identificador_unico: caja.identificador_unico,
       zona: caja.zona,
       capacidad_puertos: caja.capacidad_puertos ?? caja.puertos.length,
-      libres: cuenta(ESTADO_PUERTO.LIBRE),
+      /** Nadie confirmo su estado en terreno. NO es "disponible". */
+      sin_registro: cuenta(ESTADO_PUERTO.LIBRE),
       reservados: cuenta(ESTADO_PUERTO.RESERVADO),
+      /** Confirmado en terreno, con cliente asociado. Este si es dato duro. */
       ocupados: cuenta(ESTADO_PUERTO.OCUPADO),
       puertos: caja.puertos.map((p) => ({
         id_puerto: p.id_puerto,
@@ -287,11 +302,16 @@ export class TopologiaService {
   }
 
   /**
-   * Cajas con al menos un puerto libre, de la mas holgada a la mas justa.
+   * Cajas con puertos SIN OCUPACION REGISTRADA, de la mas holgada a la mas
+   * justa. `zona` acota la busqueda.
    *
-   * Ordenar por libres y no por cercania es a proposito: el jefe tecnico
-   * pregunta esto cuando ya sabe A QUE ZONA va, y lo que necesita es no llenar
-   * una caja al tope. `zona` acota la busqueda.
+   * No confundir con "cajas disponibles": ver la nota de `puertosDeCaja`. Las
+   * cajas son de los postes y compartidas entre operadores, asi que esto no
+   * dice donde HAY puerto libre, dice donde NO CONSTA que este ocupado. Sirve
+   * para descartar las que ya se sabe llenas, no para prometer un cupo.
+   *
+   * Se ordena por esa cuenta porque, a falta de dato mejor, una caja con 16 sin
+   * registro es mejor candidata a tener cupo que una con 1.
    */
   async cajasConDisponibilidad(id_empresa: number, zona?: string) {
     const cajas = await this.prisma.caja_nap.findMany({

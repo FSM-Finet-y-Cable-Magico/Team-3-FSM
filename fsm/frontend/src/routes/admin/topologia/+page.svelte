@@ -135,7 +135,9 @@
   <div class="flex items-center justify-between flex-wrap gap-3">
     <div>
       <h1 class="text-2xl font-bold text-slate-900">Topología de red</h1>
-      <p class="text-sm text-slate-500 mt-0.5">Cajas NAP y disponibilidad de puertos</p>
+      <p class="text-sm text-slate-500 mt-0.5">
+        Cajas NAP y ocupación registrada de sus puertos
+      </p>
     </div>
     <button
       onclick={abrirNueva}
@@ -161,8 +163,8 @@
     {#each [
       { l: 'Cajas', v: totales.cajas },
       { l: 'Puertos totales', v: totales.puertos },
-      { l: 'Puertos libres', v: totales.libres },
-      { l: 'Cajas llenas', v: totales.llenas },
+      { l: 'Ocupación registrada', v: totales.puertos - totales.libres },
+      { l: 'Cajas sin cupo', v: totales.llenas },
     ] as t}
       <div class="bg-white rounded-xl border border-slate-200 px-4 py-3">
         <p class="text-xs uppercase tracking-wide text-slate-500">{t.l}</p>
@@ -171,6 +173,14 @@
     {/each}
   </div>
 {/if}
+
+<!-- Sin esto la columna "sin registro" se lee como "libre", y la caja es del
+     poste: la comparten varios operadores y nadie garantiza el cupo. -->
+<div class="mb-5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+  La ocupación que se muestra es <strong>la registrada por el equipo</strong>. Las
+  cajas están en postes compartidos con otros operadores, así que un puerto sin
+  registro no está garantizado: se confirma en terreno.
+</div>
 
 <div class="bg-white rounded-xl border border-slate-200 p-4 mb-5">
   <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -197,7 +207,7 @@
     <div class="flex items-end">
       <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
         <input type="checkbox" bind:checked={soloConLibres} class="rounded border-slate-300 cursor-pointer" />
-        Solo con puertos libres
+        Solo con puertos sin ocupar
       </label>
     </div>
     <div class="flex items-end justify-end">
@@ -223,8 +233,8 @@
             <th class="px-4 py-3 font-medium">Caja</th>
             <th class="px-4 py-3 font-medium">Zona</th>
             <th class="px-4 py-3 font-medium">Poste</th>
-            <th class="px-4 py-3 font-medium">Ocupación</th>
-            <th class="px-4 py-3 font-medium text-right">Libres</th>
+            <th class="px-4 py-3 font-medium">Ocupación registrada</th>
+            <th class="px-4 py-3 font-medium text-right">Sin registro</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
