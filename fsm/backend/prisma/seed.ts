@@ -93,33 +93,45 @@ async function main() {
   // del sistema, las dos empresas las ven y ninguna las puede editar --si una
   // las tocara, cambiaria tambien las de la otra. Para tener una propia se
   // duplican.
+  // Plantillas base de notificacion (RF-43). Van con `id_empresa` en null: son
+  // del sistema, las dos empresas las ven y ninguna las puede editar --si una
+  // las tocara, cambiaria tambien las de la otra. Para tener una propia se
+  // duplican.
+  //
+  // Los cuatro tipos son los que nombra RF-43, y cada una lleva su tiempo
+  // estimado de reparacion, que el RF exige y el mensaje al cliente incluye.
   const plantillas = [
     {
-      tipo_evento: 'FALLA_MASIVA',
+      tipo_evento: 'CORTE_MASIVO_CAJA_NAP',
       canal: 'SMS',
       contenido_texto:
         'Hola {{cliente}}: detectamos una falla que afecta el servicio en {{zona}}. ' +
-        'Ya estamos trabajando en ella. {{empresa}}',
+        'Estimamos restablecerlo en {{tiempo_estimado}}. {{empresa}}',
+      tiempo_estimado_reparacion: '4 a 6 horas',
     },
     {
-      tipo_evento: 'OT_DESPACHADA',
+      tipo_evento: 'CORTE_IMPREVISTO',
       canal: 'SMS',
       contenido_texto:
-        'Hola {{cliente}}: enviamos una cuadrilla a revisar la falla de {{zona}} el {{fecha}}. {{empresa}}',
+        'Hola {{cliente}}: un dano en la red dejo sin servicio a {{zona}}. ' +
+        'Ya hay una cuadrilla en terreno. Estimamos {{tiempo_estimado}}. {{empresa}}',
+      tiempo_estimado_reparacion: '6 a 12 horas',
     },
     {
-      tipo_evento: 'SERVICIO_RESTABLECIDO',
+      tipo_evento: 'MANTENCION_PROGRAMADA',
       canal: 'SMS',
       contenido_texto:
-        'Hola {{cliente}}: el servicio en {{zona}} fue restablecido a las {{hora}}. ' +
-        'Si sigues sin conexion, avisanos. {{empresa}}',
+        'Hola {{cliente}}: el {{fecha}} haremos una mantencion programada en {{zona}}. ' +
+        'El servicio se interrumpira {{tiempo_estimado}}. {{empresa}}',
+      tiempo_estimado_reparacion: 'cerca de 2 horas',
     },
     {
-      tipo_evento: 'VISITA_AGENDADA',
-      canal: 'EMAIL',
+      tipo_evento: 'FALLA_TELEVISION',
+      canal: 'SMS',
       contenido_texto:
-        'Hola {{cliente}}: tu visita tecnica quedo agendada para el {{fecha}}. ' +
-        'El tecnico llegara al domicilio ese dia. {{empresa}}',
+        'Hola {{cliente}}: estamos trabajando en una falla del servicio de television en {{zona}}. ' +
+        'Estimamos {{tiempo_estimado}}. Tu internet no esta afectado. {{empresa}}',
+      tiempo_estimado_reparacion: '3 a 5 horas',
     },
   ];
   for (const pl of plantillas) {

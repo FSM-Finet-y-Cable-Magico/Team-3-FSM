@@ -50,6 +50,8 @@ export interface ResumenEnvio {
   ya_avisados: number;
   canal: CanalNotificacion;
   simulado: boolean;
+  /** Lo que se le informo al cliente como tiempo estimado, si lo hubo. */
+  tiempo_estimado: string | null;
 }
 
 /**
@@ -100,7 +102,13 @@ export class NotificacionesService {
 
   async crearPlantilla(
     id_empresa: number,
-    datos: { tipo_evento?: string; canal: string; contenido_texto: string; activa?: boolean },
+    datos: {
+      tipo_evento?: string;
+      canal: string;
+      contenido_texto: string;
+      tiempo_estimado_reparacion?: string;
+      activa?: boolean;
+    },
   ) {
     this.exigirVariablesConocidas(datos.contenido_texto);
     return this.prisma.plantilla_notificacion.create({
@@ -113,7 +121,13 @@ export class NotificacionesService {
   async editarPlantilla(
     id_plantilla: number,
     id_empresa: number,
-    datos: { tipo_evento?: string; canal?: string; contenido_texto?: string; activa?: boolean },
+    datos: {
+      tipo_evento?: string;
+      canal?: string;
+      contenido_texto?: string;
+      tiempo_estimado_reparacion?: string;
+      activa?: boolean;
+    },
   ) {
     const actual = await this.plantillaPropia(id_plantilla, id_empresa);
     if (datos.contenido_texto !== undefined) this.exigirVariablesConocidas(datos.contenido_texto);
@@ -300,7 +314,7 @@ export class NotificacionesService {
   async notificarAlerta(
     id_alerta: number,
     id_empresa: number,
-    opciones: { id_plantilla: number; canal?: string },
+    opciones: { id_plantilla: number; canal?: string; tiempo_estimado?: string },
   ): Promise<ResumenEnvio> {
     const { alerta, destinatarios } = await this.destinatariosDeAlerta(id_alerta, id_empresa);
 
@@ -337,6 +351,9 @@ export class NotificacionesService {
         fecha: ahora.toLocaleDateString('es-CL'),
         hora: ahora.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
         empresa: empresa?.nombre,
+        // Lo que se informe en ESTE incidente manda sobre el valor por defecto
+        // de la plantilla: dos cortes de la misma caja no duran lo mismo.
+        tiempo_estimado: opciones.tiempo_estimado?.trim() || plantilla.tiempo_estimado_reparacion,
       }),
     }));
 
@@ -350,6 +367,8 @@ export class NotificacionesService {
       ya_avisados: destinatarios.filter((d) => d.ya_avisado).length,
       canal,
       simulado: true,
+      tiempo_estimado:
+        opciones.tiempo_estimado?.trim() || plantilla.tiempo_estimado_reparacion || null,
     };
     this.logger.log(
       `Alerta ${id_alerta}: ${resumen.enviadas} avisos registrados (${canal}), ` +

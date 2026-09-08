@@ -20,6 +20,16 @@ export class CrearPlantillaDto {
   @MaxLength(500)
   contenido_texto: string;
 
+
+  /**
+   * RF-43. Texto libre porque en la practica se comunica en rangos: "2 a 4
+   * horas", "durante el dia de hoy". El limite de 60 es el de la columna.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  tiempo_estimado_reparacion?: string;
+
   @IsOptional()
   @IsBoolean()
   activa?: boolean;
@@ -39,6 +49,15 @@ export class EditarPlantillaDto {
   @IsNotEmpty()
   @MaxLength(500)
   contenido_texto?: string;
+
+  /**
+   * RF-43. Texto libre porque en la practica se comunica en rangos: "2 a 4
+   * horas", "durante el dia de hoy". El limite de 60 es el de la columna.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  tiempo_estimado_reparacion?: string;
 
   @IsOptional()
   @IsBoolean()

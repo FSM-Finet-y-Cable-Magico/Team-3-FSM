@@ -37,16 +37,22 @@ export type EstadoEnvio = (typeof ESTADO_ENVIO)[keyof typeof ESTADO_ENVIO];
 
 /**
  * Eventos que puede describir una plantilla. `tipo_evento` es VARCHAR(60).
+ *
+ * Son EXACTAMENTE los cuatro que nombra RF-43, ni uno mas. La version anterior
+ * traia otros tres --OT_DESPACHADA, SERVICIO_RESTABLECIDO, VISITA_AGENDADA--
+ * que no salian del requerimiento sino de suponer que harian falta. Agregar
+ * tipos que el RF no pide es inventar alcance, y ademas dejaba fuera tres de
+ * los cuatro que si pide.
  */
 export const TIPO_EVENTO = {
-  /** CU-48: hay una falla que deja sin servicio a varios clientes. */
-  FALLA_MASIVA: 'FALLA_MASIVA',
-  /** Se despacho una cuadrilla por esa falla. */
-  OT_DESPACHADA: 'OT_DESPACHADA',
-  /** El servicio volvio. */
-  SERVICIO_RESTABLECIDO: 'SERVICIO_RESTABLECIDO',
-  /** Recordatorio de visita agendada. */
-  VISITA_AGENDADA: 'VISITA_AGENDADA',
+  /** Corte avisado con anticipacion (RF-44 lo exige con 24 h). */
+  MANTENCION_PROGRAMADA: 'MANTENCION_PROGRAMADA',
+  /** Dano fisico: accidente vehicular, robo de cobre. */
+  CORTE_IMPREVISTO: 'CORTE_IMPREVISTO',
+  /** Falla de television, que el cliente vive distinto de un corte de internet. */
+  FALLA_TELEVISION: 'FALLA_TELEVISION',
+  /** CU-48: la caja NAP caida que deja a varios sin servicio. */
+  CORTE_MASIVO_CAJA_NAP: 'CORTE_MASIVO_CAJA_NAP',
 } as const;
 
 export type TipoEvento = (typeof TIPO_EVENTO)[keyof typeof TIPO_EVENTO];
@@ -65,6 +71,8 @@ export const VARIABLES_PLANTILLA = [
   'fecha',
   'hora',
   'empresa',
+  /** RF-42: el mensaje al cliente debe incluir el tiempo estimado. */
+  'tiempo_estimado',
 ] as const;
 
 export type VariablePlantilla = (typeof VARIABLES_PLANTILLA)[number];

@@ -50,7 +50,8 @@ describe('Notificaciones', () => {
       id_empresa: 1,
       canal: 'SMS',
       activa: true,
-      contenido_texto: 'Hola {{cliente}}, falla en {{zona}}. {{empresa}}',
+      contenido_texto: 'Hola {{cliente}}, falla en {{zona}}. Estimamos {{tiempo_estimado}}.',
+      tiempo_estimado_reparacion: '4 a 6 horas',
     };
     detalle = { alerta: { id_alerta: 7, tipo: 'FALLA_CAJA_NAP', clave_caja: '2/1/7|NAP 6' }, afectados: [] };
 
@@ -166,7 +167,7 @@ describe('Notificaciones', () => {
 
     expect(r.enviadas).toBe(1);
     const fila = (createMany.mock.calls[0][0] as any).data[0];
-    expect(fila.mensaje_enviado).toBe('Hola Juan Perez, falla en ZONA 3. FiNet');
+    expect(fila.mensaje_enviado).toBe('Hola Juan Perez, falla en ZONA 3. Estimamos 4 a 6 horas.');
     expect(fila.id_alerta).toBe(7);
   });
 
@@ -203,6 +204,40 @@ describe('Notificaciones', () => {
     detalle.afectados = [af()];
     plantilla = { ...plantilla, id_empresa: 2 };
     await expect(service.notificarAlerta(7, 1, { id_plantilla: 1 })).rejects.toThrow(NotFoundException);
+  });
+
+
+  it('el tiempo estimado del incidente reemplaza al de la plantilla', async () => {
+    // RF-42 lo pide en el mensaje, y RF-43 lo guarda en la plantilla. Pero dos
+    // cortes de la misma caja no duran lo mismo: el que informa el jefe tecnico
+    // al despachar manda sobre el valor por defecto.
+    detalle.afectados = [af()];
+
+    const r = await service.notificarAlerta(7, 1, { id_plantilla: 1, tiempo_estimado: '30 minutos' });
+
+    expect((createMany.mock.calls[0][0] as any).data[0].mensaje_enviado).toContain('Estimamos 30 minutos.');
+    expect(r.tiempo_estimado).toBe('30 minutos');
+  });
+
+  it('sin tiempo del incidente usa el de la plantilla', async () => {
+    detalle.afectados = [af()];
+
+    const r = await service.notificarAlerta(7, 1, { id_plantilla: 1 });
+
+    expect(r.tiempo_estimado).toBe('4 a 6 horas');
+  });
+
+  it('una plantilla sin tiempo estimado no escribe "undefined" en el mensaje', async () => {
+    // El render deja vacio lo que no tiene valor. Mandarle "undefined" a un
+    // cliente por SMS es de las cosas que no se pueden deshacer.
+    plantilla = { ...plantilla, tiempo_estimado_reparacion: null };
+    detalle.afectados = [af()];
+
+    await service.notificarAlerta(7, 1, { id_plantilla: 1 });
+
+    const enviado = (createMany.mock.calls[0][0] as any).data[0].mensaje_enviado;
+    expect(enviado).not.toContain('undefined');
+    expect(enviado).toBe('Hola Juan Perez, falla en ZONA 3. Estimamos .');
   });
 
   // --- RF-45 ------------------------------------------------------------------

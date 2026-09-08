@@ -25,6 +25,7 @@
   let fTipo = $state('');
   let fCanal = $state('SMS');
   let fTexto = $state('');
+  let fTiempo = $state('');
 
   const token = () => get(authStore).token ?? '';
 
@@ -55,6 +56,7 @@
     fTipo = opciones?.tipos_evento[0] ?? '';
     fCanal = opciones?.canales.find((c) => c === 'SMS') ?? opciones?.canales[0] ?? 'SMS';
     fTexto = '';
+    fTiempo = '';
   }
 
   function empezarEdicion(p: Plantilla) {
@@ -63,6 +65,7 @@
     fTipo = p.tipo_evento ?? '';
     fCanal = p.canal;
     fTexto = p.contenido_texto ?? '';
+    fTiempo = p.tiempo_estimado_reparacion ?? '';
   }
 
   /** Duplicar una base: es la forma de partir de una del sistema sin tocarla. */
@@ -72,12 +75,14 @@
     fTipo = p.tipo_evento ?? '';
     fCanal = p.canal;
     fTexto = p.contenido_texto ?? '';
+    fTiempo = p.tiempo_estimado_reparacion ?? '';
   }
 
   function cancelar() {
     creando = false;
     editando = null;
     fTexto = '';
+    fTiempo = '';
   }
 
   async function guardar() {
@@ -86,13 +91,19 @@
     aviso = '';
     try {
       if (creando) {
-        await api.crearPlantilla(token(), { tipo_evento: fTipo, canal: fCanal, contenido_texto: fTexto });
+        await api.crearPlantilla(token(), {
+          tipo_evento: fTipo,
+          canal: fCanal,
+          contenido_texto: fTexto,
+          tiempo_estimado_reparacion: fTiempo.trim() || undefined,
+        });
         aviso = 'Plantilla creada.';
       } else if (editando != null) {
         await api.editarPlantilla(token(), editando, {
           tipo_evento: fTipo,
           canal: fCanal,
           contenido_texto: fTexto,
+          tiempo_estimado_reparacion: fTiempo.trim() || undefined,
         });
         aviso = 'Plantilla actualizada.';
       }
@@ -139,8 +150,13 @@
     hora: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
     empresa: 'FiNet',
   };
+
   const vistaPrevia = $derived(
-    fTexto.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k: string) => EJEMPLO[k] ?? ''),
+    fTexto.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k: string) =>
+      // El tiempo sale del campo, no del ejemplo: es lo que de verdad se
+      // enviaria con esta plantilla.
+      k === 'tiempo_estimado' ? fTiempo || '(sin definir)' : (EJEMPLO[k] ?? ''),
+    ),
   );
 
   const puedeGuardar = $derived(fTexto.trim().length > 0 && variablesMalas.length === 0 && !guardando);
@@ -231,6 +247,21 @@
         </div>
 
         <div>
+          <label for="tiempo" class="block text-sm font-medium text-slate-700 mb-1">
+            Tiempo estimado de reparación
+          </label>
+          <input id="tiempo" type="text" bind:value={fTiempo} maxlength="60"
+            placeholder="Ej: 4 a 6 horas"
+            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm
+                   focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" />
+          <p class="text-xs text-slate-600 mt-1">
+            Es el valor por defecto. Al enviar un aviso concreto se puede reemplazar,
+            porque dos cortes de la misma caja no duran lo mismo. Se escribe en el
+            mensaje con <code class="px-1 py-0.5 rounded bg-slate-100">{'{{tiempo_estimado}}'}</code>.
+          </p>
+        </div>
+
+        <div>
           <label for="texto" class="block text-sm font-medium text-slate-700 mb-1">Mensaje</label>
           <textarea id="texto" bind:value={fTexto} rows="3" maxlength="500"
             placeholder="Hola {'{{cliente}}'}: detectamos una falla en {'{{zona}}'}."
@@ -316,6 +347,11 @@
             </div>
           </div>
           <p class="text-sm text-slate-800 mt-2">{p.contenido_texto}</p>
+          {#if p.tiempo_estimado_reparacion}
+            <p class="text-xs text-slate-600 mt-1">
+              Tiempo estimado: <strong class="text-slate-800">{p.tiempo_estimado_reparacion}</strong>
+            </p>
+          {/if}
         </article>
       {/each}
     </div>

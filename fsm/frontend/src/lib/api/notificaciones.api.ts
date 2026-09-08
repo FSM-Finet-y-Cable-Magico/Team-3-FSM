@@ -20,6 +20,8 @@ export interface Plantilla {
   tipo_evento: string | null;
   canal: string;
   contenido_texto: string | null;
+  /** RF-42 y RF-43: lo que se le informa al cliente. Texto libre ("2 a 4 horas"). */
+  tiempo_estimado_reparacion: string | null;
   activa: boolean;
   /** Del sistema, compartida por las dos empresas: se ve pero no se edita. */
   es_base: boolean;
@@ -52,6 +54,7 @@ export interface ResumenEnvio {
   ya_avisados: number;
   canal: string;
   simulado: boolean;
+  tiempo_estimado: string | null;
 }
 
 export interface OtDetenida {
@@ -90,7 +93,7 @@ export const listarPlantillas = (token: string) =>
 
 export const crearPlantilla = (
   token: string,
-  datos: { tipo_evento?: string; canal: string; contenido_texto: string },
+  datos: { tipo_evento?: string; canal: string; contenido_texto: string; tiempo_estimado_reparacion?: string },
 ) =>
   pedir<Plantilla>(token, `${API_URL}/api/notificaciones/plantillas`, {
     method: 'POST',
@@ -100,7 +103,13 @@ export const crearPlantilla = (
 export const editarPlantilla = (
   token: string,
   id: number,
-  datos: { tipo_evento?: string; canal?: string; contenido_texto?: string; activa?: boolean },
+  datos: {
+    tipo_evento?: string;
+    canal?: string;
+    contenido_texto?: string;
+    tiempo_estimado_reparacion?: string;
+    activa?: boolean;
+  },
 ) =>
   pedir<Plantilla>(token, `${API_URL}/api/notificaciones/plantillas/${id}`, {
     method: 'PATCH',
@@ -116,10 +125,15 @@ export const desactivarPlantilla = (token: string, id: number) =>
 export const destinatariosDeAlerta = (token: string, idAlerta: number) =>
   pedir<Destinatarios>(token, `${API_URL}/api/notificaciones/alertas/${idAlerta}/destinatarios`);
 
-export const notificarAlerta = (token: string, idAlerta: number, id_plantilla: number, canal?: string) =>
+export const notificarAlerta = (
+  token: string,
+  idAlerta: number,
+  id_plantilla: number,
+  opciones?: { canal?: string; tiempo_estimado?: string },
+) =>
   pedir<ResumenEnvio>(token, `${API_URL}/api/notificaciones/alertas/${idAlerta}/notificar`, {
     method: 'POST',
-    body: JSON.stringify({ id_plantilla, canal }),
+    body: JSON.stringify({ id_plantilla, ...opciones }),
   });
 
 export const otDetenidas = (token: string, horas?: number) =>

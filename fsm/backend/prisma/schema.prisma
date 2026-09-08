@@ -256,6 +256,13 @@ model plantilla_notificacion {
   tipo_evento     String? @db.VarChar(60)
   canal           String  @db.VarChar(20)
   contenido_texto String? @db.Text
+  /// RF-42 y RF-43: el tiempo estimado de reparacion que se le informa al
+  /// cliente. Va como TEXTO y no como numero de horas porque en la practica se
+  /// comunica en rangos --"2 a 4 horas", "durante el dia de hoy"-- y forzar un
+  /// numero obligaria a inventar una precision que no se tiene.
+  /// Es el valor por defecto de la plantilla; al enviar se puede reemplazar,
+  /// porque el tiempo depende del incidente y no del texto.
+  tiempo_estimado_reparacion String? @db.VarChar(60)
   activa          Boolean @default(true)
   empresa         empresa? @relation(fields: [id_empresa], references: [id_empresa])
   notificaciones  log_notificacion[]
