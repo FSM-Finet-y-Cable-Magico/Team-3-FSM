@@ -31,6 +31,21 @@ export class MonitoreoController {
 
   /** Contadores de alertas abiertas, para la cabecera del panel. */
   @Roles('ADMIN', 'JEFE_TECNICO')
+  /**
+   * Panel consolidado de clientes criticos por caja NAP (CU-15 / RF-13).
+   * `zona` acota a una zona geografica.
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('criticos-por-caja')
+  criticosPorCaja(
+    @CurrentUser() user: UserPayload,
+    @Query('zona') zona?: string,
+    @Query('empresa') empresa?: string,
+  ) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.alertas.criticosPorCaja(id, zona);
+  }
+
   @Get('alertas/resumen')
   resumenAlertas(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
     const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;

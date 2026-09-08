@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RegistroOntService } from './registro-ont.service.js';
+import { MonitoreoGateway } from './monitoreo.gateway.js';
 import {
   FUENTE_MONITOREO,
   type FuenteMonitoreo,
@@ -34,6 +35,7 @@ export class MonitoreoService {
     private prisma: PrismaService,
     private registro: RegistroOntService,
     @Inject(FUENTE_MONITOREO) private fuente: FuenteMonitoreo,
+    private gateway: MonitoreoGateway,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -114,6 +116,23 @@ export class MonitoreoService {
       `Ingesta [${resumen.fuente}]: ${resumen.persistidas} lecturas, ` +
         `${resumen.cambios_estado} cambios de estado, ${resumen.sin_unidad} sin unidad, ${resumen.ms}ms`,
     );
+
+    // CU-12: se avisa a los paneles abiertos en vez de que cada uno pregunte.
+    // No se espera --como el fan-out del cierre-- porque el resultado de la
+    // ingesta ya esta guardado: si la publicacion falla, el proximo ciclo
+    // vuelve a publicar y el panel se pone al dia solo.
+    {
+      try {
+        this.gateway.publicar(this.registro.idEmpresaFuente, {
+          tipo: 'LECTURAS_INGESTADAS',
+          leidas: resumen.leidas,
+          cambios_estado: resumen.cambios_estado,
+        });
+      } catch (e) {
+        this.logger.warn(`No se pudo publicar la ingesta: ${(e as Error).message}`);
+      }
+    }
+
     return resumen;
   }
 
@@ -238,12 +257,4 @@ export class MonitoreoService {
       medido_en: ultima?.timestamp_medicion ?? null,
     };
   }
-
-  /**
-   * Aísla por empresa. `registro_ont` no tiene `id_empresa` propio ni relación
-   * FK a `cliente` (apunta a tabla de otro grupo), así que se resuelven los
-   * clientes de la empresa y se filtra por id. Mismo criterio que inventario
-   * con `id_bodega IS NULL`: se incluyen también las ONT sin cliente resuelto
-   * (no son dato de otro tenant). Cuando toda ONT tenga cliente, pasa a estricto.
-   */
 }

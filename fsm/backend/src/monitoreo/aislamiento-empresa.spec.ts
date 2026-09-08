@@ -5,6 +5,7 @@ import { MonitoreoService } from './monitoreo.service.js';
 import { RegistroOntService } from './registro-ont.service.js';
 import { LigadoCajaService } from './ligado-caja.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { MonitoreoGateway } from './monitoreo.gateway.js';
 import { FUENTE_MONITOREO } from './fuente/fuente-monitoreo.js';
 
 /**
@@ -33,6 +34,10 @@ describe('aislamiento entre empresas del monitoreo', () => {
           { provide: PrismaService, useValue: { registro_ont: { findMany, findUnique } } },
           { provide: RegistroOntService, useValue: {} },
           { provide: FUENTE_MONITOREO, useValue: { nombre: 'test' } },
+        // El gateway se dobla: estas pruebas son de la ingesta y del
+        // aislamiento, no del WebSocket. `publicar` se espia igual para poder
+        // afirmar que la ingesta avisa, y que una consulta NO avisa.
+        { provide: MonitoreoGateway, useValue: { publicar: jest.fn() } },
         ],
       }).compile();
       service = mod.get(MonitoreoService);
