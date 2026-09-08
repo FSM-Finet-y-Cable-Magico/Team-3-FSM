@@ -146,7 +146,7 @@
     {#if loading}
       <div class="text-center py-8 text-gray-500">Cargando usuarios...</div>
     {:else}
-      <div class="bg-white rounded-xl shadow overflow-hidden">
+      <div class="bg-white rounded-xl shadow overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>

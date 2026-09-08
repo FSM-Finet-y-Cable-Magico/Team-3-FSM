@@ -165,7 +165,7 @@
 {#if loading}
   <Cargando mensaje="Cargando órdenes..." class="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center" spinnerClass="h-8 w-8 text-blue-500 mx-auto mb-3" mensajeClass="text-slate-400 text-sm" />
 {:else}
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto">
     <table class="min-w-full divide-y divide-slate-100">
       <thead>
         <tr class="bg-slate-50">
