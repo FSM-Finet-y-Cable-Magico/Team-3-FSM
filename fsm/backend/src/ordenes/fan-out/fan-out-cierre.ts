@@ -19,6 +19,11 @@ export interface EquipoDeclarado {
   estado_g1: string;
   motivo?: string;
   observacion_estado_fisico?: string;
+  /**
+   * Diagnostico de la lista fija de G1. Solo tiene sentido al retirar.
+   * Si no viene, G1 asume "Causa desconocida" y usa `motivo` (acordado).
+   */
+  diagnostico?: string;
 }
 
 export interface PayloadCierre {

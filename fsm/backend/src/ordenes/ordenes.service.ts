@@ -506,6 +506,7 @@ export class OrdenesService {
         estado_g1: ACCION_A_ESTADO_G1[e.accion],
         motivo: e.motivo,
         observacion_estado_fisico: e.observacion_estado_fisico,
+        diagnostico: e.diagnostico,
       }));
     const equipos_instalados = conEstadoG1(dto.equipos_instalados);
     const equipos_retirados = conEstadoG1(dto.equipos_retirados);
