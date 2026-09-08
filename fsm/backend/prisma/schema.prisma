@@ -44,6 +44,7 @@ model empresa {
   transferencias_origen  transferencia_equipo[]  @relation("empresa_origen")
   transferencias_destino transferencia_equipo[]  @relation("empresa_destino")
   prestamos             prestamo_externo[]
+  plantillas_notificacion plantilla_notificacion[]
 }
 
 model usuario {
@@ -248,11 +249,25 @@ model ticket {
 
 model plantilla_notificacion {
   id_plantilla    Int     @id @default(autoincrement())
+  /// Sin esto las plantillas son globales: FiNet veria y editaria las de Cable
+  /// Magico. Es nullable para no romper las filas que ya existan; el servicio
+  /// trata la fila sin empresa como plantilla base compartida, de solo lectura.
+  id_empresa      Int?
   tipo_evento     String? @db.VarChar(60)
   canal           String  @db.VarChar(20)
   contenido_texto String? @db.Text
+  /// RF-42 y RF-43: el tiempo estimado de reparacion que se le informa al
+  /// cliente. Va como TEXTO y no como numero de horas porque en la practica se
+  /// comunica en rangos --"2 a 4 horas", "durante el dia de hoy"-- y forzar un
+  /// numero obligaria a inventar una precision que no se tiene.
+  /// Es el valor por defecto de la plantilla; al enviar se puede reemplazar,
+  /// porque el tiempo depende del incidente y no del texto.
+  tiempo_estimado_reparacion String? @db.VarChar(60)
   activa          Boolean @default(true)
+  empresa         empresa? @relation(fields: [id_empresa], references: [id_empresa])
   notificaciones  log_notificacion[]
+
+  @@index([id_empresa])
 }
 
 model log_notificacion {
@@ -262,8 +277,19 @@ model log_notificacion {
   canal           String?   @db.VarChar(20)
   fecha_envio     DateTime?
   estado_envio    String?   @db.VarChar(20)
+  /// El texto tal como se envio. Guardar solo la plantilla no alcanza: si
+  /// despues se edita, se pierde que decia el mensaje que recibio el cliente, y
+  /// eso es justo lo que hay que poder mostrar cuando alguien reclama.
+  mensaje_enviado String?   @db.Text
+  /// Que incidente lo origino (CU-48). Sin esto no se puede responder "a quien
+  /// le avisamos de esta falla" ni evitar avisar dos veces por lo mismo.
+  id_alerta       Int?
   cliente         cliente?                @relation(fields: [id_cliente], references: [id_cliente])
   plantilla       plantilla_notificacion? @relation(fields: [id_plantilla], references: [id_plantilla])
+  alerta          alerta_monitoreo?       @relation(fields: [id_alerta], references: [id_alerta])
+
+  @@index([id_alerta])
+  @@index([id_cliente])
 }
 
 model tipo_equipo {
@@ -826,6 +852,7 @@ model alerta_monitoreo {
   @@index([id_empresa, resuelta])
   // Deduplicación: buscar si ya hay una alerta abierta del mismo tipo y sujeto.
   @@index([tipo, clave_caja, resuelta])
+  notificaciones         log_notificacion[]
 }
 
 model prospecto {

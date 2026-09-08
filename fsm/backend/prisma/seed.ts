@@ -89,6 +89,58 @@ async function main() {
     if (!existe) await prisma.categoria_falla.create({ data: cat });
   }
 
+  // Plantillas base de notificacion (RF-43). Van con `id_empresa` en null: son
+  // del sistema, las dos empresas las ven y ninguna las puede editar --si una
+  // las tocara, cambiaria tambien las de la otra. Para tener una propia se
+  // duplican.
+  // Plantillas base de notificacion (RF-43). Van con `id_empresa` en null: son
+  // del sistema, las dos empresas las ven y ninguna las puede editar --si una
+  // las tocara, cambiaria tambien las de la otra. Para tener una propia se
+  // duplican.
+  //
+  // Los cuatro tipos son los que nombra RF-43, y cada una lleva su tiempo
+  // estimado de reparacion, que el RF exige y el mensaje al cliente incluye.
+  const plantillas = [
+    {
+      tipo_evento: 'CORTE_MASIVO_CAJA_NAP',
+      canal: 'SMS',
+      contenido_texto:
+        'Hola {{cliente}}: detectamos una falla que afecta el servicio en {{zona}}. ' +
+        'Estimamos restablecerlo en {{tiempo_estimado}}. {{empresa}}',
+      tiempo_estimado_reparacion: '4 a 6 horas',
+    },
+    {
+      tipo_evento: 'CORTE_IMPREVISTO',
+      canal: 'SMS',
+      contenido_texto:
+        'Hola {{cliente}}: un dano en la red dejo sin servicio a {{zona}}. ' +
+        'Ya hay una cuadrilla en terreno. Estimamos {{tiempo_estimado}}. {{empresa}}',
+      tiempo_estimado_reparacion: '6 a 12 horas',
+    },
+    {
+      tipo_evento: 'MANTENCION_PROGRAMADA',
+      canal: 'SMS',
+      contenido_texto:
+        'Hola {{cliente}}: el {{fecha}} haremos una mantencion programada en {{zona}}. ' +
+        'El servicio se interrumpira {{tiempo_estimado}}. {{empresa}}',
+      tiempo_estimado_reparacion: 'cerca de 2 horas',
+    },
+    {
+      tipo_evento: 'FALLA_TELEVISION',
+      canal: 'SMS',
+      contenido_texto:
+        'Hola {{cliente}}: estamos trabajando en una falla del servicio de television en {{zona}}. ' +
+        'Estimamos {{tiempo_estimado}}. Tu internet no esta afectado. {{empresa}}',
+      tiempo_estimado_reparacion: '3 a 5 horas',
+    },
+  ];
+  for (const pl of plantillas) {
+    const existe = await prisma.plantilla_notificacion.findFirst({
+      where: { tipo_evento: pl.tipo_evento, id_empresa: null },
+    });
+    if (!existe) await prisma.plantilla_notificacion.create({ data: pl });
+  }
+
   const planes = [
     { nombre_comercial: 'Plan 100 Mbps', velocidad_mbps: 100, precio_mensual: 19990, tipo_plan: 'FIBRA', tipo_cliente: 'RESIDENCIAL' },
     { nombre_comercial: 'Plan 200 Mbps', velocidad_mbps: 200, precio_mensual: 24990, tipo_plan: 'FIBRA', tipo_cliente: 'RESIDENCIAL' },
