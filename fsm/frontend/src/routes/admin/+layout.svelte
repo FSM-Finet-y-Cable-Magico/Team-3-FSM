@@ -47,13 +47,17 @@
 
   const ICON_RED = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m-6-8h6M5 5a2 2 0 012-2h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5z"/></svg>`;
 
+  // Grafico de barras: es un reporte, no un documento suelto.
+  const ICON_REPORTE = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 20h18M7 20V10m5 10V4m5 16v-7"/></svg>`;
+
   const navLinks = $derived([
     { href: '/admin/dashboard', label: 'Dashboard', icon: ICON_HOME, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/clientes', label: 'Clientes', icon: ICON_USERS, roles: ['ADMIN', 'JEFE_TECNICO'] },
-    { href: '/admin/ot', label: 'Ordenes de Trabajo', icon: ICON_CLIP, roles: ['ADMIN', 'JEFE_TECNICO'] },
-    { href: '/admin/alertas', label: 'Alertas de Red', icon: ICON_ALERTA, roles: ['ADMIN', 'JEFE_TECNICO'] },
+    { href: '/admin/ot', label: 'Órdenes', icon: ICON_CLIP, roles: ['ADMIN', 'JEFE_TECNICO'] },
+    { href: '/admin/alertas', label: 'Alertas', icon: ICON_ALERTA, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/monitoreo', label: 'Monitoreo', icon: ICON_SENAL, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/topologia', label: 'Topología', icon: ICON_RED, roles: ['ADMIN', 'JEFE_TECNICO'] },
+    { href: '/admin/reportes', label: 'Reportes', icon: ICON_REPORTE, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/usuarios', label: 'Usuarios', icon: ICON_GROUP, roles: ['ADMIN'] },
   ]);
 
@@ -78,8 +82,8 @@
         <div class="flex items-center justify-between h-16">
 
           <!-- Logo + links desktop -->
-          <div class="flex items-center gap-8">
-            <a href="/admin/dashboard" class="flex items-center">
+          <div class="flex items-center gap-5 min-w-0">
+            <a href="/admin/dashboard" class="flex items-center shrink-0">
               <div class="bg-white rounded-lg px-2.5 py-1">
                 <img src="/logo_finet.png" alt="FiNet" class="h-7 w-auto" />
               </div>
@@ -89,7 +93,7 @@
               {#each linksVisibles as link}
                 <a
                   href={link.href}
-                  class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150
+                  class="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-150
                     {$page.url.pathname.startsWith(link.href) && link.href !== '/dashboard'
                       ? 'bg-blue-600 text-white'
                       : $page.url.pathname === link.href
