@@ -53,16 +53,19 @@ WHERE prioridad IS NOT NULL
 -- 3 clientes activos cuando en realidad hay 18. Es un 83 % menos, y en el
 -- indicador mas visible que tiene el sistema.
 --
--- Aca no hay un catalogo escrito de nuestro lado --el DTO acepta cualquier
--- texto, cosa que tambien hay que arreglar-- asi que se listan una por una las
--- grafias que existen hoy y se entienden. Cualquier otra queda sin tocar.
+-- Nuestro catalogo esta en los DTO de cliente:
+-- ACTIVO, SUSPENDIDO, CORTADO, BAJA, PENDIENTE. Se normaliza solo contra ese,
+-- igual que arriba.
+--
+-- 'Moroso' queda INTACTO a proposito: no esta en nuestro catalogo, asi que
+-- pasarlo a 'MOROSO' lo haria parecer un valor nuestro cuando no lo es. Es
+-- vocabulario del Grupo 8 y hay que acordarlo, no convertirlo por las nuestras.
 --
 -- Pasar 'Activo' a 'ACTIVO' no cambia el significado de nada: es la misma
--- palabra. Lo que si hay que acordar con el Grupo 8 es CUALES son los estados
--- validos, y eso no lo resuelve una migracion.
+-- palabra en el catalogo que ya teniamos.
 
 UPDATE cliente
 SET estado = UPPER(estado)
 WHERE estado IS NOT NULL
   AND estado <> UPPER(estado)
-  AND UPPER(estado) IN ('ACTIVO', 'PENDIENTE', 'BAJA', 'MOROSO', 'SUSPENDIDO');
+  AND UPPER(estado) IN ('ACTIVO', 'SUSPENDIDO', 'CORTADO', 'BAJA', 'PENDIENTE');
