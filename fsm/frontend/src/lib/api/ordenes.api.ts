@@ -11,6 +11,10 @@ export interface OT {
   fecha_programada?: string;
   fecha_completada?: string;
   antiguedad_dias?: number;
+  /** RF-09: dias desde que la OT entro en cliente ausente. Solo en ese estado. */
+  dias_sin_reagendar?: number;
+  /** RF-09: true cuando lleva mas de 30 dias sin reagendarse. */
+  alerta_sin_reagendar?: boolean;
   observaciones?: string;
   obs_cliente_ausente?: string;
   categoria_falla_otro?: string | null;
@@ -107,6 +111,33 @@ export async function crearOT(token: string, dto: Record<string, unknown>): Prom
   return fetchApi(token, `${API_URL}/api/ordenes`, {
     method: 'POST',
     body: JSON.stringify(dto),
+  });
+}
+
+/**
+ * RF-45: reasignar una OT que ya tiene tecnico, desde el panel de detenidas.
+ * No es lo mismo que `asignarTecnico`, que solo acepta OT en PENDIENTE.
+ */
+export async function reasignarTecnico(
+  token: string,
+  id: number,
+  id_tecnico: number,
+): Promise<OT> {
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}/reasignar`, {
+    method: 'PATCH',
+    body: JSON.stringify({ id_tecnico }),
+  });
+}
+
+/** RF-45: la otra accion del panel. Sirve para subir y para bajar la prioridad. */
+export async function cambiarPrioridad(
+  token: string,
+  id: number,
+  prioridad: 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAJA',
+): Promise<OT> {
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}/prioridad`, {
+    method: 'PATCH',
+    body: JSON.stringify({ prioridad }),
   });
 }
 

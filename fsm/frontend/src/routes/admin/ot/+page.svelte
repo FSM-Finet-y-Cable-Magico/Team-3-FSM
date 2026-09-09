@@ -72,6 +72,11 @@
   }
 
   const esJefeOAdmin = $derived(rol === 'ADMIN' || rol === 'JEFE_TECNICO');
+
+  // RF-09: el listado no solo muestra la antiguedad, tiene que avisar. El
+  // umbral lo decide el Controlador (`alerta_sin_reagendar`), no la Vista:
+  // asi el listado y el indicador del dashboard no pueden discrepar.
+  const sinReagendar = $derived(ots.filter((o) => o.alerta_sin_reagendar));
 </script>
 
 <!-- Encabezado -->
@@ -161,6 +166,23 @@
   <Alert class="rounded-xl mb-5 text-sm">{errorMsg}</Alert>
 {/if}
 
+{#if sinReagendar.length > 0}
+  <div class="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+    <svg class="h-5 w-5 flex-shrink-0 text-red-600 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+    </svg>
+    <p class="text-sm text-red-800">
+      <strong>{sinReagendar.length}</strong>
+      {sinReagendar.length === 1 ? 'orden lleva' : 'ordenes llevan'} mas de 30 dias sin reagendarse.
+      {#if !filtroEstado}
+        <button onclick={() => { filtroEstado = 'PENDIENTE_CLIENTE_AUSENTE'; aplicarFiltros(); }} class="btn-texto text-red-800 hover:text-red-900 focus-visible:ring-red-500 underline">
+          Ver solo esas
+        </button>
+      {/if}
+    </p>
+  </div>
+{/if}
+
 <!-- Tabla -->
 {#if loading}
   <Cargando mensaje="Cargando órdenes..." class="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 text-center" spinnerClass="h-8 w-8 text-blue-500 mx-auto mb-3" mensajeClass="text-slate-400 text-sm" />
@@ -194,7 +216,20 @@
             <td class="px-5 py-4 text-sm text-slate-400">{formatFecha(ot.fecha_creacion)}</td>
             <td class="px-5 py-4">
               {#if ot.estado === 'PENDIENTE_CLIENTE_AUSENTE'}
-                <p class="text-xs text-amber-700 font-medium mb-1">{ot.antiguedad_dias ?? 0} dias pendiente</p>
+                <!--
+                  Se muestran los dias sin REAGENDAR, no la antiguedad de la OT:
+                  una orden creada hace 60 dias y marcada ausente ayer lleva un
+                  dia, no sesenta.
+                -->
+                <p class="mb-1 text-xs font-medium {ot.alerta_sin_reagendar ? 'text-red-700' : 'text-amber-700'}">
+                  {#if ot.alerta_sin_reagendar}
+                    <span class="inline-flex items-center gap-1 rounded-md bg-red-50 px-1.5 py-0.5 border border-red-200">
+                      {ot.dias_sin_reagendar} dias sin reagendar
+                    </span>
+                  {:else}
+                    {ot.dias_sin_reagendar ?? 0} dias sin reagendar
+                  {/if}
+                </p>
               {/if}
               <button
                 onclick={() => goto(`/ot/${ot.id_ot}`)}

@@ -52,6 +52,17 @@ export const MIN_ONT_PARA_FALLA_CAJA = 5;
 export const UMBRAL_DESCONEXION_MIN_DEFECTO = 30;
 
 /**
+ * RF-46: el valor de N es configurable por el administrador en un rango de 10
+ * a 120 minutos. El rango es del RF, no una eleccion nuestra.
+ *
+ * Por debajo de 10 el aviso llegaria por cortes que se resuelven solos --un
+ * reinicio de la ONT ya dura mas que eso-- y por encima de 120 la alerta
+ * llegaria cuando el cliente ya llamo.
+ */
+export const UMBRAL_DESCONEXION_MIN = 10;
+export const UMBRAL_DESCONEXION_MAX = 120;
+
+/**
  * Días caída tras los cuales una ONT deja de considerarse un incidente y pasa
  * a ser equipo inactivo.
  *
@@ -122,6 +133,27 @@ export const TIPO_ALERTA = {
    */
   POTENCIA_DEGRADANDOSE: 'POTENCIA_DEGRADANDOSE',
 } as const;
+
+/**
+ * Alertas que cubren a un grupo de clientes, no a uno solo.
+ *
+ * Es la distincion que importa para RF-42: avisar de una caja caida alcanza a
+ * decenas de personas de una vez y no se puede deshacer, mientras que avisar de
+ * una alerta individual le llega a un cliente.
+ *
+ * POTENCIA_DEGRADANDOSE se agrupa en el panel pero NO entra aca: son clientes
+ * que todavia tienen servicio, y avisarles de una falla que no estan sufriendo
+ * es exactamente el aviso que no hay como desdecir.
+ */
+export const TIPOS_ALERTA_AGREGADA: readonly string[] = [
+  TIPO_ALERTA.FALLA_OLT,
+  TIPO_ALERTA.FALLA_PLACA_OLT,
+  TIPO_ALERTA.FALLA_CAJA_NAP,
+];
+
+export function esAlertaAgregada(tipo: string): boolean {
+  return TIPOS_ALERTA_AGREGADA.includes(tipo);
+}
 
 /** Porcentaje de una placa caído a partir del cual se culpa a la placa. */
 export const UMBRAL_FALLA_PLACA_PCT = 20;

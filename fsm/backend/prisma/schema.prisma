@@ -9,54 +9,54 @@ datasource db {
 }
 
 model empresa {
-  id_empresa  Int     @id @default(autoincrement())
-  nombre      String  @db.VarChar(100)
-  rut_empresa String? @unique @db.VarChar(12)
-  esquema_db  String? @db.VarChar(50)
+  id_empresa             Int     @id @default(autoincrement())
+  nombre                 String  @db.VarChar(100)
+  rut_empresa            String? @unique @db.VarChar(12)
+  esquema_db             String? @db.VarChar(50)
   /**
    * CU-52: minutos sin señal antes de levantar la alerta. Configurable por
    * empresa, rango válido 10-120 (se valida en el DTO). Null = usar el
    * default del módulo.
    */
-  umbral_desconexion_min Int? @db.SmallInt
+  umbral_desconexion_min Int?    @db.SmallInt
 
-  usuarios              usuario[]
-  clientes              cliente[]
-  ordenes               orden_trabajo[]
-  tipos_equipo          tipo_equipo[]
-  cajas_nap             caja_nap[]
-  planes                plan[]
-  bodegas               bodega[]
-  olts                  olt[]
-  canales_wa            canal_whatsapp[]
-  puntos_cobertura      punto_cobertura[]
-  contratos             contrato[]
-  tickets               ticket[]
-  intentos_fallidos     intento_fallido[]
-  ordenes_ingreso       orden_ingreso[]
-  unidades              unidad_equipo[]
-  alertas               alerta_monitoreo[]
-  registros_ont         registro_ont[]
-  prospectos            prospecto[]
-  configuraciones_seo   configuracion_seo[]
-  movimientos_origen    movimiento_inventario[] @relation("empresa_origen")
-  movimientos_destino   movimiento_inventario[] @relation("empresa_destino")
-  transferencias_origen  transferencia_equipo[]  @relation("empresa_origen")
-  transferencias_destino transferencia_equipo[]  @relation("empresa_destino")
-  prestamos             prestamo_externo[]
+  usuarios                usuario[]
+  clientes                cliente[]
+  ordenes                 orden_trabajo[]
+  tipos_equipo            tipo_equipo[]
+  cajas_nap               caja_nap[]
+  planes                  plan[]
+  bodegas                 bodega[]
+  olts                    olt[]
+  canales_wa              canal_whatsapp[]
+  puntos_cobertura        punto_cobertura[]
+  contratos               contrato[]
+  tickets                 ticket[]
+  intentos_fallidos       intento_fallido[]
+  ordenes_ingreso         orden_ingreso[]
+  unidades                unidad_equipo[]
+  alertas                 alerta_monitoreo[]
+  registros_ont           registro_ont[]
+  prospectos              prospecto[]
+  configuraciones_seo     configuracion_seo[]
+  movimientos_origen      movimiento_inventario[]  @relation("empresa_origen")
+  movimientos_destino     movimiento_inventario[]  @relation("empresa_destino")
+  transferencias_origen   transferencia_equipo[]   @relation("empresa_origen")
+  transferencias_destino  transferencia_equipo[]   @relation("empresa_destino")
+  prestamos               prestamo_externo[]
   plantillas_notificacion plantilla_notificacion[]
 }
 
 model usuario {
-  id_usuario      Int       @id @default(autoincrement())
-  id_empresa      Int?
-  nombre_completo String    @db.VarChar(80)
-  nombre_usuario  String?   @unique @db.VarChar(50)
-  email           String?   @unique @db.VarChar(120)
-  password_hash   String    @db.VarChar(72)
-  activo          Boolean   @default(true)
-  fecha_creacion  DateTime  @default(now())
-  es_password_temporal Boolean @default(true)
+  id_usuario           Int      @id @default(autoincrement())
+  id_empresa           Int?
+  nombre_completo      String   @db.VarChar(80)
+  nombre_usuario       String?  @unique @db.VarChar(50)
+  email                String?  @unique @db.VarChar(120)
+  password_hash        String   @db.VarChar(72)
+  activo               Boolean  @default(true)
+  fecha_creacion       DateTime @default(now())
+  es_password_temporal Boolean  @default(true)
 
   empresa              empresa?                  @relation(fields: [id_empresa], references: [id_empresa])
   roles                usuario_rol[]
@@ -71,17 +71,17 @@ model usuario {
   transferencias       transferencia_equipo[]
   prospectos           prospecto[]
   lista_negra_registro lista_negra[]
+  alertas_resueltas    alerta_monitoreo[]        @relation("alerta_resuelve")
+  cajas_confirmadas    registro_ont[]            @relation("caja_confirmada")
 
   // C6 (#19). Listado de usuarios y de tecnicos, siempre acotados por empresa.
   @@index([id_empresa])
-  alertas_resueltas    alerta_monitoreo[] @relation("alerta_resuelve")
-  cajas_confirmadas    registro_ont[] @relation("caja_confirmada")
 }
 
 model rol {
-  id_rol      Int     @id @default(autoincrement())
-  nombre_rol  String  @unique @db.VarChar(50)
-  descripcion String? @db.Text
+  id_rol      Int           @id @default(autoincrement())
+  nombre_rol  String        @unique @db.VarChar(50)
+  descripcion String?       @db.Text
   usuarios    usuario_rol[]
 }
 
@@ -92,6 +92,7 @@ model usuario_rol {
   fecha_asignacion DateTime @default(now()) @db.Date
   usuario          usuario? @relation(fields: [id_usuario], references: [id_usuario])
   rol              rol      @relation(fields: [id_rol], references: [id_rol])
+
   @@unique([id_usuario, id_rol])
 }
 
@@ -122,38 +123,38 @@ model cliente {
   importado_masivo     Boolean  @default(false)
   fecha_creacion       DateTime @default(now())
 
-  empresa              empresa?               @relation(fields: [id_empresa], references: [id_empresa])
-  direcciones          direccion_servicio[]
-  contratos            contrato[]
-  ordenes              orden_trabajo[]
-  lista_negra          lista_negra[]
-  tickets              ticket[]
-  sesiones             sesion_portal[]
-  consentimientos      consentimiento_cookies[]
-  monitoreo            monitoreo_ont[]
-  mensajes_wa          mensaje_whatsapp[]
-  conversaciones       conversacion_bot[]
-  prospectos           prospecto[]
-  pagos                pago[]
-  unidades_instaladas  unidad_equipo[]
-  puertos_nap          puerto_nap[]
-  log_notificacion     log_notificacion[]
+  empresa             empresa?                 @relation(fields: [id_empresa], references: [id_empresa])
+  direcciones         direccion_servicio[]
+  contratos           contrato[]
+  ordenes             orden_trabajo[]
+  lista_negra         lista_negra[]
+  tickets             ticket[]
+  sesiones            sesion_portal[]
+  consentimientos     consentimiento_cookies[]
+  monitoreo           monitoreo_ont[]
+  mensajes_wa         mensaje_whatsapp[]
+  conversaciones      conversacion_bot[]
+  prospectos          prospecto[]
+  pagos               pago[]
+  unidades_instaladas unidad_equipo[]
+  puertos_nap         puerto_nap[]
+  log_notificacion    log_notificacion[]
+  alertas             alerta_monitoreo[]
 
   // C6 (#19). rut ya esta indexado, pero como efecto de ser @unique.
   // El compuesto con fecha_creacion deja que listarClientes lea la pagina
   // en orden de indice en vez de ordenar la cartera completa del tenant.
   @@index([id_empresa, fecha_creacion])
-  alertas              alerta_monitoreo[]
 }
 
 model direccion_servicio {
-  id_direccion       Int     @id @default(autoincrement())
+  id_direccion       Int             @id @default(autoincrement())
   id_cliente         Int?
-  direccion_completa String  @db.VarChar(200)
-  comuna             String  @db.VarChar(80)
-  ciudad             String? @db.VarChar(80)
-  es_principal       Boolean @default(true)
-  cliente            cliente? @relation(fields: [id_cliente], references: [id_cliente])
+  direccion_completa String          @db.VarChar(200)
+  comuna             String          @db.VarChar(80)
+  ciudad             String?         @db.VarChar(80)
+  es_principal       Boolean         @default(true)
+  cliente            cliente?        @relation(fields: [id_cliente], references: [id_cliente])
   ordenes            orden_trabajo[]
 
   // C6 (#19). FK sin indice que se consulta en casi toda operacion de
@@ -162,16 +163,16 @@ model direccion_servicio {
 }
 
 model plan {
-  id_plan          Int      @id @default(autoincrement())
+  id_plan          Int          @id @default(autoincrement())
   id_empresa       Int?
-  nombre_comercial String   @db.VarChar(100)
-  tipo_plan        String   @db.VarChar(20)
-  tipo_cliente     String   @db.VarChar(20)
+  nombre_comercial String       @db.VarChar(100)
+  tipo_plan        String       @db.VarChar(20)
+  tipo_cliente     String       @db.VarChar(20)
   velocidad_mbps   Int?
-  precio_mensual   Decimal  @db.Decimal(10, 2)
-  descripcion      String?  @db.Text
-  activo           Boolean  @default(true)
-  empresa          empresa? @relation(fields: [id_empresa], references: [id_empresa])
+  precio_mensual   Decimal      @db.Decimal(10, 2)
+  descripcion      String?      @db.Text
+  activo           Boolean      @default(true)
+  empresa          empresa?     @relation(fields: [id_empresa], references: [id_empresa])
   contratos        contrato[]
   cotizaciones     cotizacion[]
 
@@ -182,27 +183,27 @@ model plan {
 }
 
 model contrato {
-  id_contrato      Int      @id @default(autoincrement())
-  id_cliente       Int?
-  id_plan          Int?
-  id_empresa       Int?
-  fecha_inicio     DateTime @db.Date
-  dia_vencimiento  Int      @db.SmallInt
-  estado           String   @db.VarChar(20)
-  fecha_suspension DateTime? @db.Date
-  cliente          cliente?  @relation(fields: [id_cliente], references: [id_cliente])
-  plan             plan?     @relation(fields: [id_plan], references: [id_plan])
-  empresa          empresa?  @relation(fields: [id_empresa], references: [id_empresa])
-  facturas         factura[]
+  id_contrato       Int                @id @default(autoincrement())
+  id_cliente        Int?
+  id_plan           Int?
+  id_empresa        Int?
+  fecha_inicio      DateTime           @db.Date
+  dia_vencimiento   Int                @db.SmallInt
+  estado            String             @db.VarChar(20)
+  fecha_suspension  DateTime?          @db.Date
+  cliente           cliente?           @relation(fields: [id_cliente], references: [id_cliente])
+  plan              plan?              @relation(fields: [id_plan], references: [id_plan])
+  empresa           empresa?           @relation(fields: [id_empresa], references: [id_empresa])
+  facturas          factura[]
   credenciales_tvip credenciales_tvip?
 }
 
 model factura {
-  id_factura        Int      @id @default(autoincrement())
+  id_factura        Int       @id @default(autoincrement())
   id_contrato       Int?
-  periodo_mes       Int      @db.SmallInt
-  periodo_anio      Int      @db.SmallInt
-  monto             Decimal? @db.Decimal(10, 2)
+  periodo_mes       Int       @db.SmallInt
+  periodo_anio      Int       @db.SmallInt
+  monto             Decimal?  @db.Decimal(10, 2)
   fecha_emision     DateTime? @db.Date
   fecha_limite_pago DateTime  @db.Date
   estado            String    @db.VarChar(20)
@@ -225,62 +226,62 @@ model pago {
 }
 
 model ticket {
-  id_ticket            Int      @id @default(autoincrement())
+  id_ticket            Int               @id @default(autoincrement())
   id_cliente           Int?
   id_empresa           Int?
   id_usuario_asignado  Int?
   id_categoria         Int
-  id_conversacion_bot  Int?     @unique
-  codigo_seguimiento   String?  @unique @db.VarChar(20)
-  prioridad            String   @db.VarChar(10)
-  estado               String   @db.VarChar(20)
-  descripcion          String?  @db.Text
-  fecha_creacion       DateTime @default(now())
+  id_conversacion_bot  Int?              @unique
+  codigo_seguimiento   String?           @unique @db.VarChar(20)
+  prioridad            String            @db.VarChar(10)
+  estado               String            @db.VarChar(20)
+  descripcion          String?           @db.Text
+  fecha_creacion       DateTime          @default(now())
   fecha_cierre         DateTime?
-  origen               String?  @db.VarChar(20)
-  resuelto_remotamente Boolean  @default(false)
-  cliente              cliente?         @relation(fields: [id_cliente], references: [id_cliente])
-  empresa              empresa?         @relation(fields: [id_empresa], references: [id_empresa])
-  usuario_asignado     usuario?         @relation(fields: [id_usuario_asignado], references: [id_usuario])
-  categoria            categoria_falla  @relation(fields: [id_categoria], references: [id_categoria])
+  origen               String?           @db.VarChar(20)
+  resuelto_remotamente Boolean           @default(false)
+  cliente              cliente?          @relation(fields: [id_cliente], references: [id_cliente])
+  empresa              empresa?          @relation(fields: [id_empresa], references: [id_empresa])
+  usuario_asignado     usuario?          @relation(fields: [id_usuario_asignado], references: [id_usuario])
+  categoria            categoria_falla   @relation(fields: [id_categoria], references: [id_categoria])
   conversacion_bot     conversacion_bot? @relation(fields: [id_conversacion_bot], references: [id_conversacion])
   orden_trabajo        orden_trabajo?
 }
 
 model plantilla_notificacion {
-  id_plantilla    Int     @id @default(autoincrement())
+  id_plantilla               Int                @id @default(autoincrement())
   /// Sin esto las plantillas son globales: FiNet veria y editaria las de Cable
   /// Magico. Es nullable para no romper las filas que ya existan; el servicio
   /// trata la fila sin empresa como plantilla base compartida, de solo lectura.
-  id_empresa      Int?
-  tipo_evento     String? @db.VarChar(60)
-  canal           String  @db.VarChar(20)
-  contenido_texto String? @db.Text
+  id_empresa                 Int?
+  tipo_evento                String?            @db.VarChar(60)
+  canal                      String             @db.VarChar(20)
+  contenido_texto            String?            @db.Text
   /// RF-42 y RF-43: el tiempo estimado de reparacion que se le informa al
   /// cliente. Va como TEXTO y no como numero de horas porque en la practica se
   /// comunica en rangos --"2 a 4 horas", "durante el dia de hoy"-- y forzar un
   /// numero obligaria a inventar una precision que no se tiene.
   /// Es el valor por defecto de la plantilla; al enviar se puede reemplazar,
   /// porque el tiempo depende del incidente y no del texto.
-  tiempo_estimado_reparacion String? @db.VarChar(60)
-  activa          Boolean @default(true)
-  empresa         empresa? @relation(fields: [id_empresa], references: [id_empresa])
-  notificaciones  log_notificacion[]
+  tiempo_estimado_reparacion String?            @db.VarChar(60)
+  activa                     Boolean            @default(true)
+  empresa                    empresa?           @relation(fields: [id_empresa], references: [id_empresa])
+  notificaciones             log_notificacion[]
 
   @@index([id_empresa])
 }
 
 model log_notificacion {
-  id_notificacion BigInt    @id @default(autoincrement())
+  id_notificacion BigInt                  @id @default(autoincrement())
   id_cliente      Int?
   id_plantilla    Int?
-  canal           String?   @db.VarChar(20)
+  canal           String?                 @db.VarChar(20)
   fecha_envio     DateTime?
-  estado_envio    String?   @db.VarChar(20)
+  estado_envio    String?                 @db.VarChar(20)
   /// El texto tal como se envio. Guardar solo la plantilla no alcanza: si
   /// despues se edita, se pierde que decia el mensaje que recibio el cliente, y
   /// eso es justo lo que hay que poder mostrar cuando alguien reclama.
-  mensaje_enviado String?   @db.Text
+  mensaje_enviado String?                 @db.Text
   /// Que incidente lo origino (CU-48). Sin esto no se puede responder "a quien
   /// le avisamos de esta falla" ni evitar avisar dos veces por lo mismo.
   id_alerta       Int?
@@ -293,14 +294,14 @@ model log_notificacion {
 }
 
 model tipo_equipo {
-  id_tipo_equipo            Int     @id @default(autoincrement())
+  id_tipo_equipo            Int                     @id @default(autoincrement())
   id_empresa                Int?
-  nombre                    String  @db.VarChar(100)
-  categoria                 String? @db.VarChar(40)
+  nombre                    String                  @db.VarChar(100)
+  categoria                 String?                 @db.VarChar(40)
   requiere_serie_individual Boolean?
-  ficha_tecnica_pdf_url     String? @db.Text
-  activo                    Boolean @default(true)
-  empresa                   empresa?                 @relation(fields: [id_empresa], references: [id_empresa])
+  ficha_tecnica_pdf_url     String?                 @db.Text
+  activo                    Boolean                 @default(true)
+  empresa                   empresa?                @relation(fields: [id_empresa], references: [id_empresa])
   unidades                  unidad_equipo[]
   stock                     stock_consumible[]
   uso_ot                    uso_material_ot[]
@@ -313,95 +314,103 @@ model tipo_equipo {
 }
 
 model unidad_equipo {
-  id_unidad             Int      @id @default(autoincrement())
-  id_tipo_equipo        Int?
-  id_empresa            Int?
-  numero_serie          String   @unique @db.VarChar(80)
-  modelo                String?  @db.VarChar(80)
-  estado                String   @db.VarChar(30)
-  fecha_adquisicion     DateTime? @db.Date
-  fecha_venc_garantia   DateTime? @db.Date
-  diagnostico_tecnico   String?  @db.Text
-  id_cliente_instalado  Int?
-  id_bodega_actual      Int?
-  numero_poste          String?  @db.VarChar(30)
-  id_caja_nap           Int?
-  tipo_equipo           tipo_equipo?  @relation(fields: [id_tipo_equipo], references: [id_tipo_equipo])
-  empresa               empresa?      @relation(fields: [id_empresa], references: [id_empresa])
-  cliente_instalado     cliente?      @relation(fields: [id_cliente_instalado], references: [id_cliente])
-  bodega_actual         bodega?       @relation(fields: [id_bodega_actual], references: [id_bodega])
-  caja_nap              caja_nap?     @relation(fields: [id_caja_nap], references: [id_caja_nap])
-  historial_estado      historial_estado_equipo[]
-  historial_conexion    historial_conexion_ont[]
-  monitoreo             monitoreo_ont[]
-  uso_ot                uso_material_ot[]
-  bajas                 baja_equipo[]
-  prestamos             prestamo_externo[]
-  movimientos           movimiento_inventario[]
+  id_unidad            Int                       @id @default(autoincrement())
+  id_tipo_equipo       Int?
+  id_empresa           Int?
+  numero_serie         String                    @unique @db.VarChar(80)
+  modelo               String?                   @db.VarChar(80)
+  estado               String                    @db.VarChar(30)
+  fecha_adquisicion    DateTime?                 @db.Date
+  fecha_venc_garantia  DateTime?                 @db.Date
+  diagnostico_tecnico  String?                   @db.Text
+  id_cliente_instalado Int?
+  id_bodega_actual     Int?
+  numero_poste         String?                   @db.VarChar(30)
+  id_caja_nap          Int?
+  tipo_equipo          tipo_equipo?              @relation(fields: [id_tipo_equipo], references: [id_tipo_equipo])
+  empresa              empresa?                  @relation(fields: [id_empresa], references: [id_empresa])
+  cliente_instalado    cliente?                  @relation(fields: [id_cliente_instalado], references: [id_cliente])
+  bodega_actual        bodega?                   @relation(fields: [id_bodega_actual], references: [id_bodega])
+  caja_nap             caja_nap?                 @relation(fields: [id_caja_nap], references: [id_caja_nap])
+  historial_estado     historial_estado_equipo[]
+  historial_conexion   historial_conexion_ont[]
+  monitoreo            monitoreo_ont[]
+  uso_ot               uso_material_ot[]
+  bajas                baja_equipo[]
+  prestamos            prestamo_externo[]
+  movimientos          movimiento_inventario[]
 }
 
 model caja_nap {
-  id_caja_nap        Int      @id @default(autoincrement())
-  id_empresa         Int?
-  id_mufa            Int?
-  identificador_unico String? @unique @db.VarChar(50)
-  numero_poste       String?  @db.VarChar(30)
-  zona               String?  @db.VarChar(80)
-  capacidad_puertos  Int?     @db.SmallInt
-  latitud            Decimal? @db.Decimal(9, 6)
-  longitud           Decimal? @db.Decimal(9, 6)
-  empresa            empresa? @relation(fields: [id_empresa], references: [id_empresa])
-  mufa               mufa?    @relation(fields: [id_mufa], references: [id_mufa])
-  puertos            puerto_nap[]
-  unidades           unidad_equipo[]
-  monitoreo          monitoreo_ont[]
-  alertas              alerta_monitoreo[]
-  ordenes              orden_trabajo[]
+  id_caja_nap         Int                @id @default(autoincrement())
+  id_empresa          Int?
+  id_mufa             Int?
+  identificador_unico String?            @unique @db.VarChar(50)
+  numero_poste        String?            @db.VarChar(30)
+  zona                String?            @db.VarChar(80)
+  capacidad_puertos   Int?               @db.SmallInt
+  latitud             Decimal?           @db.Decimal(9, 6)
+  longitud            Decimal?           @db.Decimal(9, 6)
+  empresa             empresa?           @relation(fields: [id_empresa], references: [id_empresa])
+  mufa                mufa?              @relation(fields: [id_mufa], references: [id_mufa])
+  puertos             puerto_nap[]
+  unidades            unidad_equipo[]
+  monitoreo           monitoreo_ont[]
+  alertas             alerta_monitoreo[]
+  ordenes             orden_trabajo[]
 }
 
 model orden_trabajo {
-  id_ot                Int      @id @default(autoincrement())
-  id_empresa           Int?
-  id_cliente           Int?
-  id_tecnico           Int?
-  id_tecnico_externo   Int?
-  id_direccion         Int?
-  id_ticket            Int?     @unique
-  id_categoria_falla   Int?
+  id_ot                          Int                 @id @default(autoincrement())
+  id_empresa                     Int?
+  id_cliente                     Int?
+  id_tecnico                     Int?
+  id_tecnico_externo             Int?
+  id_direccion                   Int?
+  id_ticket                      Int?                @unique
+  id_categoria_falla             Int?
   /**
    * Caja NAP sobre la que se trabaja. Las OT generadas desde el monitoreo por
    * una falla de caja no cuelgan de un cliente sino de la caja, y es lo que le
    * dice al técnico a dónde ir. También lo necesita CU-20 (reservar el puerto
    * al crear la OT).
    */
-  id_caja_nap          Int?
-  tipo_ot              String   @db.VarChar(20)
-  prioridad            String   @db.VarChar(10)
-  estado               String   @db.VarChar(25)
-  fecha_creacion       DateTime @default(now())
-  fecha_programada     DateTime? @db.Timestamptz()
-  fecha_completada     DateTime?
-  potencia_optica_dbm  Decimal? @db.Decimal(5, 2)
-  categoria_falla_otro String?  @db.VarChar(120)
-  observaciones        String?  @db.Text
-  obs_cliente_ausente  String?  @db.VarChar(500)
-  resuelto_remotamente Boolean  @default(false)
+  id_caja_nap                    Int?
+  tipo_ot                        String              @db.VarChar(20)
+  prioridad                      String              @db.VarChar(10)
+  estado                         String              @db.VarChar(25)
+  fecha_creacion                 DateTime            @default(now())
+  fecha_programada               DateTime?           @db.Timestamptz()
+  fecha_completada               DateTime?
+  potencia_optica_dbm            Decimal?            @db.Decimal(5, 2)
+  categoria_falla_otro           String?             @db.VarChar(120)
+  observaciones                  String?             @db.Text
+  obs_cliente_ausente            String?             @db.VarChar(500)
+  resuelto_remotamente           Boolean             @default(false)
+  /**
+   * RF-45: la alerta de OT detenida se puede descartar, y reaparece a las 48 h.
+   * La alerta no es una fila: se recalcula en cada carga. Lo unico que hay que
+   * guardar es cuando alguien la descarto y quien.
+   */
+  alerta_detenida_descartada_en  DateTime?
+  alerta_detenida_descartada_por Int?
   // Declaración de equipos individualizables del cierre (ACUERDO G1↔G3): G3
   // guarda el snapshot { instalados:[], retirados:[] } que le pasó a G1, para
   // que el GET de reconciliación devuelva exactamente lo mismo que el webhook.
-  cierre_equipos       Json?
-  empresa              empresa?         @relation(fields: [id_empresa], references: [id_empresa])
-  cliente              cliente?         @relation(fields: [id_cliente], references: [id_cliente])
-  tecnico              usuario?         @relation("ot_tecnico", fields: [id_tecnico], references: [id_usuario])
-  tecnico_externo      tecnico_externo? @relation(fields: [id_tecnico_externo], references: [id_tecnico_ext])
-  direccion            direccion_servicio? @relation(fields: [id_direccion], references: [id_direccion])
-  ticket               ticket?          @relation(fields: [id_ticket], references: [id_ticket])
-  categoria_falla      categoria_falla? @relation(fields: [id_categoria_falla], references: [id_categoria])
-  caja_nap             caja_nap?        @relation(fields: [id_caja_nap], references: [id_caja_nap])
-  historial            historial_ot[]
-  materiales           uso_material_ot[]
-  fotos                evidencia_foto[]
-  llamada              llamada_cortes?
+  cierre_equipos                 Json?
+  empresa                        empresa?            @relation(fields: [id_empresa], references: [id_empresa])
+  cliente                        cliente?            @relation(fields: [id_cliente], references: [id_cliente])
+  tecnico                        usuario?            @relation("ot_tecnico", fields: [id_tecnico], references: [id_usuario])
+  tecnico_externo                tecnico_externo?    @relation(fields: [id_tecnico_externo], references: [id_tecnico_ext])
+  direccion                      direccion_servicio? @relation(fields: [id_direccion], references: [id_direccion])
+  ticket                         ticket?             @relation(fields: [id_ticket], references: [id_ticket])
+  categoria_falla                categoria_falla?    @relation(fields: [id_categoria_falla], references: [id_categoria])
+  caja_nap                       caja_nap?           @relation(fields: [id_caja_nap], references: [id_caja_nap])
+  historial                      historial_ot[]
+  materiales                     uso_material_ot[]
+  fotos                          evidencia_foto[]
+  llamada                        llamada_cortes?
+  alertas_origen                 alerta_monitoreo[]
 
   // C6 (#19). PostgreSQL no indexa las claves foraneas por si solo: de estas
   // columnas, solo la PK y el @unique de id_ticket tenian indice.
@@ -418,20 +427,18 @@ model orden_trabajo {
   @@index([id_cliente])
   // Filtro tipo_ot del listado y recuento de REPARACION del dashboard.
   @@index([id_empresa, tipo_ot])
-  alertas_origen       alerta_monitoreo[]
-
   // FK que consulta el panel para listar las OT de una caja.
   @@index([id_caja_nap])
 }
 
 model historial_ot {
-  id_historial_ot BigInt    @id @default(autoincrement())
+  id_historial_ot BigInt         @id @default(autoincrement())
   id_ot           Int?
   id_usuario      Int?
-  estado_anterior String?   @db.VarChar(25)
-  estado_nuevo    String?   @db.VarChar(25)
-  observaciones   String?   @db.Text
-  fecha_hora      DateTime  @default(now())
+  estado_anterior String?        @db.VarChar(25)
+  estado_nuevo    String?        @db.VarChar(25)
+  observaciones   String?        @db.Text
+  fecha_hora      DateTime       @default(now())
   orden_trabajo   orden_trabajo? @relation(fields: [id_ot], references: [id_ot])
   usuario         usuario?       @relation(fields: [id_usuario], references: [id_usuario])
 
@@ -442,40 +449,40 @@ model historial_ot {
 }
 
 model categoria_falla {
-  id_categoria Int     @id @default(autoincrement())
-  nombre       String  @db.VarChar(80)
-  sla_horas    Int?    @db.SmallInt
+  id_categoria Int             @id @default(autoincrement())
+  nombre       String          @db.VarChar(80)
+  sla_horas    Int?            @db.SmallInt
   tickets      ticket[]
   ordenes      orden_trabajo[]
 }
 
 model uso_material_ot {
-  id_uso         Int     @id @default(autoincrement())
+  id_uso         Int            @id @default(autoincrement())
   id_ot          Int?
   id_tipo_equipo Int?
   id_unidad      Int?
-  cantidad       Decimal @db.Decimal(10, 2)
+  cantidad       Decimal        @db.Decimal(10, 2)
   orden_trabajo  orden_trabajo? @relation(fields: [id_ot], references: [id_ot])
   tipo_equipo    tipo_equipo?   @relation(fields: [id_tipo_equipo], references: [id_tipo_equipo])
   unidad         unidad_equipo? @relation(fields: [id_unidad], references: [id_unidad])
 }
 
 model evidencia_foto {
-  id_foto        Int      @id @default(autoincrement())
+  id_foto        Int            @id @default(autoincrement())
   id_ot          Int?
-  url_cloudinary String   @db.Text
-  formato        String?  @db.VarChar(5)
+  url_cloudinary String         @db.Text
+  formato        String?        @db.VarChar(5)
   tamano_kb      Int?
-  fecha_subida   DateTime @default(now())
+  fecha_subida   DateTime       @default(now())
   orden_trabajo  orden_trabajo? @relation(fields: [id_ot], references: [id_ot])
 }
 
 model llamada_cortes {
-  id_llamada    Int      @id @default(autoincrement())
-  id_ot         Int?     @unique
-  resultado     String   @db.VarChar(15)
-  observaciones String?  @db.Text
-  fecha_llamada DateTime @default(now())
+  id_llamada    Int            @id @default(autoincrement())
+  id_ot         Int?           @unique
+  resultado     String         @db.VarChar(15)
+  observaciones String?        @db.Text
+  fecha_llamada DateTime       @default(now())
   orden_trabajo orden_trabajo? @relation(fields: [id_ot], references: [id_ot])
 }
 
@@ -492,25 +499,25 @@ model lista_negra {
 }
 
 model bodega {
-  id_bodega   Int     @id @default(autoincrement())
-  id_empresa  Int?
-  nombre      String  @db.VarChar(60)
-  direccion   String? @db.VarChar(200)
-  activa      Boolean @default(true)
-  empresa     empresa?         @relation(fields: [id_empresa], references: [id_empresa])
-  stock       stock_consumible[]
-  ordenes_ingreso orden_ingreso[]
-  unidades    unidad_equipo[]
+  id_bodega           Int                     @id @default(autoincrement())
+  id_empresa          Int?
+  nombre              String                  @db.VarChar(60)
+  direccion           String?                 @db.VarChar(200)
+  activa              Boolean                 @default(true)
+  empresa             empresa?                @relation(fields: [id_empresa], references: [id_empresa])
+  stock               stock_consumible[]
+  ordenes_ingreso     orden_ingreso[]
+  unidades            unidad_equipo[]
   movimientos_origen  movimiento_inventario[] @relation("bodega_origen")
   movimientos_destino movimiento_inventario[] @relation("bodega_destino")
 }
 
 model stock_consumible {
-  id_stock            Int     @id @default(autoincrement())
+  id_stock            Int          @id @default(autoincrement())
   id_tipo_equipo      Int?
   id_bodega           Int?
-  cantidad_disponible Decimal @db.Decimal(10, 2)
-  umbral_minimo       Decimal? @db.Decimal(10, 2)
+  cantidad_disponible Decimal      @db.Decimal(10, 2)
+  umbral_minimo       Decimal?     @db.Decimal(10, 2)
   tipo_equipo         tipo_equipo? @relation(fields: [id_tipo_equipo], references: [id_tipo_equipo])
   bodega              bodega?      @relation(fields: [id_bodega], references: [id_bodega])
 
@@ -520,99 +527,99 @@ model stock_consumible {
 }
 
 model proveedor {
-  id_proveedor     Int     @id @default(autoincrement())
-  nombre_comercial String  @db.VarChar(100)
-  rut_proveedor    String? @db.VarChar(12)
-  contacto         String? @db.VarChar(80)
-  telefono         String? @db.VarChar(20)
-  email            String? @db.VarChar(120)
+  id_proveedor     Int             @id @default(autoincrement())
+  nombre_comercial String          @db.VarChar(100)
+  rut_proveedor    String?         @db.VarChar(12)
+  contacto         String?         @db.VarChar(80)
+  telefono         String?         @db.VarChar(20)
+  email            String?         @db.VarChar(120)
   ordenes_ingreso  orden_ingreso[]
 }
 
 model orden_ingreso {
-  id_orden            Int      @id @default(autoincrement())
+  id_orden            Int                     @id @default(autoincrement())
   id_proveedor        Int?
   id_bodega           Int?
   id_empresa          Int?
   id_usuario_registro Int?
-  fecha_creacion      DateTime? @db.Date
-  fecha_recepcion     DateTime? @db.Date
-  estado              String?   @db.VarChar(25)
-  factura_proveedor   String?   @db.VarChar(50)
-  proveedor           proveedor?   @relation(fields: [id_proveedor], references: [id_proveedor])
-  bodega              bodega?      @relation(fields: [id_bodega], references: [id_bodega])
-  empresa             empresa?     @relation(fields: [id_empresa], references: [id_empresa])
-  usuario_registro    usuario?     @relation(fields: [id_usuario_registro], references: [id_usuario])
+  fecha_creacion      DateTime?               @db.Date
+  fecha_recepcion     DateTime?               @db.Date
+  estado              String?                 @db.VarChar(25)
+  factura_proveedor   String?                 @db.VarChar(50)
+  proveedor           proveedor?              @relation(fields: [id_proveedor], references: [id_proveedor])
+  bodega              bodega?                 @relation(fields: [id_bodega], references: [id_bodega])
+  empresa             empresa?                @relation(fields: [id_empresa], references: [id_empresa])
+  usuario_registro    usuario?                @relation(fields: [id_usuario_registro], references: [id_usuario])
   detalles            detalle_orden_ingreso[]
 }
 
 model detalle_orden_ingreso {
-  id_detalle          Int          @id @default(autoincrement())
+  id_detalle          Int            @id @default(autoincrement())
   id_orden            Int?
   id_tipo_equipo      Int?
   cantidad_solicitada Int
-  cantidad_recibida   Int          @default(0)
+  cantidad_recibida   Int            @default(0)
   orden               orden_ingreso? @relation(fields: [id_orden], references: [id_orden])
   tipo_equipo         tipo_equipo?   @relation(fields: [id_tipo_equipo], references: [id_tipo_equipo])
 }
 
 model historial_estado_equipo {
-  id_historial    BigInt        @id @default(autoincrement())
+  id_historial    BigInt         @id @default(autoincrement())
   id_unidad       Int?
   id_usuario      Int?
-  estado_anterior String?       @db.VarChar(30)
-  estado_nuevo    String?       @db.VarChar(30)
-  motivo          String?       @db.Text
-  fecha_hora      DateTime      @default(now())
+  estado_anterior String?        @db.VarChar(30)
+  estado_nuevo    String?        @db.VarChar(30)
+  motivo          String?        @db.Text
+  fecha_hora      DateTime       @default(now())
   unidad          unidad_equipo? @relation(fields: [id_unidad], references: [id_unidad])
   usuario         usuario?       @relation(fields: [id_usuario], references: [id_usuario])
 }
 
 model movimiento_inventario {
-  id_movimiento     BigInt    @id @default(autoincrement())
-  id_tipo_equipo    Int?
-  id_unidad         Int?
-  id_empresa_origen Int?
+  id_movimiento      BigInt         @id @default(autoincrement())
+  id_tipo_equipo     Int?
+  id_unidad          Int?
+  id_empresa_origen  Int?
   id_empresa_destino Int?
-  id_bodega_origen  Int?
-  id_bodega_destino Int?
-  id_usuario        Int?
-  tipo_movimiento   String?   @db.VarChar(30)
-  cantidad          Decimal   @default(1) @db.Decimal(10, 2)
-  fecha             DateTime  @default(now())
-  referencia_id     Int?
-  tipo_equipo       tipo_equipo?    @relation(fields: [id_tipo_equipo], references: [id_tipo_equipo])
-  unidad            unidad_equipo?  @relation(fields: [id_unidad], references: [id_unidad])
-  empresa_origen    empresa?        @relation("empresa_origen", fields: [id_empresa_origen], references: [id_empresa])
-  empresa_destino   empresa?        @relation("empresa_destino", fields: [id_empresa_destino], references: [id_empresa])
-  bodega_origen     bodega?         @relation("bodega_origen", fields: [id_bodega_origen], references: [id_bodega])
-  bodega_destino    bodega?         @relation("bodega_destino", fields: [id_bodega_destino], references: [id_bodega])
-  usuario           usuario?        @relation(fields: [id_usuario], references: [id_usuario])
+  id_bodega_origen   Int?
+  id_bodega_destino  Int?
+  id_usuario         Int?
+  tipo_movimiento    String?        @db.VarChar(30)
+  cantidad           Decimal        @default(1) @db.Decimal(10, 2)
+  fecha              DateTime       @default(now())
+  referencia_id      Int?
+  tipo_equipo        tipo_equipo?   @relation(fields: [id_tipo_equipo], references: [id_tipo_equipo])
+  unidad             unidad_equipo? @relation(fields: [id_unidad], references: [id_unidad])
+  empresa_origen     empresa?       @relation("empresa_origen", fields: [id_empresa_origen], references: [id_empresa])
+  empresa_destino    empresa?       @relation("empresa_destino", fields: [id_empresa_destino], references: [id_empresa])
+  bodega_origen      bodega?        @relation("bodega_origen", fields: [id_bodega_origen], references: [id_bodega])
+  bodega_destino     bodega?        @relation("bodega_destino", fields: [id_bodega_destino], references: [id_bodega])
+  usuario            usuario?       @relation(fields: [id_usuario], references: [id_usuario])
 }
 
 model prestamo_externo {
-  id_prestamo            Int      @id @default(autoincrement())
+  id_prestamo            Int            @id @default(autoincrement())
   id_unidad              Int?
   id_empresa_prestamista Int?
-  destinatario           String?  @db.VarChar(100)
-  motivo                 String?  @db.Text
-  fecha_salida           DateTime? @db.Date
-  fecha_retorno_esperada DateTime? @db.Date
-  fecha_retorno_real     DateTime? @db.Date
-  estado                 String?  @db.VarChar(20)
-  condicion_retorno      String?  @db.Text
+  destinatario           String?        @db.VarChar(100)
+  motivo                 String?        @db.Text
+  fecha_salida           DateTime?      @db.Date
+  fecha_retorno_esperada DateTime?      @db.Date
+  fecha_retorno_real     DateTime?      @db.Date
+  estado                 String?        @db.VarChar(20)
+  condicion_retorno      String?        @db.Text
   unidad                 unidad_equipo? @relation(fields: [id_unidad], references: [id_unidad])
   empresa_prestamista    empresa?       @relation(fields: [id_empresa_prestamista], references: [id_empresa])
 }
 
 model baja_equipo {
-  id_baja               Int      @id @default(autoincrement())
+  id_baja               Int            @id @default(autoincrement())
   id_unidad             Int?
   id_usuario            Int?
-  motivo_baja           String   @db.Text
-  tipo_baja             String?  @db.VarChar(20)
-  donacion_destinatario String?  @db.VarChar(150)
-  fecha_baja            DateTime? @db.Date
+  motivo_baja           String         @db.Text
+  tipo_baja             String?        @db.VarChar(20)
+  donacion_destinatario String?        @db.VarChar(150)
+  fecha_baja            DateTime?      @db.Date
   unidad                unidad_equipo? @relation(fields: [id_unidad], references: [id_unidad])
   usuario               usuario?       @relation(fields: [id_usuario], references: [id_usuario])
 }
@@ -644,23 +651,23 @@ model intento_fallido {
 }
 
 model punto_cobertura {
-  id_punto           Int     @id @default(autoincrement())
+  id_punto           Int      @id @default(autoincrement())
   id_empresa         Int?
-  latitud            Decimal @db.Decimal(9, 6)
-  longitud           Decimal @db.Decimal(9, 6)
+  latitud            Decimal  @db.Decimal(9, 6)
+  longitud           Decimal  @db.Decimal(9, 6)
   densidad_cobertura Decimal? @db.Decimal(5, 2)
   tipo_cobertura     String?  @db.VarChar(20)
   empresa            empresa? @relation(fields: [id_empresa], references: [id_empresa])
 }
 
 model consentimiento_cookies {
-  id_consentimiento  BigInt    @id @default(autoincrement())
-  id_cliente         Int?
-  ip_anonimizada     String?   @db.VarChar(45)
-  version_documento  String?   @db.VarChar(20)
-  fecha_aceptacion   DateTime?
-  acepto             Boolean
-  cliente            cliente?  @relation(fields: [id_cliente], references: [id_cliente])
+  id_consentimiento BigInt    @id @default(autoincrement())
+  id_cliente        Int?
+  ip_anonimizada    String?   @db.VarChar(45)
+  version_documento String?   @db.VarChar(20)
+  fecha_aceptacion  DateTime?
+  acepto            Boolean
+  cliente           cliente?  @relation(fields: [id_cliente], references: [id_cliente])
 }
 
 model configuracion_seo {
@@ -672,26 +679,27 @@ model configuracion_seo {
   og_tags             Json?
   fecha_actualizacion DateTime @default(now())
   empresa             empresa  @relation(fields: [id_empresa], references: [id_empresa])
+
   @@unique([id_empresa, seccion_url])
 }
 
 model tecnico_externo {
-  id_tecnico_ext  Int     @id @default(autoincrement())
-  nombre_completo String  @db.VarChar(120)
-  empresa         String? @db.VarChar(100)
-  telefono        String? @db.VarChar(20)
-  activo          Boolean @default(true)
+  id_tecnico_ext  Int             @id @default(autoincrement())
+  nombre_completo String          @db.VarChar(120)
+  empresa         String?         @db.VarChar(100)
+  telefono        String?         @db.VarChar(20)
+  activo          Boolean         @default(true)
   ordenes         orden_trabajo[]
 }
 
 model olt {
-  id_olt      Int     @id @default(autoincrement())
-  id_empresa  Int?
-  nombre      String? @db.VarChar(80)
-  ubicacion   String? @db.VarChar(200)
-  ip_gestion  String? @db.VarChar(45)
-  empresa     empresa?      @relation(fields: [id_empresa], references: [id_empresa])
-  tarjetas    tarjeta_pon[]
+  id_olt     Int           @id @default(autoincrement())
+  id_empresa Int?
+  nombre     String?       @db.VarChar(80)
+  ubicacion  String?       @db.VarChar(200)
+  ip_gestion String?       @db.VarChar(45)
+  empresa    empresa?      @relation(fields: [id_empresa], references: [id_empresa])
+  tarjetas   tarjeta_pon[]
 }
 
 model tarjeta_pon {
@@ -704,33 +712,38 @@ model tarjeta_pon {
 }
 
 model mufa {
-  id_mufa        Int     @id @default(autoincrement())
+  id_mufa        Int          @id @default(autoincrement())
   id_tarjeta_pon Int?
-  identificador  String? @db.VarChar(50)
-  ubicacion      String? @db.VarChar(200)
+  identificador  String?      @db.VarChar(50)
+  ubicacion      String?      @db.VarChar(200)
   tarjeta_pon    tarjeta_pon? @relation(fields: [id_tarjeta_pon], references: [id_tarjeta])
   cajas_nap      caja_nap[]
 }
 
 model puerto_nap {
-  id_puerto           Int     @id @default(autoincrement())
+  id_puerto           Int       @id @default(autoincrement())
   id_caja_nap         Int?
-  numero_puerto       Int?    @db.SmallInt
-  estado              String? @db.VarChar(10)
+  numero_puerto       Int?      @db.SmallInt
+  /**
+   * RF-17 pide tres estados: ocupado, libre o EN MANTENCION. La columna era
+   * VARCHAR(10) y `EN_MANTENCION` tiene 13 caracteres, asi que uno de los tres
+   * no se podia guardar. Se ensancha a 20; es aditivo y no toca lo existente.
+   */
+  estado              String?   @db.VarChar(20)
   id_cliente_asociado Int?
   caja_nap            caja_nap? @relation(fields: [id_caja_nap], references: [id_caja_nap])
   cliente_asociado    cliente?  @relation(fields: [id_cliente_asociado], references: [id_cliente])
 }
 
 model monitoreo_ont {
-  id_monitoreo        BigInt   @id @default(autoincrement())
+  id_monitoreo        BigInt         @id @default(autoincrement())
   id_unidad           Int?
   id_cliente          Int?
   id_caja_nap         Int?
   id_registro_ont     Int?
-  potencia_actual_dbm Decimal? @db.Decimal(5, 2)
-  timestamp_medicion  DateTime @default(now())
-  estado_conexion     String?  @db.VarChar(15)
+  potencia_actual_dbm Decimal?       @db.Decimal(5, 2)
+  timestamp_medicion  DateTime       @default(now())
+  estado_conexion     String?        @db.VarChar(15)
   unidad              unidad_equipo? @relation(fields: [id_unidad], references: [id_unidad])
   cliente             cliente?       @relation(fields: [id_cliente], references: [id_cliente])
   caja_nap            caja_nap?      @relation(fields: [id_caja_nap], references: [id_caja_nap])
@@ -740,11 +753,11 @@ model monitoreo_ont {
 }
 
 model historial_conexion_ont {
-  id_historial_ont BigInt        @id @default(autoincrement())
+  id_historial_ont BigInt         @id @default(autoincrement())
   id_unidad        Int?
   id_registro_ont  Int?
-  evento           String?       @db.VarChar(15)
-  timestamp        DateTime      @default(now())
+  evento           String?        @db.VarChar(15)
+  timestamp        DateTime       @default(now())
   unidad           unidad_equipo? @relation(fields: [id_unidad], references: [id_unidad])
   registro         registro_ont?  @relation(fields: [id_registro_ont], references: [id_registro_ont])
 }
@@ -758,40 +771,40 @@ model historial_conexion_ont {
 /// Cuando la reunion defina de quien es el registro de ONT, esta tabla se
 /// mantiene o se reemplaza por el mecanismo acordado sin tocar el resto.
 model registro_ont {
-  id_registro_ont   Int      @id @default(autoincrement())
+  id_registro_ont       Int                      @id @default(autoincrement())
   // Empresa dueña de la fuente de monitoreo (las credenciales de SmartOLT son
   // de una empresa concreta). Se puebla en la ingesta, no se adivina por fila.
   // Sin esto el motor de alertas no puede insertar: corre en el poller, sin
   // JWT, y `id_cliente` está en null en casi todas las filas.
-  id_empresa        Int?
-  numero_serie      String   @unique @db.VarChar(80)
-  id_externo        String?  @db.VarChar(40)
-  olt_externo       String?  @db.VarChar(40)
-  board             Int?     @db.SmallInt
-  puerto_pon        Int?     @db.SmallInt
-  zona              String?  @db.VarChar(80)
-  odb               String?  @db.VarChar(50)
-  modelo            String?  @db.VarChar(80)
-  nombre_cliente_ext String? @db.VarChar(160)
-  direccion_cliente_ext String? @db.VarChar(200)
-  id_unidad         Int?
-  id_cliente        Int?
-  id_caja_nap       Int?
+  id_empresa            Int?
+  numero_serie          String                   @unique @db.VarChar(80)
+  id_externo            String?                  @db.VarChar(40)
+  olt_externo           String?                  @db.VarChar(40)
+  board                 Int?                     @db.SmallInt
+  puerto_pon            Int?                     @db.SmallInt
+  zona                  String?                  @db.VarChar(80)
+  odb                   String?                  @db.VarChar(50)
+  modelo                String?                  @db.VarChar(80)
+  nombre_cliente_ext    String?                  @db.VarChar(160)
+  direccion_cliente_ext String?                  @db.VarChar(200)
+  id_unidad             Int?
+  id_cliente            Int?
+  id_caja_nap           Int?
   /**
    * Quién confirmó la caja en terreno. Si está seteado, el enlace lo verificó
    * una persona y el proceso automático no lo toca nunca — es la diferencia
    * entre un dato deducido y uno sabido.
    */
-  caja_confirmada_por Int?
-  caja_confirmada_en  DateTime?
-  primera_vez       DateTime @default(now())
-  ultima_vez        DateTime @updatedAt
-  monitoreos        monitoreo_ont[]
-  historial         historial_conexion_ont[]
-  alertas           alerta_monitoreo[]
+  caja_confirmada_por   Int?
+  caja_confirmada_en    DateTime?
+  primera_vez           DateTime                 @default(now())
+  ultima_vez            DateTime                 @updatedAt
+  monitoreos            monitoreo_ont[]
+  historial             historial_conexion_ont[]
+  alertas               alerta_monitoreo[]
 
-  empresa           empresa? @relation(fields: [id_empresa], references: [id_empresa])
-  confirmada_por    usuario? @relation("caja_confirmada", fields: [caja_confirmada_por], references: [id_usuario])
+  empresa        empresa? @relation(fields: [id_empresa], references: [id_empresa])
+  confirmada_por usuario? @relation("caja_confirmada", fields: [caja_confirmada_por], references: [id_usuario])
 
   @@index([id_empresa])
 }
@@ -799,41 +812,44 @@ model registro_ont {
 /**
  * Alerta del monitoreo de red. La genera el motor (CU-13 potencia, CU-52/53 sin
  * señal, CU-17 caja caída) y la revisa un JEFE_TECNICO.
- *
  * El sujeto de la alerta depende del tipo, y es EXACTAMENTE UNO — se valida en
  * el servicio, no con un CHECK en SQL: meter un CHECK crudo en la migración
  * reabre el mismo dilema que tiene trabado al issue #36 y hace que
  * `prisma migrate dev` lo vea como drift.
- *   - POTENCIA_FUERA_RANGO / SIN_SENAL  -> `id_registro_ont`
- *   - FALLA_CAJA_NAP                    -> `clave_caja`
+ * - POTENCIA_FUERA_RANGO / SIN_SENAL  -> `id_registro_ont`
+ * - FALLA_CAJA_NAP                    -> `clave_caja`
  */
 model alerta_monitoreo {
-  id_alerta              Int       @id @default(autoincrement())
-  id_empresa             Int
-  tipo                   String    @db.VarChar(30)
-  severidad              String?   @db.VarChar(15)
-  mensaje                String?   @db.Text
+  id_alerta  Int     @id @default(autoincrement())
+  id_empresa Int
+  tipo       String  @db.VarChar(30)
+  severidad  String? @db.VarChar(15)
+  mensaje    String? @db.Text
 
-  id_registro_ont        Int?
-  id_cliente             Int?
+  id_registro_ont Int?
+  id_cliente      Int?
   /**
    * Identidad del grupo de caja SEGÚN SMARTOLT ("2/1/7|NAP 6"): olt, placa,
    * puerto PON y nombre de caja normalizado. Es lo que agrupa para CU-17 y no
    * depende de que la caja esté ligada a la topología de Tomodat — por eso el
    * motor cubre el 91% de las ONT y no el 89% que alcanza el ligado.
    */
-  clave_caja             String?   @db.VarChar(120)
-  /** La caja de Tomodat, cuando se conoce. Es lo que aporta la ubicación. */
-  id_caja_nap            Int?
-  /** Cuántos clientes cubre la alerta. 1 en las individuales. */
-  afectados              Int       @default(1)
+  clave_caja      String? @db.VarChar(120)
+  /**
+   * La caja de Tomodat, cuando se conoce. Es lo que aporta la ubicación.
+   */
+  id_caja_nap     Int?
+  /**
+   * Cuántos clientes cubre la alerta. 1 en las individuales.
+   */
+  afectados       Int     @default(1)
 
   /**
    * OT generada desde esta alerta (CU-16 preventiva, CU-21 reparación). Es lo
    * que permite saber si una caja ya tiene cuadrilla en camino y no duplicar
    * el despacho.
    */
-  id_ot_generada         Int?
+  id_ot_generada Int?
 
   resuelta               Boolean   @default(false)
   resuelta_por           Int?
@@ -841,58 +857,58 @@ model alerta_monitoreo {
   creada_en              DateTime  @default(now())
   resuelta_en            DateTime?
 
-  empresa          empresa       @relation(fields: [id_empresa], references: [id_empresa])
-  registro         registro_ont? @relation(fields: [id_registro_ont], references: [id_registro_ont])
-  cliente          cliente?      @relation(fields: [id_cliente], references: [id_cliente])
-  caja             caja_nap?     @relation(fields: [id_caja_nap], references: [id_caja_nap])
-  ot_generada      orden_trabajo? @relation(fields: [id_ot_generada], references: [id_ot])
-  usuario_resuelve usuario?      @relation("alerta_resuelve", fields: [resuelta_por], references: [id_usuario])
+  empresa          empresa            @relation(fields: [id_empresa], references: [id_empresa])
+  registro         registro_ont?      @relation(fields: [id_registro_ont], references: [id_registro_ont])
+  cliente          cliente?           @relation(fields: [id_cliente], references: [id_cliente])
+  caja             caja_nap?          @relation(fields: [id_caja_nap], references: [id_caja_nap])
+  ot_generada      orden_trabajo?     @relation(fields: [id_ot_generada], references: [id_ot])
+  usuario_resuelve usuario?           @relation("alerta_resuelve", fields: [resuelta_por], references: [id_usuario])
+  notificaciones   log_notificacion[]
 
   // El listado del panel filtra siempre por empresa y por pendientes.
   @@index([id_empresa, resuelta])
   // Deduplicación: buscar si ya hay una alerta abierta del mismo tipo y sujeto.
   @@index([tipo, clave_caja, resuelta])
-  notificaciones         log_notificacion[]
 }
 
 model prospecto {
-  id_prospecto         Int      @id @default(autoincrement())
-  id_empresa           Int?
-  id_usuario_comercial Int?
-  id_cliente           Int?     @unique
-  rut                  String?  @db.VarChar(12)
-  nombre_completo      String?  @db.VarChar(120)
-  email                String?  @db.VarChar(120)
-  telefono             String?  @db.VarChar(20)
-  direccion            String?  @db.VarChar(200)
-  estado_pipeline      String?  @db.VarChar(30)
-  motivo_perdida       String?  @db.VarChar(30)
+  id_prospecto           Int          @id @default(autoincrement())
+  id_empresa             Int?
+  id_usuario_comercial   Int?
+  id_cliente             Int?         @unique
+  rut                    String?      @db.VarChar(12)
+  nombre_completo        String?      @db.VarChar(120)
+  email                  String?      @db.VarChar(120)
+  telefono               String?      @db.VarChar(20)
+  direccion              String?      @db.VarChar(200)
+  estado_pipeline        String?      @db.VarChar(30)
+  motivo_perdida         String?      @db.VarChar(30)
   tiempo_conversion_dias Int?
-  fecha_creacion       DateTime @default(now())
-  fecha_conversion     DateTime? @db.Date
-  empresa              empresa? @relation(fields: [id_empresa], references: [id_empresa])
-  usuario_comercial    usuario? @relation(fields: [id_usuario_comercial], references: [id_usuario])
-  cliente              cliente? @relation(fields: [id_cliente], references: [id_cliente])
-  cotizaciones         cotizacion[]
+  fecha_creacion         DateTime     @default(now())
+  fecha_conversion       DateTime?    @db.Date
+  empresa                empresa?     @relation(fields: [id_empresa], references: [id_empresa])
+  usuario_comercial      usuario?     @relation(fields: [id_usuario_comercial], references: [id_usuario])
+  cliente                cliente?     @relation(fields: [id_cliente], references: [id_cliente])
+  cotizaciones           cotizacion[]
 }
 
 model cotizacion {
-  id_cotizacion           Int      @id @default(autoincrement())
+  id_cotizacion           Int        @id @default(autoincrement())
   id_prospecto            Int?
   id_plan                 Int?
-  pdf_url                 String?  @db.Text
+  pdf_url                 String?    @db.Text
   fecha_envio             DateTime?
-  factibilidad_verificada Boolean  @default(false)
+  factibilidad_verificada Boolean    @default(false)
   prospecto               prospecto? @relation(fields: [id_prospecto], references: [id_prospecto])
   plan                    plan?      @relation(fields: [id_plan], references: [id_plan])
 }
 
 model canal_whatsapp {
-  id_canal        Int     @id @default(autoincrement())
+  id_canal        Int                  @id @default(autoincrement())
   id_empresa      Int?
-  numero_telefono String? @unique @db.VarChar(20)
-  nombre_canal    String? @db.VarChar(80)
-  activo          Boolean @default(true)
+  numero_telefono String?              @unique @db.VarChar(20)
+  nombre_canal    String?              @db.VarChar(80)
+  activo          Boolean              @default(true)
   empresa         empresa?             @relation(fields: [id_empresa], references: [id_empresa])
   plantillas      plantilla_whatsapp[]
   mensajes        mensaje_whatsapp[]
@@ -900,37 +916,37 @@ model canal_whatsapp {
 }
 
 model plantilla_whatsapp {
-  id_plantilla_wa  Int     @id @default(autoincrement())
+  id_plantilla_wa  Int                @id @default(autoincrement())
   id_canal         Int?
-  nombre_plantilla String? @db.VarChar(80)
-  contenido        String? @db.Text
-  tipo_uso         String? @db.VarChar(40)
+  nombre_plantilla String?            @db.VarChar(80)
+  contenido        String?            @db.Text
+  tipo_uso         String?            @db.VarChar(40)
   canal            canal_whatsapp?    @relation(fields: [id_canal], references: [id_canal])
   mensajes         mensaje_whatsapp[]
 }
 
 model mensaje_whatsapp {
-  id_mensaje_wa   BigInt    @id @default(autoincrement())
+  id_mensaje_wa   BigInt              @id @default(autoincrement())
   id_canal        Int?
   id_cliente      Int?
   id_plantilla_wa Int?
-  contenido       String?   @db.Text
-  timestamp       DateTime  @default(now())
-  origen          String?   @db.VarChar(10)
-  estado          String?   @db.VarChar(15)
+  contenido       String?             @db.Text
+  timestamp       DateTime            @default(now())
+  origen          String?             @db.VarChar(10)
+  estado          String?             @db.VarChar(15)
   canal           canal_whatsapp?     @relation(fields: [id_canal], references: [id_canal])
   cliente         cliente?            @relation(fields: [id_cliente], references: [id_cliente])
   plantilla_wa    plantilla_whatsapp? @relation(fields: [id_plantilla_wa], references: [id_plantilla_wa])
 }
 
 model conversacion_bot {
-  id_conversacion Int       @id @default(autoincrement())
+  id_conversacion Int             @id @default(autoincrement())
   id_cliente      Int?
   id_canal_wa     Int?
-  plataforma      String?   @db.VarChar(20)
-  fecha_inicio    DateTime  @default(now())
+  plataforma      String?         @db.VarChar(20)
+  fecha_inicio    DateTime        @default(now())
   fecha_fin       DateTime?
-  derivada_humano Boolean   @default(false)
+  derivada_humano Boolean         @default(false)
   cliente         cliente?        @relation(fields: [id_cliente], references: [id_cliente])
   canal_wa        canal_whatsapp? @relation(fields: [id_canal_wa], references: [id_canal])
   mensajes        mensaje_bot[]
@@ -938,32 +954,32 @@ model conversacion_bot {
 }
 
 model mensaje_bot {
-  id_mensaje      BigInt           @id @default(autoincrement())
+  id_mensaje      BigInt            @id @default(autoincrement())
   id_conversacion Int?
-  rol             String?          @db.VarChar(15)
-  contenido       String?          @db.Text
-  timestamp       DateTime         @default(now())
+  rol             String?           @db.VarChar(15)
+  contenido       String?           @db.Text
+  timestamp       DateTime          @default(now())
   datos_sensibles Boolean?
   conversacion    conversacion_bot? @relation(fields: [id_conversacion], references: [id_conversacion])
 }
 
 model credenciales_tvip {
-  id_credencial      Int      @id @default(autoincrement())
-  id_contrato        Int?     @unique
-  usuario_tvip       String?  @db.VarChar(80)
-  password_tvip_hash String?  @db.VarChar(72)
-  fecha_generacion   DateTime @default(now())
+  id_credencial      Int       @id @default(autoincrement())
+  id_contrato        Int?      @unique
+  usuario_tvip       String?   @db.VarChar(80)
+  password_tvip_hash String?   @db.VarChar(72)
+  fecha_generacion   DateTime  @default(now())
   contrato           contrato? @relation(fields: [id_contrato], references: [id_contrato])
 }
 
 model transferencia_equipo {
-  id_transferencia    Int      @id @default(autoincrement())
+  id_transferencia    Int       @id @default(autoincrement())
   id_empresa_origen   Int?
   id_empresa_destino  Int?
   id_usuario_registro Int?
   fecha_transferencia DateTime? @db.Date
   observaciones       String?   @db.Text
-  empresa_origen      empresa? @relation("empresa_origen", fields: [id_empresa_origen], references: [id_empresa])
-  empresa_destino     empresa? @relation("empresa_destino", fields: [id_empresa_destino], references: [id_empresa])
-  usuario_registro    usuario? @relation(fields: [id_usuario_registro], references: [id_usuario])
+  empresa_origen      empresa?  @relation("empresa_origen", fields: [id_empresa_origen], references: [id_empresa])
+  empresa_destino     empresa?  @relation("empresa_destino", fields: [id_empresa_destino], references: [id_empresa])
+  usuario_registro    usuario?  @relation(fields: [id_usuario_registro], references: [id_usuario])
 }

@@ -17,24 +17,3 @@ export function validarRut(rut: string): boolean {
 
   return dv === dvEsperado;
 }
-
-export function formatearRut(rut: string): string {
-  const limpio = rut.replace(/[^0-9kK]/g, '');
-  if (limpio.length < 2 || limpio.length > 9) return rut;
-
-  const cuerpo = limpio.slice(0, -1);
-  const dv = limpio.slice(-1).toUpperCase();
-
-  let formateado = '';
-  let contador = 0;
-  for (let i = cuerpo.length - 1; i >= 0; i--) {
-    formateado = cuerpo[i] + formateado;
-    contador++;
-    if (contador === 3 && i > 0) {
-      formateado = '.' + formateado;
-      contador = 0;
-    }
-  }
-
-  return formateado + '-' + dv;
-}

@@ -8,12 +8,20 @@
   import { get } from 'svelte/store';
   import { authStore } from '$lib/stores/auth.store';
   import * as api from '$lib/api/notificaciones.api';
+  import * as ordenesApi from '$lib/api/ordenes.api';
   import type { OpcionesNotificacion, Plantilla, OtDetenida } from '$lib/api/notificaciones.api';
 
   let vista = $state<'plantillas' | 'detenidas'>('plantillas');
   let opciones = $state<OpcionesNotificacion | null>(null);
   let plantillas = $state<Plantilla[]>([]);
   let detenidas = $state<OtDetenida[]>([]);
+
+  // RF-45 pide dos acciones sobre la alerta --reasignar y marcar CRITICA-- y el
+  // documento del equipo agrega descartarla, con reaparicion a las 48 h.
+  let tecnicos = $state<{ id_usuario: number; nombre_completo: string }[]>([]);
+  let reasignando = $state<OtDetenida | null>(null);
+  let tecnicoElegido = $state<number | ''>('');
+  let enCurso = $state<number | null>(null);
   let cargando = $state(true);
   let error = $state('');
   let aviso = $state('');
@@ -35,18 +43,78 @@
     cargando = true;
     error = '';
     try {
-      const [o, p, d] = await Promise.all([
+      const [o, p, d, tec] = await Promise.all([
         api.obtenerOpciones(token()),
         api.listarPlantillas(token()),
         api.otDetenidas(token()),
+        // Si no se puede leer la lista de tecnicos, el panel sigue sirviendo:
+        // solo se queda sin el boton de reasignar.
+        ordenesApi.listarTecnicos(token()).catch(() => []),
       ]);
       opciones = o;
       plantillas = p;
       detenidas = d;
+      tecnicos = tec;
     } catch (e) {
       error = e instanceof Error ? e.message : 'No se pudieron cargar las notificaciones';
     } finally {
       cargando = false;
+    }
+  }
+
+  async function recargarDetenidas() {
+    detenidas = await api.otDetenidas(token());
+  }
+
+  function abrirReasignar(o: OtDetenida) {
+    reasignando = o;
+    tecnicoElegido = '';
+    error = '';
+  }
+
+  async function confirmarReasignar() {
+    if (!reasignando || tecnicoElegido === '') return;
+    enCurso = reasignando.id_ot;
+    error = '';
+    try {
+      await ordenesApi.reasignarTecnico(token(), reasignando.id_ot, Number(tecnicoElegido));
+      // Reasignar mueve la OT, asi que sale sola de la lista: el reloj de las
+      // 24 h se reinicia con la entrada del historial.
+      aviso = `OT #${reasignando.id_ot} reasignada.`;
+      reasignando = null;
+      await recargarDetenidas();
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'No se pudo reasignar';
+    } finally {
+      enCurso = null;
+    }
+  }
+
+  async function marcarCritica(o: OtDetenida) {
+    enCurso = o.id_ot;
+    error = '';
+    try {
+      await ordenesApi.cambiarPrioridad(token(), o.id_ot, 'CRITICA');
+      aviso = `OT #${o.id_ot} marcada como CRITICA.`;
+      await recargarDetenidas();
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'No se pudo cambiar la prioridad';
+    } finally {
+      enCurso = null;
+    }
+  }
+
+  async function descartar(o: OtDetenida) {
+    enCurso = o.id_ot;
+    error = '';
+    try {
+      const r = await api.descartarAlertaDetenida(token(), o.id_ot);
+      aviso = `Alerta de la OT #${o.id_ot} descartada; vuelve en ${r.horas_silencio} horas.`;
+      await recargarDetenidas();
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'No se pudo descartar la alerta';
+    } finally {
+      enCurso = null;
     }
   }
 
@@ -371,8 +439,9 @@
               <th scope="col" class="px-3 py-2 text-left font-semibold">Estado</th>
               <th scope="col" class="px-3 py-2 text-left font-semibold">Cliente</th>
               <th scope="col" class="px-3 py-2 text-left font-semibold">Técnico</th>
+              <th scope="col" class="px-3 py-2 text-left font-semibold">Prioridad</th>
               <th scope="col" class="px-3 py-2 text-right font-semibold">Detenida</th>
-              <th scope="col" class="px-3 py-2 text-right font-semibold">Ver</th>
+              <th scope="col" class="px-3 py-2 text-right font-semibold">Acciones</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
@@ -394,14 +463,50 @@
                     <span class="text-slate-700">{o.tecnico}</span>
                   {/if}
                 </td>
+                <td class="px-3 py-2">
+                  <span class="px-1.5 py-0.5 rounded text-xs font-medium border
+                    {o.prioridad === 'CRITICA'
+                      ? 'bg-red-100 text-red-800 border-red-200'
+                      : 'bg-slate-100 text-slate-700 border-slate-200'}">
+                    {o.prioridad}
+                  </span>
+                </td>
                 <td class="px-3 py-2 text-right tabular-nums font-semibold
                            {o.horas_detenida >= 72 ? 'text-red-700' : 'text-amber-700'}">
                   {o.horas_detenida} h
                 </td>
-                <td class="px-3 py-2 text-right">
-                  <a href="/admin/ot/{o.id_ot}"
-                     class="btn-texto"
-                  >Abrir</a>
+                <td class="px-3 py-2">
+                  <!--
+                    RF-45: "la alerta permite reasignar la OT o marcarla como
+                    CRITICA directamente desde el panel". Descartar lo agrega el
+                    documento del equipo, con reaparicion a las 48 h.
+                  -->
+                  <div class="flex flex-wrap items-center justify-end gap-1.5">
+                    {#if tecnicos.length > 0}
+                      <button
+                        type="button"
+                        onclick={() => abrirReasignar(o)}
+                        disabled={enCurso === o.id_ot}
+                        class="btn btn-secundario btn-chico"
+                      >Reasignar</button>
+                    {/if}
+                    {#if o.prioridad !== 'CRITICA'}
+                      <button
+                        type="button"
+                        onclick={() => marcarCritica(o)}
+                        disabled={enCurso === o.id_ot}
+                        class="btn btn-chico bg-red-600 text-white shadow-sm hover:bg-red-700 focus-visible:ring-red-500"
+                      >Marcar CRÍTICA</button>
+                    {/if}
+                    <button
+                      type="button"
+                      onclick={() => descartar(o)}
+                      disabled={enCurso === o.id_ot}
+                      title="La alerta vuelve a las 48 horas si la OT sigue detenida"
+                      class="btn btn-secundario btn-chico"
+                    >Descartar</button>
+                    <a href="/admin/ot/{o.id_ot}" class="btn-texto">Abrir</a>
+                  </div>
                 </td>
               </tr>
             {/each}
@@ -411,3 +516,65 @@
     {/if}
   {/if}
 </div>
+
+<!-- RF-45: elegir a quien se reasigna. Se pregunta antes porque la OT cambia de
+     dueño y eso no se deshace solo. -->
+{#if reasignando}
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <button
+      class="absolute inset-0 bg-slate-900/50 cursor-default"
+      aria-label="Cerrar"
+      onclick={() => (reasignando = null)}
+    ></button>
+    <div
+      class="relative w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="titulo-reasignar"
+    >
+      <h3 id="titulo-reasignar" class="font-semibold text-slate-900">
+        Reasignar OT #{reasignando.id_ot}
+      </h3>
+      <p class="mt-1 text-sm text-slate-600">
+        Lleva {reasignando.horas_detenida} horas sin movimiento
+        {#if reasignando.sin_tecnico}
+          y no tiene técnico asignado.
+        {:else}
+          con {reasignando.tecnico}.
+        {/if}
+      </p>
+
+      <label for="tecnico-reasignar" class="mt-4 block text-sm font-medium text-slate-700">
+        Nuevo técnico
+      </label>
+      <select
+        id="tecnico-reasignar"
+        bind:value={tecnicoElegido}
+        class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <option value="">Elegir…</option>
+        {#each tecnicos as tec (tec.id_usuario)}
+          <option value={tec.id_usuario}>{tec.nombre_completo}</option>
+        {/each}
+      </select>
+
+      <p class="mt-2 text-xs text-slate-500">
+        La orden mantiene su estado: cambia quién la tiene, no en qué punto va.
+      </p>
+
+      <div class="mt-5 flex justify-end gap-2">
+        <button type="button" class="btn btn-secundario" onclick={() => (reasignando = null)}>
+          Cancelar
+        </button>
+        <button
+          type="button"
+          class="btn btn-primario"
+          disabled={tecnicoElegido === '' || enCurso !== null}
+          onclick={confirmarReasignar}
+        >
+          {enCurso !== null ? 'Reasignando…' : 'Reasignar'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}

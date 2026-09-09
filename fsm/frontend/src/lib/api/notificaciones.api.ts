@@ -44,6 +44,12 @@ export interface Destinatario {
 
 export interface Destinatarios {
   alerta: { id_alerta: number; tipo: string; clave_caja: string | null };
+  /**
+   * Si la alerta cubre a un grupo (caja, placa u OLT) o a un solo cliente.
+   * La Vista pide una confirmacion distinta segun el caso: avisar a 71
+   * personas de una vez no se deshace.
+   */
+  es_agregada: boolean;
   destinatarios: Destinatario[];
 }
 
@@ -130,4 +136,12 @@ export const otDetenidas = (token: string, horas?: number) =>
   pedir<OtDetenida[]>(
     token,
     `${API_URL}/api/notificaciones/ot-detenidas${horas ? `?horas=${horas}` : ''}`,
+  );
+
+/** RF-45: descartar la alerta de una OT detenida. Vuelve a las 48 h. */
+export const descartarAlertaDetenida = (token: string, id_ot: number) =>
+  pedirJson<{ id_ot: number; descartada_en: string; reaparece_en: string; horas_silencio: number }>(
+    token,
+    `${API_URL}/api/notificaciones/ot-detenidas/${id_ot}/descartar`,
+    { method: 'POST' },
   );

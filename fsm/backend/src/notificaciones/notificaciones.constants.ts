@@ -33,8 +33,6 @@ export const ESTADO_ENVIO = {
   FALLIDO: 'FALLIDO',
 } as const;
 
-export type EstadoEnvio = (typeof ESTADO_ENVIO)[keyof typeof ESTADO_ENVIO];
-
 /**
  * Eventos que puede describir una plantilla. `tipo_evento` es VARCHAR(60).
  *
@@ -55,8 +53,6 @@ export const TIPO_EVENTO = {
   CORTE_MASIVO_CAJA_NAP: 'CORTE_MASIVO_CAJA_NAP',
 } as const;
 
-export type TipoEvento = (typeof TIPO_EVENTO)[keyof typeof TIPO_EVENTO];
-
 /**
  * Variables que se reemplazan en el texto de la plantilla.
  *
@@ -75,7 +71,24 @@ export const VARIABLES_PLANTILLA = [
   'tiempo_estimado',
 ] as const;
 
-export type VariablePlantilla = (typeof VARIABLES_PLANTILLA)[number];
-
 /** Horas sin movimiento tras las cuales una OT se considera detenida (RF-45). */
 export const HORAS_OT_INACTIVA = 24;
+
+/**
+ * RF-45 nombra dos estados, no "cualquiera que no sea terminal": "cuando una OT
+ * lleve mas de 24 horas en estado ASIGNADA o EN_CURSO sin actualizaciones".
+ *
+ * Antes se filtraba por `notIn: ['COMPLETADA', 'CANCELADA']`, con lo que
+ * entraban PENDIENTE y PENDIENTE_CLIENTE_AUSENTE. Esta ultima es la que mas
+ * ruido metia: tiene su propia regla en RF-09 --treinta dias-- y aparecer
+ * tambien en la lista de 24 horas la duplicaba.
+ */
+export const ESTADOS_OT_DETENIDA = ['ASIGNADA', 'EN_CURSO'] as const;
+
+/**
+ * Horas que una alerta de OT detenida queda en silencio tras descartarla.
+ * El documento del equipo lo fija: "si se descarta la alerta, reaparece a las
+ * 48 horas". Es el mismo patron que SILENCIO_TRAS_REVISION_H usa para las
+ * alertas de red, donde son 24.
+ */
+export const HORAS_SILENCIO_OT_DETENIDA = 48;

@@ -6,6 +6,7 @@ import {
   DIAS_VENTANA_RECURRENCIA,
   UMBRAL_REPARACIONES_RECURRENTES,
 } from '../ordenes/reparaciones-recurrentes.service.js';
+import { SinReagendarService } from '../ordenes/sin-reagendar.service.js';
 
 /**
  * RF-08 tenia tres copias de la misma regla. Dos se unificaron en
@@ -41,6 +42,7 @@ describe('dashboard · contador de clientes con reparaciones recurrentes', () =>
             $queryRaw: jest.fn(async () => [] as unknown[]),
           },
         },
+        { provide: SinReagendarService, useValue: { contarVencidas: jest.fn(async () => 0) } },
       ],
     }).compile();
     service = mod.get(DashboardService);

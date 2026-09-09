@@ -375,12 +375,19 @@ export class PlantaExternaService {
       }
     }
 
-    // Una por una y no en lote: `updateMany` no permite un valor distinto por
-    // fila, y son cientos de filas como mucho.
+    // `updateMany` no acepta un valor distinto por fila, pero si una zona para
+    // muchas cajas: se agrupa por zona y va un UPDATE por zona distinta. Sobre
+    // los datos de FiNet eso son 11 consultas en vez de 262.
+    const porZona = new Map<string, number[]>();
     for (const u of actualizaciones) {
-      await this.prisma.caja_nap.update({
-        where: { id_caja_nap: u.id },
-        data: { zona: u.zona },
+      const ids = porZona.get(u.zona);
+      if (ids) ids.push(u.id);
+      else porZona.set(u.zona, [u.id]);
+    }
+    for (const [zona, ids] of porZona) {
+      await this.prisma.caja_nap.updateMany({
+        where: { id_caja_nap: { in: ids } },
+        data: { zona },
       });
     }
 

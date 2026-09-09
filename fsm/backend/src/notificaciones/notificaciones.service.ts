@@ -6,10 +6,13 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AlertasService } from '../monitoreo/alertas.service.js';
+import { esAlertaAgregada } from '../monitoreo/monitoreo.constants.js';
 import {
   CANAL_NOTIFICACION,
   ESTADO_ENVIO,
+  ESTADOS_OT_DETENIDA,
   HORAS_OT_INACTIVA,
+  HORAS_SILENCIO_OT_DETENIDA,
   VARIABLES_PLANTILLA,
   type CanalNotificacion,
 } from './notificaciones.constants.js';
@@ -38,7 +41,6 @@ const alcanzadoPor = (tipo: string) => {
 };
 
 /** Estados en los que una OT ya no se mueve mas: no tiene sentido reclamarlas. */
-const ESTADOS_TERMINALES = ['COMPLETADA', 'CANCELADA'];
 
 export interface ResumenEnvio {
   id_alerta: number;
@@ -233,6 +235,21 @@ export class NotificacionesService {
 
     return {
       alerta,
+      /**
+       * RF-42 nombra la falla de caja NAP, pero el aviso NO se restringe a las
+       * agregadas, y esto es deliberado.
+       *
+       * `clienteDeAlertaIndividual` existe justamente para que avisar sobre una
+       * alerta individual haga algo: si se bloqueara, el jefe tecnico veria un
+       * boton que no responde --o peor, uno que responde "listo" sin avisarle a
+       * nadie--. Un cliente sin senal tambien merece que le digan.
+       *
+       * Lo que cambia es el peso de la decision: avisar de una caja caida
+       * alcanza a decenas de personas de una vez y no se deshace. Por eso el
+       * tipo viaja hasta la Vista, que pide una confirmacion distinta segun el
+       * caso en vez de tratar los dos igual.
+       */
+      es_agregada: esAlertaAgregada(alerta.tipo),
       destinatarios: alcanzados
         // Los equipos de clientes dados de baja no son parte del incidente: el
         // motor ya los marca, y avisarle a alguien que no tiene servicio hace
@@ -418,8 +435,21 @@ export class NotificacionesService {
   async otDetenidas(id_empresa: number, horas = HORAS_OT_INACTIVA) {
     const corte = new Date(Date.now() - horas * 3600_000);
 
+    // Descartada hace menos de 48 h: sigue en silencio. Ver
+    // HORAS_SILENCIO_OT_DETENIDA; es el mismo patron que usan las alertas de
+    // red, donde revisar no repara y sin el freno reaparecerian enseguida.
+    const finDelSilencio = new Date(Date.now() - HORAS_SILENCIO_OT_DETENIDA * 3600_000);
+
     const ots = await this.prisma.orden_trabajo.findMany({
-      where: { id_empresa, estado: { notIn: ESTADOS_TERMINALES } },
+      where: {
+        id_empresa,
+        // RF-45 nombra estos dos estados, ver ESTADOS_OT_DETENIDA.
+        estado: { in: [...ESTADOS_OT_DETENIDA] },
+        OR: [
+          { alerta_detenida_descartada_en: null },
+          { alerta_detenida_descartada_en: { lt: finDelSilencio } },
+        ],
+      },
       select: {
         id_ot: true,
         tipo_ot: true,
@@ -452,5 +482,39 @@ export class NotificacionesService {
       .filter((o) => o.sin_movimiento_desde < corte)
       // La que lleva mas tiempo parada primero: es la que peor esta.
       .sort((a, b) => b.horas_detenida - a.horas_detenida);
+  }
+
+  /**
+   * RF-45 / documento del equipo: descartar la alerta de una OT detenida.
+   *
+   * No borra nada ni toca la OT: solo deja la marca de cuando se descarto,
+   * y `otDetenidas` la omite mientras no pasen las 48 h. Descartar no mueve
+   * la orden, asi que la condicion sigue cumpliendose y sin el silencio la
+   * alerta volveria en la carga siguiente.
+   */
+  async descartarAlertaDetenida(id_ot: number, id_empresa: number, userId: number) {
+    const ot = await this.prisma.orden_trabajo.findFirst({
+      where: { id_ot, id_empresa },
+      select: { id_ot: true, estado: true },
+    });
+    if (!ot) throw new NotFoundException('OT no encontrada');
+    if (!ESTADOS_OT_DETENIDA.includes(ot.estado as (typeof ESTADOS_OT_DETENIDA)[number])) {
+      throw new BadRequestException(
+        'Solo se puede descartar la alerta de una OT en estado ASIGNADA o EN_CURSO',
+      );
+    }
+
+    const ahora = new Date();
+    await this.prisma.orden_trabajo.update({
+      where: { id_ot },
+      data: { alerta_detenida_descartada_en: ahora, alerta_detenida_descartada_por: userId },
+    });
+
+    return {
+      id_ot,
+      descartada_en: ahora,
+      reaparece_en: new Date(ahora.getTime() + HORAS_SILENCIO_OT_DETENIDA * 3600_000),
+      horas_silencio: HORAS_SILENCIO_OT_DETENIDA,
+    };
   }
 }

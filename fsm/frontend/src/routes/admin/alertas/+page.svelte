@@ -15,6 +15,10 @@
     type Alerta, type ResumenAlertas, type Facetas, type DetalleAlerta,
     type Afectado, type CajaOpcion,
   } from '$lib/api/alertas.api';
+  import {
+    destinatariosDeAlerta, notificarAlerta, listarPlantillas, obtenerOpciones,
+    type Destinatarios, type ResumenEnvio, type Plantilla, type OpcionesNotificacion,
+  } from '$lib/api/notificaciones.api';
 
   let resumen = $state<ResumenAlertas | null>(null);
   let facetas = $state<Facetas | null>(null);
@@ -42,6 +46,29 @@
   let cajaElegida = $state<string>('');
   let buscaCaja = $state('');
 
+  // RF-42: aviso a los clientes afectados. El Controlador estaba completo
+  // --destinatarios, plantillas, envio, tiempo estimado-- y faltaba el boton.
+  //
+  // El aviso se mira antes de mandarlo: alcanzar a decenas de personas de una
+  // vez no se deshace, y el endpoint de destinatarios existe justamente para
+  // eso. Por eso son dos pasos y no uno.
+  let avisando = $state<Alerta | null>(null);
+  let aviso = $state<Destinatarios | null>(null);
+  let cargandoAviso = $state(false);
+  let plantillas = $state<Plantilla[]>([]);
+  let opcionesNotif = $state<OpcionesNotificacion | null>(null);
+  let plantillaElegida = $state<number | ''>('');
+  let tiempoEstimado = $state('');
+  let enviandoAviso = $state(false);
+  let resumenEnvio = $state<ResumenEnvio | null>(null);
+  let errorAviso = $state('');
+
+  const aAvisar = $derived(
+    aviso?.destinatarios.filter((d) => d.contactable && !d.ya_avisado) ?? [],
+  );
+  const sinContacto = $derived(aviso?.destinatarios.filter((d) => !d.contactable) ?? []);
+  const yaAvisados = $derived(aviso?.destinatarios.filter((d) => d.ya_avisado) ?? []);
+
   // Modal de revisión (reemplaza al prompt() del navegador).
   let modalAbierto = $state(false);
   let modalTexto = $state('');
@@ -49,6 +76,62 @@
   let inputModal = $state<HTMLTextAreaElement | null>(null);
 
   const token = () => get(authStore).token ?? '';
+
+  // --- RF-42: aviso a clientes afectados -----------------------------------
+
+  async function abrirAviso(a: Alerta) {
+    avisando = a;
+    aviso = null;
+    resumenEnvio = null;
+    errorAviso = '';
+    plantillaElegida = '';
+    tiempoEstimado = '';
+    cargandoAviso = true;
+    try {
+      const [d, p, o] = await Promise.all([
+        destinatariosDeAlerta(token(), a.id_alerta),
+        listarPlantillas(token()),
+        obtenerOpciones(token()),
+      ]);
+      aviso = d;
+      // Solo las activas: mandar con una desactivada lo rechaza el Controlador.
+      plantillas = p.filter((x) => x.activa);
+      opcionesNotif = o;
+    } catch (e) {
+      errorAviso = e instanceof Error ? e.message : 'No se pudo leer a quiénes alcanza el aviso';
+    } finally {
+      cargandoAviso = false;
+    }
+  }
+
+  function cerrarAviso() {
+    if (enviandoAviso) return;
+    avisando = null;
+    aviso = null;
+    resumenEnvio = null;
+    errorAviso = '';
+  }
+
+  async function confirmarAviso() {
+    if (!avisando || plantillaElegida === '' || aAvisar.length === 0) return;
+    enviandoAviso = true;
+    errorAviso = '';
+    try {
+      resumenEnvio = await notificarAlerta(
+        token(),
+        avisando.id_alerta,
+        Number(plantillaElegida),
+        // Lo que se informe en ESTE incidente manda sobre el valor por defecto
+        // de la plantilla: dos cortes de la misma caja no duran lo mismo.
+        { tiempo_estimado: tiempoEstimado.trim() || undefined },
+      );
+    } catch (e) {
+      errorAviso = e instanceof Error ? e.message : 'No se pudo enviar el aviso';
+    } finally {
+      enviandoAviso = false;
+    }
+  }
+
 
   const TIPOS: Record<string, { etiqueta: string; agregada: boolean }> = {
     FALLA_OLT:             { etiqueta: 'OLT caída',            agregada: true },
@@ -404,18 +487,24 @@
                       </span>
                     {:else if !a.resuelta}
                       <button onclick={() => despacharOt(a)} disabled={generandoOt === a.id_alerta}
-                        class="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium
-                               hover:bg-blue-700 disabled:opacity-50 cursor-pointer
-                               transition-colors duration-200 focus:outline-none focus:ring-2
-                               focus:ring-offset-2 focus:ring-blue-600">
+                        class="btn btn-primario btn-chico">
                         {generandoOt === a.id_alerta ? 'Generando…' : 'Generar OT'}
                       </button>
                     {/if}
                     {#if !a.resuelta}
+                      <!--
+                        RF-42: "boton 'Enviar alerta a clientes afectados' en el
+                        panel del jefe tecnico". Vive aca y no en la pantalla de
+                        Notificaciones porque es aca donde esta parado cuando lo
+                        decide; llevarlo alla lo obligaria a salir de la alerta,
+                        buscar su numero y volver.
+                      -->
+                      <button onclick={() => abrirAviso(a)}
+                        class="btn btn-secundario btn-chico">
+                        Avisar a clientes
+                      </button>
                       <button onclick={() => abrirModal([a])}
-                        class="px-3 py-1.5 rounded-lg border border-gray-300 text-sm font-medium
-                               hover:bg-gray-50 cursor-pointer transition-colors duration-200
-                               focus:outline-none focus:ring-2 focus:ring-gray-900">Revisar</button>
+                        class="btn btn-secundario btn-chico">Revisar</button>
                     {/if}
                   </div>
                 </div>
@@ -690,6 +779,159 @@
         <button onclick={guardarConfirmacion} disabled={!cajaElegida}
           class="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-700
                  disabled:opacity-50 cursor-pointer transition-colors duration-200">Confirmar</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!--
+  RF-42: el aviso a los clientes afectados.
+
+  Son dos pasos a proposito. Primero se ve a quien alcanza --nombre, telefono,
+  y quien queda fuera y por que-- y recien despues se elige con que plantilla y
+  se confirma. Avisarle a decenas de personas de una vez no se deshace, y el
+  endpoint de destinatarios existe justamente para poder mirar antes.
+-->
+{#if avisando}
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <button class="absolute inset-0 bg-gray-900/50 cursor-default" aria-label="Cerrar" onclick={cerrarAviso}></button>
+    <div class="relative flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl"
+         role="dialog" aria-modal="true" aria-labelledby="titulo-aviso">
+      <div class="flex items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
+        <div>
+          <h3 id="titulo-aviso" class="font-semibold text-gray-900">Avisar a clientes afectados</h3>
+          <p class="mt-0.5 text-sm text-gray-600">
+            {TIPOS[avisando.tipo]?.etiqueta ?? avisando.tipo}
+            {#if avisando.clave_caja}· caja {avisando.clave_caja.split('|')[1]}{/if}
+          </p>
+        </div>
+        <button onclick={cerrarAviso} class="btn-texto justify-center min-h-11 min-w-11 text-gray-400 hover:text-gray-600" aria-label="Cerrar">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto px-5 py-4">
+        {#if cargandoAviso}
+          <p class="py-8 text-center text-sm text-gray-500">Viendo a quiénes alcanza…</p>
+        {:else if resumenEnvio}
+          <!-- Paso 3: qué pasó realmente. -->
+          <div class="rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+            <p class="font-semibold text-green-900">
+              {resumenEnvio.enviadas} {resumenEnvio.enviadas === 1 ? 'aviso registrado' : 'avisos registrados'}
+            </p>
+            <ul class="mt-2 space-y-0.5 text-sm text-green-900">
+              <li>Alcanzados por el incidente: {resumenEnvio.destinatarios}</li>
+              {#if resumenEnvio.ya_avisados > 0}<li>Ya avisados antes, no se repitió: {resumenEnvio.ya_avisados}</li>{/if}
+              {#if resumenEnvio.sin_contacto > 0}<li>Sin teléfono ni correo: {resumenEnvio.sin_contacto}</li>{/if}
+              <li>Canal: {resumenEnvio.canal}</li>
+              {#if resumenEnvio.tiempo_estimado}<li>Se informó una demora de {resumenEnvio.tiempo_estimado}</li>{/if}
+            </ul>
+            {#if resumenEnvio.simulado}
+              <p class="mt-2 text-sm font-medium text-amber-800">
+                Envío simulado: queda registrado en el sistema, pero al cliente no le llegó nada.
+              </p>
+            {/if}
+          </div>
+        {:else if aviso}
+          {#if !aviso.es_agregada}
+            <p class="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-900">
+              Esta alerta no es una falla de caja, placa ni OLT. Revisa la lista antes de avisar: puede que estos clientes todavía tengan servicio.
+            </p>
+          {/if}
+
+          <!-- Paso 1: a quién alcanza. -->
+          <div class="grid grid-cols-3 gap-3 text-center">
+            <div class="rounded-xl border border-gray-200 px-3 py-2.5">
+              <p class="text-xl font-semibold text-gray-900">{aAvisar.length}</p>
+              <p class="text-xs text-gray-600">se les avisa</p>
+            </div>
+            <div class="rounded-xl border border-gray-200 px-3 py-2.5">
+              <p class="text-xl font-semibold text-gray-900">{sinContacto.length}</p>
+              <p class="text-xs text-gray-600">sin contacto</p>
+            </div>
+            <div class="rounded-xl border border-gray-200 px-3 py-2.5">
+              <p class="text-xl font-semibold text-gray-900">{yaAvisados.length}</p>
+              <p class="text-xs text-gray-600">ya avisados</p>
+            </div>
+          </div>
+
+          <div class="mt-3 max-h-56 overflow-y-auto rounded-xl border border-gray-200">
+            <table class="w-full text-sm">
+              <caption class="sr-only">Clientes que recibirían el aviso</caption>
+              <tbody class="divide-y divide-gray-100">
+                {#each aviso.destinatarios as d (d.numero_serie)}
+                  <tr class={d.contactable && !d.ya_avisado ? '' : 'text-gray-400'}>
+                    <td class="px-3 py-2">{d.nombre ?? 'Cliente sin identificar'}</td>
+                    <td class="px-3 py-2 text-gray-500">{d.telefono ?? d.email ?? '—'}</td>
+                    <td class="px-3 py-2 text-right text-xs">
+                      {#if d.ya_avisado}ya avisado
+                      {:else if !d.contactable}sin contacto
+                      {:else}se le avisa{/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Paso 2: con qué se le avisa. -->
+          <label for="plantilla-aviso" class="mt-4 block text-sm font-medium text-gray-700">Plantilla</label>
+          <select id="plantilla-aviso" bind:value={plantillaElegida}
+            class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="">Elegir…</option>
+            {#each plantillas as p (p.id_plantilla)}
+              <option value={p.id_plantilla}>{p.tipo_evento ?? 'General'} · {p.canal}</option>
+            {/each}
+          </select>
+          {#if plantillas.length === 0}
+            <p class="mt-1 text-sm text-amber-800">
+              No hay plantillas activas. Se crean en Notificaciones.
+            </p>
+          {/if}
+
+          <label for="tiempo-aviso" class="mt-3 block text-sm font-medium text-gray-700">
+            Demora estimada de este incidente <span class="font-normal text-gray-500">(opcional)</span>
+          </label>
+          <input id="tiempo-aviso" bind:value={tiempoEstimado} placeholder="Ej: 2 a 4 horas"
+            class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p class="mt-1 text-xs text-gray-500">
+            Reemplaza a la de la plantilla: dos cortes de la misma caja no duran lo mismo.
+          </p>
+
+          {#if opcionesNotif && !opcionesNotif.envio_real_disponible}
+            <p class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+              No hay proveedor de SMS ni correo conectado: el aviso queda
+              registrado en el sistema, pero al cliente no le llega nada.
+            </p>
+          {/if}
+        {/if}
+
+        {#if errorAviso}
+          <p class="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-800" role="alert">
+            {errorAviso}
+          </p>
+        {/if}
+      </div>
+
+      <div class="flex justify-end gap-2 border-t border-gray-100 px-5 py-4">
+        {#if resumenEnvio}
+          <button class="btn btn-primario" onclick={cerrarAviso}>Cerrar</button>
+        {:else}
+          <button class="btn btn-secundario" onclick={cerrarAviso} disabled={enviandoAviso}>Cancelar</button>
+          <button class="btn btn-primario"
+            disabled={enviandoAviso || plantillaElegida === '' || aAvisar.length === 0}
+            onclick={confirmarAviso}>
+            {#if enviandoAviso}
+              Avisando…
+            {:else if aAvisar.length === 0}
+              No hay a quién avisar
+            {:else}
+              Avisar a {aAvisar.length} {aAvisar.length === 1 ? 'cliente' : 'clientes'}
+            {/if}
+          </button>
+        {/if}
       </div>
     </div>
   </div>

@@ -2,7 +2,8 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizarNombreCaja } from './ligado-caja.js';
 import { descomponerFicha } from './ficha-cliente.js';
-import { evaluar, type EstadoOnt } from './reglas-alerta.js';
+import { evaluar, afectaAlGrupo, type EstadoOnt } from './reglas-alerta.js';
+import { ESTADO_CONEXION } from './monitoreo.constants.js';
 import {
   DIAS_MAX_INCIDENTE,
   MIN_ONT_PARA_FALLA_CAJA,
@@ -305,7 +306,7 @@ export class AlertasService {
       .map((c) => {
         const u = c.monitoreos[0];
         const potencia = u?.potencia_actual_dbm == null ? null : Number(u.potencia_actual_dbm);
-        const caida = u?.estado_conexion != null && u.estado_conexion !== 'ONLINE';
+        const caida = u?.estado_conexion != null && u.estado_conexion !== ESTADO_CONEXION.ONLINE;
         const cli = c.id_cliente == null ? null : clientePorId.get(c.id_cliente);
         // Cuando el cliente no está en nuestra base, la referencia de SmartOLT
         // viene con todo apelotonado en un campo: se desarma para mostrarla.
@@ -349,14 +350,14 @@ export class AlertasService {
       // Primero lo que está peor: caídos, luego degradados, luego el resto.
       .sort((a, b) => {
         const peso = (x: typeof a) =>
-          x.estado && x.estado !== 'ONLINE' ? 0 : x.potencia_fuera_de_rango ? 1 : x.degradandose ? 2 : 3;
+          x.estado && x.estado !== ESTADO_CONEXION.ONLINE ? 0 : x.potencia_fuera_de_rango ? 1 : x.degradandose ? 2 : 3;
         return peso(a) - peso(b) || (a.potencia_dbm ?? 0) - (b.potencia_dbm ?? 0);
       });
 
     return {
       alerta,
       total: afectados.length,
-      caidos: afectados.filter((a) => a.estado && a.estado !== 'ONLINE').length,
+      caidos: afectados.filter((a) => a.estado && a.estado !== ESTADO_CONEXION.ONLINE).length,
       degradados: afectados.filter((a) => a.degradandose).length,
       afectados,
     };
@@ -618,9 +619,10 @@ export class AlertasService {
   async criticosPorCaja(id_empresa: number, zona?: string) {
     const onts = await this.cargarEstado(id_empresa);
 
-    const esCritica = (o: EstadoOnt) =>
-      (o.estado_conexion != null && o.estado_conexion !== 'ONLINE') ||
-      potenciaFueraDeRango(o.potencia_dbm);
+    // La misma funcion que usa el motor para el porcentaje de RF-15. Estaba
+    // escrita dos veces, y por eso este panel podia mostrar una caja al 80 %
+    // afectada mientras el motor no levantaba la alerta.
+    const esCritica = afectaAlGrupo;
 
     // Se agrupa por id_caja_nap y no por el nombre normalizado: dos cajas
     // distintas pueden llamarse igual en zonas distintas -- la red real de FiNet
@@ -656,7 +658,7 @@ export class AlertasService {
         const criticos = miembros.filter(esCritica);
         const info = infoCaja.get(id);
         const sinSenal = criticos.filter(
-          (o) => o.estado_conexion != null && o.estado_conexion !== 'ONLINE',
+          (o) => o.estado_conexion != null && o.estado_conexion !== ESTADO_CONEXION.ONLINE,
         ).length;
         return {
           id_caja_nap: id,

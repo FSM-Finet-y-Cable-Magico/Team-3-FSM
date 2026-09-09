@@ -255,6 +255,20 @@
         clickable={true}
         href="/admin/ot?tipo_ot=REPARACION"
       />
+      <!--
+        RF-37 pide este indicador "segun RF-09": OT en cliente ausente que
+        llevan mas de 30 dias sin reagendarse. El enlace deja el listado ya
+        filtrado por ese estado, que es adonde se va a mirar el detalle.
+      -->
+      <StatCard
+        titulo="Sin Reagendar"
+        valor={indicadores.ot_sin_reagendar_30_dias}
+        subtitulo="+30 dias ausente"
+        color={indicadores.ot_sin_reagendar_30_dias > 0 ? 'red' : 'gray'}
+        icono={ICONO_HOURGLASS}
+        clickable={true}
+        href="/admin/ot?estado=PENDIENTE_CLIENTE_AUSENTE"
+      />
       <StatCard
         titulo="Tiempo Promedio Cierre"
         valor={indicadores.tiempo_promedio_cierre != null ? `${indicadores.tiempo_promedio_cierre.toFixed(1)} h` : '-'}

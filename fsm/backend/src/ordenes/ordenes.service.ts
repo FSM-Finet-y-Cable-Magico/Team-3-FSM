@@ -3,9 +3,12 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, No
 import { Prisma, type orden_trabajo } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ReparacionesRecurrentesService } from './reparaciones-recurrentes.service.js';
+import { ESTADO_SIN_REAGENDAR, SinReagendarService, superaElUmbral } from './sin-reagendar.service.js';
 import { validarRut } from '../common/utils/rut.util.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
+import { ReasignarTecnicoDto } from './dto/reasignar-tecnico.dto.js';
+import { CambiarPrioridadDto } from './dto/cambiar-prioridad.dto.js';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
 import { ACCION_A_ESTADO_G1 } from './estado-equipo.constants.js';
@@ -40,6 +43,7 @@ export class OrdenesService {
 
   constructor(
     private reparaciones: ReparacionesRecurrentesService,
+    private sinReagendar: SinReagendarService,
     private prisma: PrismaService,
     private cloudinary: CloudinaryService,
     @Inject(forwardRef(() => DashboardGateway)) private dashboardGateway: DashboardGateway,
@@ -202,15 +206,118 @@ export class OrdenesService {
       : [];
     const porId = new Map(filas.map((ot) => [ot.id_ot, ot]));
 
+    const enEspera = ids.filter((id) => porId.get(id)?.estado === ESTADO_SIN_REAGENDAR);
+    // Una sola consulta para toda la pagina, no una por OT.
+    const marcas = await this.sinReagendar.marcasDeEntrada(enEspera);
+
     const data = ids
       .map((id) => porId.get(id))
       .filter((ot): ot is NonNullable<typeof ot> => ot !== undefined)
-      .map((ot) => ({
-        ...ot,
-        antiguedad_dias: this.calcularAntiguedadDias(ot.fecha_creacion),
-      }));
+      .map((ot) => {
+        // RF-09 mide dias "sin reagendarse", que no es lo mismo que la
+        // antiguedad de la OT: se cuenta desde que entro al estado. Ver
+        // SinReagendarService.
+        const dias =
+          ot.estado === ESTADO_SIN_REAGENDAR
+            ? this.sinReagendar.dias(marcas.get(ot.id_ot) ?? ot.fecha_creacion)
+            : undefined;
+        return {
+          ...ot,
+          antiguedad_dias: this.calcularAntiguedadDias(ot.fecha_creacion),
+          dias_sin_reagendar: dias,
+          alerta_sin_reagendar: dias !== undefined && superaElUmbral(dias),
+        };
+      });
 
     return { data, total, page, limit };
+  }
+
+  /**
+   * RF-45: "la alerta permite reasignar la OT o marcarla como CRITICA
+   * directamente desde el panel".
+   *
+   * Reasignar no es asignar. `asignarTecnico` exige estado PENDIENTE porque es
+   * la primera asignacion; las OT que muestra el panel de detenidas estan en
+   * ASIGNADA o EN_CURSO, o sea que ya tienen tecnico.
+   *
+   * El estado NO se toca: reasignar no es una transicion de la maquina de
+   * estados, es cambiar quien la tiene. Una EN_CURSO reasignada sigue EN_CURSO,
+   * y el cambio queda en el historial, que es lo que ademas reinicia el reloj
+   * de las 24 horas de RF-45.
+   */
+  async reasignarTecnico(
+    id_ot: number,
+    dto: ReasignarTecnicoDto,
+    userId: number,
+    id_empresa: number,
+  ) {
+    const ot = await this.prisma.orden_trabajo.findFirst({ where: { id_ot, id_empresa } });
+    if (!ot) throw new NotFoundException('OT no encontrada');
+    if (!['ASIGNADA', 'EN_CURSO'].includes(ot.estado)) {
+      throw new BadRequestException(
+        'Solo se pueden reasignar OT en estado ASIGNADA o EN_CURSO',
+      );
+    }
+    if (ot.id_tecnico === dto.id_tecnico) {
+      throw new BadRequestException('La OT ya está asignada a ese técnico');
+    }
+
+    const tecnico = await this.prisma.usuario.findFirst({
+      where: { id_usuario: dto.id_tecnico, id_empresa, activo: true },
+    });
+    if (!tecnico) throw new NotFoundException('Técnico no encontrado');
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.orden_trabajo.update({
+        where: { id_ot },
+        data: { id_tecnico: dto.id_tecnico },
+      });
+      await tx.historial_ot.create({
+        data: {
+          id_ot,
+          id_usuario: userId,
+          estado_anterior: ot.estado,
+          estado_nuevo: ot.estado,
+          observaciones: `Reasignada a ${tecnico.nombre_completo}`,
+        },
+      });
+    });
+
+    return this.obtenerOT(id_ot, { userId, id_empresa, rol: 'JEFE_TECNICO' } as UsuarioAutenticado);
+  }
+
+  /**
+   * RF-45: la otra accion del panel. Sirve para cualquier prioridad, no solo
+   * CRITICA: bajarla tambien es una decision legitima del jefe tecnico y no
+   * tiene sentido dejar el camino de vuelta cerrado.
+   */
+  async cambiarPrioridad(
+    id_ot: number,
+    dto: CambiarPrioridadDto,
+    userId: number,
+    id_empresa: number,
+  ) {
+    const ot = await this.prisma.orden_trabajo.findFirst({ where: { id_ot, id_empresa } });
+    if (!ot) throw new NotFoundException('OT no encontrada');
+    if (['COMPLETADA', 'CANCELADA'].includes(ot.estado)) {
+      throw new BadRequestException('No se puede cambiar la prioridad de una OT cerrada');
+    }
+    if (ot.prioridad === dto.prioridad) return ot;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.orden_trabajo.update({ where: { id_ot }, data: { prioridad: dto.prioridad } });
+      await tx.historial_ot.create({
+        data: {
+          id_ot,
+          id_usuario: userId,
+          estado_anterior: ot.estado,
+          estado_nuevo: ot.estado,
+          observaciones: `Prioridad ${ot.prioridad} → ${dto.prioridad}`,
+        },
+      });
+    });
+
+    return this.prisma.orden_trabajo.findFirst({ where: { id_ot } });
   }
 
   private asegurarAcceso<T extends Pick<orden_trabajo, 'id_tecnico'>>(

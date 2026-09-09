@@ -14,6 +14,8 @@ import { memoryStorage } from 'multer';
 import { OrdenesService } from './ordenes.service.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
+import { ReasignarTecnicoDto } from './dto/reasignar-tecnico.dto.js';
+import { CambiarPrioridadDto } from './dto/cambiar-prioridad.dto.js';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
 import {
@@ -140,6 +142,27 @@ export class OrdenesController {
     @CurrentUser() user: UsuarioAutenticado,
   ) {
     return this.ordenesService.asignarTecnico(+id, dto, user.userId, user.id_empresa);
+  }
+
+  // RF-45: las dos acciones que el panel de OT detenidas necesita.
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Patch(':id/reasignar')
+  reasignarTecnico(
+    @Param('id') id: string,
+    @Body() dto: ReasignarTecnicoDto,
+    @CurrentUser() user: UsuarioAutenticado,
+  ) {
+    return this.ordenesService.reasignarTecnico(+id, dto, user.userId, user.id_empresa);
+  }
+
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Patch(':id/prioridad')
+  cambiarPrioridad(
+    @Param('id') id: string,
+    @Body() dto: CambiarPrioridadDto,
+    @CurrentUser() user: UsuarioAutenticado,
+  ) {
+    return this.ordenesService.cambiarPrioridad(+id, dto, user.userId, user.id_empresa);
   }
 
   @Roles('TECNICO')

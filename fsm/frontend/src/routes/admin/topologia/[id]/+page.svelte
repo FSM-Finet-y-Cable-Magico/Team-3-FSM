@@ -28,7 +28,7 @@
 
   const idCaja = $derived(Number($page.params.id));
 
-  const ESTADOS = ['LIBRE', 'RESERVADO', 'OCUPADO'] as const;
+  const ESTADOS = ['LIBRE', 'RESERVADO', 'OCUPADO', 'EN_MANTENCION'] as const;
 
   onMount(() => {
     authStore.checkAuth();
@@ -115,13 +115,16 @@
   function colorPuerto(estado: string | null): string {
     if (estado === 'OCUPADO') return 'bg-red-100 text-red-800 border-red-200';
     if (estado === 'RESERVADO') return 'bg-amber-100 text-amber-800 border-amber-200';
+    // Azul y no rojo: en mantencion no es una falla del cliente, es la caja.
+    if (estado === 'EN_MANTENCION') return 'bg-blue-100 text-blue-800 border-blue-200';
     // Gris, no verde: verde se lee como "disponible" y no lo sabemos.
     return 'bg-slate-50 text-slate-600 border-slate-200';
   }
 
   /** Lo que se muestra en el chip del puerto. */
   function etiquetaPuerto(estado: string | null): string {
-    return estado === 'LIBRE' || estado == null ? 'sin registro' : estado.toLowerCase();
+    if (estado === 'LIBRE' || estado == null) return 'sin registro';
+    return estado.toLowerCase().replace('_', ' ');
   }
 </script>
 
@@ -165,12 +168,13 @@
         </button>
       </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-5 pt-5 border-t border-slate-100">
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-5 pt-5 border-t border-slate-100">
         {#each [
           { l: 'Capacidad', v: detalle.capacidad_puertos, c: 'text-slate-900' },
           { l: 'Sin registro', v: detalle.sin_registro, c: 'text-slate-600' },
           { l: 'Reservados', v: detalle.reservados, c: 'text-amber-700' },
           { l: 'Ocupados', v: detalle.ocupados, c: 'text-red-700' },
+          { l: 'En mantención', v: detalle.en_mantencion, c: 'text-blue-700' },
         ] as t}
           <div>
             <p class="text-xs uppercase tracking-wide text-slate-500">{t.l}</p>

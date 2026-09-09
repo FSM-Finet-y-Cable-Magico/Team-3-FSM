@@ -23,6 +23,12 @@ export const ESTADO_PUERTO = {
   LIBRE: 'LIBRE',
   RESERVADO: 'RESERVADO',
   OCUPADO: 'OCUPADO',
+  /**
+   * RF-17 nombra tres estados: ocupado, libre o en mantencion. Este faltaba
+   * porque la columna era VARCHAR(10) y la palabra tiene 13 caracteres. La
+   * migracion que ensancha a VARCHAR(20) va junto con este cambio.
+   */
+  EN_MANTENCION: 'EN_MANTENCION',
 } as const;
 
 export type EstadoPuerto = (typeof ESTADO_PUERTO)[keyof typeof ESTADO_PUERTO];
@@ -69,10 +75,13 @@ export class EditarCajaDto {
 
 export class EditarPuertoDto {
   /**
-   * `EN_MANTENCION` NO esta en la lista a proposito: la columna es VARCHAR(10)
-   * y esa palabra tiene 13 caracteres, asi que Postgres la truncaria o
-   * rechazaria. Agregarla exige ensanchar la columna, y `puerto_nap` es de la
-   * base compartida: va con la coordinacion de la M-01, no por la ventana.
+   * Los tres estados que nombra RF-17, mas RESERVADO, que usa CU-20 para
+   * apartar un puerto al crear la OT.
+   *
+   * `EN_MANTENCION` estuvo fuera hasta ahora porque la columna era VARCHAR(10)
+   * y la palabra tiene 13 caracteres: Postgres la habria rechazado. La columna
+   * es de la base compartida, asi que ensancharla hay que avisarlo a los otros
+   * grupos; el cambio es aditivo y no toca ningun dato existente.
    */
   @IsOptional()
   @IsIn(Object.values(ESTADO_PUERTO))

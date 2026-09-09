@@ -17,7 +17,7 @@ describe('derivar la zona de las cajas NAP', () => {
 
   const cajaFindMany = jest.fn(async (_a: unknown) => cajas);
   const ontFindMany = jest.fn(async (_a: unknown) => onts);
-  const cajaUpdate = jest.fn(async (a: unknown) => a);
+  const cajaUpdateMany = jest.fn(async (a: unknown) => a);
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -29,7 +29,7 @@ describe('derivar la zona de las cajas NAP', () => {
         {
           provide: PrismaService,
           useValue: {
-            caja_nap: { findMany: cajaFindMany, update: cajaUpdate },
+            caja_nap: { findMany: cajaFindMany, updateMany: cajaUpdateMany },
             registro_ont: { findMany: ontFindMany },
           },
         },
@@ -38,7 +38,7 @@ describe('derivar la zona de las cajas NAP', () => {
     service = mod.get(PlantaExternaService);
   });
 
-  const zonaEscrita = (i = 0) => (cajaUpdate.mock.calls[i][0] as any).data.zona;
+  const zonaEscrita = (i = 0) => (cajaUpdateMany.mock.calls[i][0] as any).data.zona;
 
   it('solo mira las cajas que NO tienen zona', async () => {
     // Una zona ya puesta --por el KML o por una persona-- vale mas que una
@@ -109,7 +109,7 @@ describe('derivar la zona de las cajas NAP', () => {
     const r = await service.derivarZonas(1);
 
     expect(r).toMatchObject({ cajas_sin_zona: 2, actualizadas: 1, sin_ont_ligada: 1 });
-    expect(cajaUpdate).toHaveBeenCalledTimes(1);
+    expect(cajaUpdateMany).toHaveBeenCalledTimes(1);
   });
 
   it('normaliza los espacios de la zona', async () => {
@@ -135,6 +135,34 @@ describe('derivar la zona de las cajas NAP', () => {
 
     expect(r).toMatchObject({ cajas_sin_zona: 0, actualizadas: 0 });
     expect(ontFindMany).not.toHaveBeenCalled();
-    expect(cajaUpdate).not.toHaveBeenCalled();
+    expect(cajaUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('agrupa por zona: un UPDATE por zona distinta, no uno por caja', async () => {
+    // Eran 262 consultas por corrida, una por caja. Agrupando son tantas como
+    // zonas distintas haya: sobre los datos de FiNet, 11.
+    cajas = [
+      { id_caja_nap: 1, identificador_unico: 'NAP 1' },
+      { id_caja_nap: 2, identificador_unico: 'NAP 2' },
+      { id_caja_nap: 3, identificador_unico: 'NAP 3' },
+    ];
+    onts = [
+      { id_caja_nap: 1, zona: 'ZONA 3' },
+      { id_caja_nap: 2, zona: 'ZONA 3' },
+      { id_caja_nap: 3, zona: 'ZONA 7' },
+    ];
+
+    const r = await service.derivarZonas(1);
+
+    expect(r.actualizadas).toBe(3);
+    expect(cajaUpdateMany).toHaveBeenCalledTimes(2);
+    const porZona = new Map(
+      cajaUpdateMany.mock.calls.map((c) => {
+        const a = c[0] as any;
+        return [a.data.zona, a.where.id_caja_nap.in];
+      }),
+    );
+    expect(porZona.get('ZONA 3')).toEqual([1, 2]);
+    expect(porZona.get('ZONA 7')).toEqual([3]);
   });
 });
