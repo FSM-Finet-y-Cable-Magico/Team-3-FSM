@@ -126,3 +126,91 @@ describe('fan-out del cierre · respuesta de G1', () => {
     expect(warn).toEqual([]);
   });
 });
+
+/**
+ * G1 recibe el cierre en `POST /api/integraciones/ordenes/{id_ot}/cierre`
+ * (confirmado por Javier el 9-sept-2026): el numero de la OT va en la RUTA, no
+ * solo en el cuerpo.
+ *
+ * Antes se hacia `fetch(destino.url)` con la URL tal cual salia de la variable
+ * de entorno, asi que la configuracion que nos paso G1 se habria mandado
+ * literal y todos los cierres habrian ido a una ruta con llaves.
+ */
+describe('fan-out del cierre · la URL del destino', () => {
+  let fetchDoble: jest.Mock<(...a: any[]) => Promise<Response>>;
+
+  const payload = (id_ot: number) =>
+    ({ id_ot, clave_idempotencia: `${id_ot}:x` }) as unknown as PayloadCierre;
+
+  const urlLlamada = (i = 0) => String(fetchDoble.mock.calls[i][0]);
+
+  beforeEach(() => {
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+    fetchDoble = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, data: { estado_proceso: 'PROCESADO' } }),
+    }) as unknown as Response);
+    global.fetch = fetchDoble as unknown as typeof fetch;
+  });
+
+  it('reemplaza {id_ot} por la OT de este cierre', async () => {
+    const fanOut = new WebhookFanOut([
+      { nombre: 'G1', url: 'https://g1.example/api/integraciones/ordenes/{id_ot}/cierre' },
+    ]);
+
+    await fanOut.notificar(payload(19));
+
+    expect(urlLlamada()).toBe('https://g1.example/api/integraciones/ordenes/19/cierre');
+  });
+
+  it('cada cierre va a su propia ruta, no todos a la misma', async () => {
+    const fanOut = new WebhookFanOut([
+      { nombre: 'G1', url: 'https://g1.example/ordenes/{id_ot}/cierre' },
+    ]);
+
+    await fanOut.notificar(payload(7));
+    await fanOut.notificar(payload(8));
+
+    expect([urlLlamada(0), urlLlamada(1)]).toEqual([
+      'https://g1.example/ordenes/7/cierre',
+      'https://g1.example/ordenes/8/cierre',
+    ]);
+  });
+
+  it('una URL sin el marcador se usa tal cual', async () => {
+    // Es como quedo G8: recibe el cierre en una ruta fija.
+    const fanOut = new WebhookFanOut([{ nombre: 'G8', url: 'https://g8.example/cierres' }]);
+
+    await fanOut.notificar(payload(19));
+
+    expect(urlLlamada()).toBe('https://g8.example/cierres');
+  });
+
+  it('cada destino resuelve su propia URL', async () => {
+    const fanOut = new WebhookFanOut([
+      { nombre: 'G1', url: 'https://g1.example/ordenes/{id_ot}/cierre' },
+      { nombre: 'G8', url: 'https://g8.example/cierres' },
+    ]);
+
+    await fanOut.notificar(payload(19));
+
+    expect([urlLlamada(0), urlLlamada(1)].sort()).toEqual([
+      'https://g1.example/ordenes/19/cierre',
+      'https://g8.example/cierres',
+    ]);
+  });
+
+  it('manda la API key en X-API-KEY', async () => {
+    const fanOut = new WebhookFanOut([
+      { nombre: 'G1', url: 'https://g1.example/ordenes/{id_ot}/cierre', apiKey: 'clave-secreta' },
+    ]);
+
+    await fanOut.notificar(payload(19));
+
+    const init = fetchDoble.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>)['X-API-KEY']).toBe('clave-secreta');
+    expect(init.method).toBe('POST');
+  });
+});
