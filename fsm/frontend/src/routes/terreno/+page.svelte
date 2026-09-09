@@ -92,29 +92,55 @@
     }
   }
 
-  async function marcarClienteAusente(idOT: number) {
-    const obs = window.prompt('Observación de cliente ausente');
-    if (!obs || obs.trim().length < 10) {
-      errorMsg = 'La observación debe tener al menos 10 caracteres';
-      return;
-    }
+  // El Controlador exige un minimo para la observacion de cliente ausente.
+  // Antes se pedia con window.prompt: el dialogo nativo no dice cuanto falta,
+  // no se puede escribir comodo en un telefono y, si el tecnico ponia menos
+  // de lo exigido, lo escrito se perdia y solo quedaba un error en rojo.
+  const MIN_OBS_AUSENTE = 10;
 
-    marcandoAusente = idOT;
+  let ausenteOT = $state<number | null>(null);
+  let obsAusente = $state('');
+  const faltanCaracteres = $derived(Math.max(0, MIN_OBS_AUSENTE - obsAusente.trim().length));
+
+  function abrirAusente(idOT: number) {
+    ausenteOT = idOT;
+    obsAusente = '';
+    errorMsg = '';
+  }
+
+  function cerrarAusente() {
+    // No se cierra mientras se esta enviando: lo escrito se perderia.
+    if (marcandoAusente !== null) return;
+    ausenteOT = null;
+    obsAusente = '';
+  }
+
+  async function confirmarAusente() {
+    if (ausenteOT === null || faltanCaracteres > 0) return;
+    marcandoAusente = ausenteOT;
     errorMsg = '';
     try {
       await ordenesApi.actualizarEstado(
         token,
-        idOT,
+        ausenteOT,
         'PENDIENTE_CLIENTE_AUSENTE',
         undefined,
-        obs.trim(),
+        obsAusente.trim(),
       );
+      marcandoAusente = null;
+      cerrarAusente();
       await cargarOTs();
     } catch (err) {
+      // Se deja la hoja abierta con el texto puesto: si falla la red en
+      // terreno, volver a escribirlo es lo ultimo que se necesita.
       errorMsg = err instanceof Error ? err.message : 'Error al marcar cliente ausente';
     } finally {
       marcandoAusente = null;
     }
+  }
+
+  function alTeclado(e: KeyboardEvent) {
+    if (e.key === 'Escape' && ausenteOT !== null) cerrarAusente();
   }
 
   async function reintentarVisita(idOT: number) {
@@ -135,6 +161,8 @@
   }
 </script>
 
+<svelte:window onkeydown={alTeclado} />
+
 <div class="min-h-screen bg-gray-50 flex flex-col">
   <!-- Header fijo -->
   <header class="bg-slate-900 text-white px-4 py-3 sticky top-0 z-10 shadow-lg">
@@ -150,7 +178,7 @@
       </div>
       <button
         onclick={cerrarSesion}
-        class="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500 px-3 py-1.5 rounded-lg transition-colors"
+        class="flex items-center justify-center gap-1.5 min-h-11 cursor-pointer text-xs text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500 px-3 py-1.5 rounded-lg transition-colors"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -161,7 +189,7 @@
   </header>
 
   <main class="flex-1 px-4 py-5 space-y-4">
-    {#if errorMsg}
+    {#if errorMsg && ausenteOT === null}
       <Alert class="rounded-xl text-sm">
         {errorMsg}
       </Alert>
@@ -267,9 +295,9 @@
                   {/if}
                 </button>
                 <button
-                  onclick={() => marcarClienteAusente(ot.id_ot)}
+                  onclick={() => abrirAusente(ot.id_ot)}
                   disabled={marcandoAusente === ot.id_ot}
-                  class="btn btn-bloque bg-amber-100 text-amber-800 hover:bg-amber-200 focus-visible:ring-amber-500 disabled:opacity-50"
+                  class="btn btn-bloque btn-grande bg-amber-100 text-amber-800 hover:bg-amber-200 focus-visible:ring-amber-500 disabled:opacity-50"
                 >
                   {marcandoAusente === ot.id_ot ? 'Marcando...' : 'Cliente ausente'}
                 </button>
@@ -286,9 +314,9 @@
                   Cerrar OT
                 </button>
                 <button
-                  onclick={() => marcarClienteAusente(ot.id_ot)}
+                  onclick={() => abrirAusente(ot.id_ot)}
                   disabled={marcandoAusente === ot.id_ot}
-                  class="btn btn-bloque bg-amber-100 text-amber-800 hover:bg-amber-200 focus-visible:ring-amber-500 disabled:opacity-50"
+                  class="btn btn-bloque btn-grande bg-amber-100 text-amber-800 hover:bg-amber-200 focus-visible:ring-amber-500 disabled:opacity-50"
                 >
                   {marcandoAusente === ot.id_ot ? 'Marcando...' : 'Cliente ausente'}
                 </button>
@@ -338,7 +366,7 @@
         <h3 class="font-semibold text-slate-800">Historial de Fallas</h3>
         <button
           onclick={() => historialClienteId = null}
-          class="btn-texto p-1 text-slate-400 hover:text-slate-600"
+          class="btn-texto justify-center min-h-11 min-w-11 text-slate-400 hover:text-slate-600"
           aria-label="Cerrar"
         >
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
@@ -348,6 +376,83 @@
       </div>
       <div class="overflow-y-auto flex-1 p-4">
         <HistorialFallasPanel id_cliente={historialClienteId} compact={true} />
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Hoja de cliente ausente: reemplaza al window.prompt -->
+{#if ausenteOT !== null}
+  <div class="fixed inset-0 z-50">
+    <button
+      class="absolute inset-0 bg-black/50 cursor-default"
+      aria-label="Cerrar"
+      onclick={cerrarAusente}
+    ></button>
+    <div
+      class="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl max-h-[90vh] flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="titulo-ausente"
+    >
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 flex-shrink-0">
+        <h3 id="titulo-ausente" class="font-semibold text-slate-800">Cliente ausente</h3>
+        <button
+          onclick={cerrarAusente}
+          class="btn-texto justify-center min-h-11 min-w-11 text-slate-400 hover:text-slate-600"
+          aria-label="Cerrar"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="overflow-y-auto flex-1 p-4 space-y-3">
+        <label for="obs-ausente" class="block text-sm font-medium text-slate-700">
+          Describe qué pasó en la visita
+        </label>
+        <!-- svelte-ignore a11y_autofocus -->
+        <textarea
+          id="obs-ausente"
+          bind:value={obsAusente}
+          rows="4"
+          autofocus
+          placeholder="Ej: se tocó el timbre tres veces y no hubo respuesta"
+          aria-describedby="ayuda-ausente"
+          class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-base text-slate-900
+                 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500
+                 focus:border-amber-500 transition-shadow duration-150"
+        ></textarea>
+        <p
+          id="ayuda-ausente"
+          aria-live="polite"
+          class="text-sm {faltanCaracteres > 0 ? 'text-amber-700' : 'text-green-700'}"
+        >
+          {#if faltanCaracteres > 0}
+            {faltanCaracteres === 1 ? 'Falta 1 carácter' : `Faltan ${faltanCaracteres} caracteres`}
+          {:else}
+            Listo para registrar
+          {/if}
+        </p>
+
+        {#if errorMsg}
+          <Alert>{errorMsg}</Alert>
+        {/if}
+
+        <button
+          onclick={confirmarAusente}
+          disabled={faltanCaracteres > 0 || marcandoAusente !== null}
+          class="btn btn-bloque btn-grande bg-amber-500 text-white shadow-sm
+                 hover:bg-amber-600 active:bg-amber-700 focus-visible:ring-amber-500"
+        >
+          {#if marcandoAusente !== null}
+            <Spinner class="h-5 w-5" />
+            Registrando...
+          {:else}
+            Registrar cliente ausente
+          {/if}
+        </button>
       </div>
     </div>
   </div>
