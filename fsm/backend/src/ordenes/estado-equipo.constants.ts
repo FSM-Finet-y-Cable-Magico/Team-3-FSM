@@ -41,8 +41,6 @@ export const ACCION_A_ESTADO_G1: Record<AccionEquipo, string> = {
   INSTALADO_EN_CLIENTE: 'Instalado en cliente',
   RETIRADO_PARA_DIAGNOSTICO: 'En revisión',
 };
-
-export const ACCIONES_EQUIPO_INSTALACION: AccionEquipo[] = ['INSTALADO_EN_CLIENTE'];
 export const ACCIONES_EQUIPO_RETIRO: AccionEquipo[] = ['RETIRADO_PARA_DIAGNOSTICO'];
 
 /**

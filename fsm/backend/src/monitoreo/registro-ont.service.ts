@@ -56,11 +56,24 @@ export class RegistroOntService {
     const porSn = new Map(existentes.map((r) => [r.numero_serie, r]));
 
     const faltantes = sns.filter((sn) => !porSn.has(sn));
-    for (const sn of faltantes) {
-      const creada = await this.prisma.registro_ont.create({
-        data: { numero_serie: sn, id_empresa: this.idEmpresaFuente },
+    if (faltantes.length) {
+      // Una sola sentencia en vez de un INSERT por ONT: la primera ingesta
+      // trae 941 seriales, y ese bucle eran 941 viajes a la base.
+      //
+      // `skipDuplicates` no es decorativo: dos ciclos de ingesta solapados
+      // pueden calcular la misma lista de faltantes, y el segundo chocaria
+      // contra el unique de `numero_serie`. Con esto el segundo no crea nada
+      // y la relectura de abajo recupera igual las filas del primero.
+      await this.prisma.registro_ont.createMany({
+        data: faltantes.map((sn) => ({ numero_serie: sn, id_empresa: this.idEmpresaFuente })),
+        skipDuplicates: true,
       });
-      porSn.set(sn, creada);
+
+      // `createMany` no devuelve las filas creadas, y hacen falta sus ids.
+      const creadas = await this.prisma.registro_ont.findMany({
+        where: { numero_serie: { in: faltantes } },
+      });
+      for (const r of creadas) porSn.set(r.numero_serie, r);
     }
 
     // Backfill: las filas creadas antes de que existiera la columna quedaron en

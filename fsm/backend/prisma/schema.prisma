@@ -724,7 +724,12 @@ model puerto_nap {
   id_puerto           Int       @id @default(autoincrement())
   id_caja_nap         Int?
   numero_puerto       Int?      @db.SmallInt
-  estado              String?   @db.VarChar(10)
+  /**
+   * RF-17 pide tres estados: ocupado, libre o EN MANTENCION. La columna era
+   * VARCHAR(10) y `EN_MANTENCION` tiene 13 caracteres, asi que uno de los tres
+   * no se podia guardar. Se ensancha a 20; es aditivo y no toca lo existente.
+   */
+  estado              String?   @db.VarChar(20)
   id_cliente_asociado Int?
   caja_nap            caja_nap? @relation(fields: [id_caja_nap], references: [id_caja_nap])
   cliente_asociado    cliente?  @relation(fields: [id_cliente_asociado], references: [id_cliente])

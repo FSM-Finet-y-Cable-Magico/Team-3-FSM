@@ -20,5 +20,3 @@ export const TIPO_MOVIMIENTO = {
   /** Retiro de inventario. */
   BAJA: 'BAJA',
 } as const;
-
-export type TipoMovimiento = (typeof TIPO_MOVIMIENTO)[keyof typeof TIPO_MOVIMIENTO];

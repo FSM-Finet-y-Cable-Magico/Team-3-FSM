@@ -40,6 +40,8 @@ export interface DetallePuertos {
   reservados: number;
   /** Confirmado en terreno, con cliente asociado. Es el único dato duro. */
   ocupados: number;
+  /** RF-17. No cuenta como disponible: no se puede asignar. */
+  en_mantencion: number;
   puertos: PuertoNap[];
 }
 

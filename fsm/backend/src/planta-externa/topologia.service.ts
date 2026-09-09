@@ -330,6 +330,11 @@ export class TopologiaService {
       reservados: cuenta(ESTADO_PUERTO.RESERVADO),
       /** Confirmado en terreno, con cliente asociado. Este si es dato duro. */
       ocupados: cuenta(ESTADO_PUERTO.OCUPADO),
+      /**
+       * RF-17. No cuenta como disponible: un puerto en mantencion no se puede
+       * asignar, aunque no tenga cliente.
+       */
+      en_mantencion: cuenta(ESTADO_PUERTO.EN_MANTENCION),
       puertos: caja.puertos.map((p) => ({
         id_puerto: p.id_puerto,
         numero_puerto: p.numero_puerto,

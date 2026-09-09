@@ -33,8 +33,6 @@ export const ESTADO_ENVIO = {
   FALLIDO: 'FALLIDO',
 } as const;
 
-export type EstadoEnvio = (typeof ESTADO_ENVIO)[keyof typeof ESTADO_ENVIO];
-
 /**
  * Eventos que puede describir una plantilla. `tipo_evento` es VARCHAR(60).
  *
@@ -55,8 +53,6 @@ export const TIPO_EVENTO = {
   CORTE_MASIVO_CAJA_NAP: 'CORTE_MASIVO_CAJA_NAP',
 } as const;
 
-export type TipoEvento = (typeof TIPO_EVENTO)[keyof typeof TIPO_EVENTO];
-
 /**
  * Variables que se reemplazan en el texto de la plantilla.
  *
@@ -74,8 +70,6 @@ export const VARIABLES_PLANTILLA = [
   /** RF-42: el mensaje al cliente debe incluir el tiempo estimado. */
   'tiempo_estimado',
 ] as const;
-
-export type VariablePlantilla = (typeof VARIABLES_PLANTILLA)[number];
 
 /** Horas sin movimiento tras las cuales una OT se considera detenida (RF-45). */
 export const HORAS_OT_INACTIVA = 24;
