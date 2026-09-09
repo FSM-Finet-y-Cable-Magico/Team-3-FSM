@@ -12,7 +12,7 @@ const ot = { id_ot: 1, id_tecnico: 7, id_empresa: 1, id_cliente: 1, tipo_ot: 'IN
 
 async function preparar(page: Page) {
   page.on('pageerror', error => console.error('Error de navegador:', error.message));
-  const registro = { cierres: [] as unknown[], estados: [] as Record<string, unknown>[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok', equiposCaidos: false, tokenVencido: false, estadoFalla: false, tecnicos: [] as any[], detenidas: [] as any[], descartadas: [] as number[], reasignaciones: [] as any[], prioridades: [] as any[] };
+  const registro = { cierres: [] as unknown[], estados: [] as Record<string, unknown>[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok', equiposCaidos: false, tokenVencido: false, estadoFalla: false, tecnicos: [] as any[], detenidas: [] as any[], descartadas: [] as number[], reasignaciones: [] as any[], prioridades: [] as any[], alertas: [] as any[], destinatarios: null as any, avisos: [] as any[], plantillas: [{ id_plantilla: 5, id_empresa: 1, tipo_evento: 'FALLA', canal: 'SMS', contenido_texto: 'Hola', tiempo_estimado_reparacion: '1 hora', activa: true, es_base: false, editable: true, variables_usadas: [] }] as any[] };
   await page.addInitScript(() => {
     const urls = { creadas: [] as string[], liberadas: [] as string[] };
     Object.assign(window, { urlsDePrueba: urls });
@@ -76,7 +76,25 @@ async function preparar(page: Page) {
       canales: ['SMS'], tipos_evento: ['FALLA'], variables: ['zona'],
       horas_ot_inactiva: 24, envio_real_disponible: false,
     });
-    if (ruta === '/api/notificaciones/plantillas') return responder([]);
+    if (ruta === '/api/notificaciones/plantillas') return responder(registro.plantillas);
+    // --- RF-42: aviso a clientes afectados ---
+    if (ruta === '/api/monitoreo/alertas/resumen') return responder({ total_abiertas: registro.alertas.length, por_tipo: {} });
+    if (ruta === '/api/monitoreo/alertas/facetas') return responder({ zonas: [], cajas: [] });
+    if (ruta === '/api/monitoreo/alertas') return responder(registro.alertas);
+    if (/alertas\/\d+\/destinatarios$/.test(ruta)) return responder(registro.destinatarios);
+    if (/alertas\/\d+\/notificar$/.test(ruta)) {
+      const cuerpo = req.postDataJSON();
+      registro.avisos.push({ id_alerta: Number(ruta.split('/').at(-2)), ...cuerpo });
+      const ds = registro.destinatarios?.destinatarios ?? [];
+      return responder({
+        id_alerta: Number(ruta.split('/').at(-2)),
+        destinatarios: ds.length,
+        enviadas: ds.filter((d: any) => d.contactable && !d.ya_avisado).length,
+        sin_contacto: ds.filter((d: any) => !d.contactable).length,
+        ya_avisados: ds.filter((d: any) => d.ya_avisado).length,
+        canal: 'SMS', simulado: true, tiempo_estimado: cuerpo.tiempo_estimado ?? null,
+      });
+    }
     if (ruta === '/api/notificaciones/ot-detenidas') return responder(registro.detenidas);
     if (/\/notificaciones\/ot-detenidas\/\d+\/descartar$/.test(ruta)) {
       const id = Number(ruta.split('/').at(-2));
@@ -571,4 +589,116 @@ test('RF-45: sin lista de tecnicos el panel sigue sirviendo, solo sin reasignar'
   await expect(page.getByRole('button', { name: 'Reasignar' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Marcar CRÍTICA' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Descartar' })).toBeVisible();
+});
+
+test('RF-42: el aviso muestra a quienes alcanza antes de dejar enviarlo', async ({ page }) => {
+  // El Controlador estaba completo y faltaba el boton. Y no alcanza con un
+  // boton: avisarle a decenas de personas de una vez no se deshace, asi que la
+  // lista de destinatarios se mira ANTES, que es para lo que existe ese GET.
+  const registro = await preparar(page);
+  registro.alertas = [
+    { id_alerta: 77, tipo: 'FALLA_CAJA_NAP', clave_caja: 'OLT1|CTO-15', zona: 'ZONA 3',
+      creada_en: new Date().toISOString(), resuelta: false, afectados: 3, ot_generada: null },
+  ];
+  registro.destinatarios = {
+    alerta: { id_alerta: 77, tipo: 'FALLA_CAJA_NAP', clave_caja: 'OLT1|CTO-15' },
+    es_agregada: true,
+    destinatarios: [
+      { numero_serie: 'A1', zona: 'ZONA 3', caja: 'CTO-15', id_cliente: 1, nombre: 'Ana Rojas', telefono: '911111111', email: null, contactable: true, ya_avisado: false },
+      { numero_serie: 'A2', zona: 'ZONA 3', caja: 'CTO-15', id_cliente: 2, nombre: 'Beto Diaz', telefono: null, email: null, contactable: false, ya_avisado: false },
+      { numero_serie: 'A3', zona: 'ZONA 3', caja: 'CTO-15', id_cliente: 3, nombre: 'Cami Luna', telefono: '933333333', email: null, contactable: true, ya_avisado: true },
+    ],
+  };
+
+  await login(page, 'admin');
+  await page.goto('/admin/alertas');
+  await page.getByRole('button', { name: 'Avisar a clientes' }).first().click();
+
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo).toBeVisible();
+
+  // Los tres estados se distinguen: a quien se le avisa, quien no tiene
+  // contacto y a quien ya se le aviso antes.
+  await expect(dialogo.getByText('Ana Rojas')).toBeVisible();
+  await expect(dialogo.getByRole('cell', { name: 'sin contacto' })).toBeVisible();
+  await expect(dialogo.getByRole('cell', { name: 'ya avisado' })).toBeVisible();
+
+  // Mientras no haya plantilla elegida no se puede mandar nada.
+  const enviar = dialogo.getByRole('button', { name: /Avisar a 1 cliente/ });
+  await expect(enviar).toBeDisabled();
+  expect(registro.avisos).toEqual([]);
+
+  // Se advierte que el envio es simulado.
+  await expect(dialogo.getByText(/no le llega nada/)).toBeVisible();
+
+  await dialogo.getByLabel('Plantilla').selectOption('5');
+  await dialogo.getByLabel(/Demora estimada/).fill('2 a 4 horas');
+  await expect(enviar).toBeEnabled();
+  await enviar.click();
+
+  // El tiempo de ESTE incidente viaja y manda sobre el de la plantilla.
+  await expect.poll(() => registro.avisos).toEqual([
+    { id_alerta: 77, id_plantilla: 5, tiempo_estimado: '2 a 4 horas' },
+  ]);
+
+  // Y se dice que paso, no solo "listo".
+  await expect(dialogo.getByText('1 aviso registrado')).toBeVisible();
+  await expect(dialogo.getByText(/Ya avisados antes/)).toBeVisible();
+  await expect(dialogo.getByText(/Sin teléfono ni correo/)).toBeVisible();
+});
+
+test('RF-42: sin nadie a quien avisar, el boton lo dice en vez de quedar mudo', async ({ page }) => {
+  // Todos los alcanzados ya fueron avisados o no tienen contacto.
+  const registro = await preparar(page);
+  registro.alertas = [
+    { id_alerta: 78, tipo: 'FALLA_CAJA_NAP', clave_caja: 'OLT1|CTO-20', zona: 'ZONA 1',
+      creada_en: new Date().toISOString(), resuelta: false, afectados: 1, ot_generada: null },
+  ];
+  registro.destinatarios = {
+    alerta: { id_alerta: 78, tipo: 'FALLA_CAJA_NAP', clave_caja: 'OLT1|CTO-20' },
+    es_agregada: true,
+    destinatarios: [
+      { numero_serie: 'B1', zona: 'ZONA 1', caja: 'CTO-20', id_cliente: 4, nombre: 'Dani Paz', telefono: null, email: null, contactable: false, ya_avisado: false },
+    ],
+  };
+
+  await login(page, 'admin');
+  await page.goto('/admin/alertas');
+  await page.getByRole('button', { name: 'Avisar a clientes' }).first().click();
+
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo.getByRole('button', { name: 'No hay a quién avisar' })).toBeDisabled();
+  expect(registro.avisos).toEqual([]);
+});
+
+test('RF-42: se advierte cuando la alerta no es una falla de caja', async ({ page }) => {
+  // POTENCIA_DEGRADANDOSE se agrupa en el panel, asi que el boton aparece,
+  // pero son clientes que TODAVIA tienen servicio: el Controlador no la marca
+  // como agregada y la Vista lo dice antes de dejar avisar. Avisarle a alguien
+  // de una falla que no esta sufriendo es el aviso que no hay como desdecir.
+  const registro = await preparar(page);
+  registro.alertas = [
+    { id_alerta: 79, tipo: 'POTENCIA_DEGRADANDOSE', clave_caja: 'OLT1|CTO-30', zona: 'ZONA 2',
+      creada_en: new Date().toISOString(), resuelta: false, afectados: 2, ot_generada: null },
+  ];
+  registro.destinatarios = {
+    alerta: { id_alerta: 79, tipo: 'POTENCIA_DEGRADANDOSE', clave_caja: 'OLT1|CTO-30' },
+    es_agregada: false,
+    destinatarios: [
+      { numero_serie: 'C1', zona: 'ZONA 2', caja: 'CTO-30', id_cliente: 5, nombre: 'Eva Mora', telefono: '955555555', email: null, contactable: true, ya_avisado: false },
+    ],
+  };
+
+  await login(page, 'admin');
+  await page.goto('/admin/alertas');
+  await page.getByRole('button', { name: 'Avisar a clientes' }).first().click();
+
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo.getByText(/todavía tengan servicio/)).toBeVisible();
+
+  // Se advierte, pero no se bloquea: la decision sigue siendo del jefe tecnico.
+  await dialogo.getByLabel('Plantilla').selectOption('5');
+  await dialogo.getByRole('button', { name: /Avisar a 1 cliente/ }).click();
+
+  await expect.poll(() => registro.avisos.map((a) => a.id_alerta)).toEqual([79]);
 });

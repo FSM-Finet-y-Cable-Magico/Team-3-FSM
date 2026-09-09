@@ -44,6 +44,12 @@ export interface Destinatario {
 
 export interface Destinatarios {
   alerta: { id_alerta: number; tipo: string; clave_caja: string | null };
+  /**
+   * Si la alerta cubre a un grupo (caja, placa u OLT) o a un solo cliente.
+   * La Vista pide una confirmacion distinta segun el caso: avisar a 71
+   * personas de una vez no se deshace.
+   */
+  es_agregada: boolean;
   destinatarios: Destinatario[];
 }
 

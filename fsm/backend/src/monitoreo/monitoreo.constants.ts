@@ -123,6 +123,27 @@ export const TIPO_ALERTA = {
   POTENCIA_DEGRADANDOSE: 'POTENCIA_DEGRADANDOSE',
 } as const;
 
+/**
+ * Alertas que cubren a un grupo de clientes, no a uno solo.
+ *
+ * Es la distincion que importa para RF-42: avisar de una caja caida alcanza a
+ * decenas de personas de una vez y no se puede deshacer, mientras que avisar de
+ * una alerta individual le llega a un cliente.
+ *
+ * POTENCIA_DEGRADANDOSE se agrupa en el panel pero NO entra aca: son clientes
+ * que todavia tienen servicio, y avisarles de una falla que no estan sufriendo
+ * es exactamente el aviso que no hay como desdecir.
+ */
+export const TIPOS_ALERTA_AGREGADA: readonly string[] = [
+  TIPO_ALERTA.FALLA_OLT,
+  TIPO_ALERTA.FALLA_PLACA_OLT,
+  TIPO_ALERTA.FALLA_CAJA_NAP,
+];
+
+export function esAlertaAgregada(tipo: string): boolean {
+  return TIPOS_ALERTA_AGREGADA.includes(tipo);
+}
+
 /** Porcentaje de una placa caído a partir del cual se culpa a la placa. */
 export const UMBRAL_FALLA_PLACA_PCT = 20;
 /** Y de la OLT completa. */

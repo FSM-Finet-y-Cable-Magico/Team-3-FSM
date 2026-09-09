@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AlertasService } from '../monitoreo/alertas.service.js';
+import { esAlertaAgregada } from '../monitoreo/monitoreo.constants.js';
 import {
   CANAL_NOTIFICACION,
   ESTADO_ENVIO,
@@ -234,6 +235,21 @@ export class NotificacionesService {
 
     return {
       alerta,
+      /**
+       * RF-42 nombra la falla de caja NAP, pero el aviso NO se restringe a las
+       * agregadas, y esto es deliberado.
+       *
+       * `clienteDeAlertaIndividual` existe justamente para que avisar sobre una
+       * alerta individual haga algo: si se bloqueara, el jefe tecnico veria un
+       * boton que no responde --o peor, uno que responde "listo" sin avisarle a
+       * nadie--. Un cliente sin senal tambien merece que le digan.
+       *
+       * Lo que cambia es el peso de la decision: avisar de una caja caida
+       * alcanza a decenas de personas de una vez y no se deshace. Por eso el
+       * tipo viaja hasta la Vista, que pide una confirmacion distinta segun el
+       * caso en vez de tratar los dos igual.
+       */
+      es_agregada: esAlertaAgregada(alerta.tipo),
       destinatarios: alcanzados
         // Los equipos de clientes dados de baja no son parte del incidente: el
         // motor ya los marca, y avisarle a alguien que no tiene servicio hace
