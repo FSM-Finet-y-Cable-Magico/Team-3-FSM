@@ -460,3 +460,34 @@ test('los controles de terreno alcanzan el tamano minimo para tocarlos', async (
   await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
   expect(await controlesChicos(page), 'cierre paso 3').toEqual([]);
 });
+
+test('RF-09: el listado avisa de las OT con mas de 30 dias sin reagendar', async ({ page }) => {
+  // Antes la antiguedad se mostraba y nada mas: una OT de 40 dias se veia
+  // igual que una de 3, solo con otro numero. El RF pide alertar.
+  //
+  // El umbral lo decide el Controlador y viaja en `alerta_sin_reagendar`; la
+  // Vista no lo recalcula, para que el listado y el dashboard no discrepen.
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes?*', async (route) =>
+    route.fulfill({
+      json: {
+        data: [
+          { ...ot, id_ot: 41, estado: 'PENDIENTE_CLIENTE_AUSENTE', dias_sin_reagendar: 40, alerta_sin_reagendar: true },
+          { ...ot, id_ot: 42, estado: 'PENDIENTE_CLIENTE_AUSENTE', dias_sin_reagendar: 3, alerta_sin_reagendar: false },
+        ],
+        page: 1, limit: 20, total: 2,
+      },
+    }),
+  );
+
+  await login(page, 'admin');
+  await page.goto('/admin/ot');
+
+  await expect(page.getByText('mas de 30 dias sin reagendarse')).toBeVisible();
+  await expect(page.getByText('40 dias sin reagendar')).toBeVisible();
+  // La que no llega al umbral se sigue viendo, pero sin alarma.
+  await expect(page.getByText('3 dias sin reagendar')).toBeVisible();
+
+  const avisos = page.locator('span.border-red-200', { hasText: 'sin reagendar' });
+  await expect(avisos).toHaveCount(1);
+});

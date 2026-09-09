@@ -5,10 +5,14 @@ import {
   DIAS_VENTANA_RECURRENCIA,
   UMBRAL_REPARACIONES_RECURRENTES,
 } from '../ordenes/reparaciones-recurrentes.service.js';
+import { SinReagendarService } from '../ordenes/sin-reagendar.service.js';
 
 @Injectable()
 export class DashboardService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private sinReagendar: SinReagendarService,
+  ) {}
 
   async indicadoresDelDia(id_empresa: number) {
     // La jornada se resuelve con el mismo helper que usa la vista de terreno
@@ -33,6 +37,7 @@ export class DashboardService {
       cargaTecnicosRaw,
       completadasHoy,
       tiempoPromedioCierre,
+      sinReagendarVencidas,
     ] = await Promise.all([
       this.prisma.orden_trabajo.groupBy({
         by: ['estado'],
@@ -139,7 +144,9 @@ export class DashboardService {
           AND fecha_completada >= ${inicio_dia}
           AND fecha_completada < ${fin_dia}
       `,
-    ]);
+    
+      this.sinReagendar.contarVencidas(id_empresa),
+]);
 
     const ot_por_estado = {
       PENDIENTE: 0,
@@ -185,6 +192,9 @@ export class DashboardService {
       ultimas_completadas: ultimasCompletadas,
       total_clientes_activos: totalClientes,
       resueltas_remotamente_hoy: resueltasRemoto,
+      // RF-37 lo pide explicitamente "segun RF-09". Sale del mismo servicio que
+      // usa el listado, para que no nazca una segunda version del criterio.
+      ot_sin_reagendar_30_dias: sinReagendarVencidas,
       ot_completadas_hoy: completadasHoy,
       tiempo_promedio_cierre: tiempoPromedioCierre[0]?.horas_promedio ?? null,
       fecha_actualizacion: new Date(),

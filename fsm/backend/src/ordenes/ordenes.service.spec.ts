@@ -7,6 +7,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
 import { FAN_OUT_CIERRE } from './fan-out/fan-out-cierre.js';
 import { ReparacionesRecurrentesService } from './reparaciones-recurrentes.service.js';
+import { SinReagendarService } from './sin-reagendar.service.js';
 
 // Verifica que llamar al servicio desde otro consumidor tampoco amplíe los roles.
 // El doble solo devuelve la fila; no implementa la regla de autorización.
@@ -22,6 +23,10 @@ describe('autorización de OT desde el servicio', () => {
           // Doble: estas pruebas no son de RF-08. La regla tiene su propio spec.
           provide: ReparacionesRecurrentesService,
           useValue: { evaluar: jest.fn(async () => ({ activa: false, total_reparaciones_30_dias: 0, ots: [] })) },
+        },
+        {
+          provide: SinReagendarService,
+          useValue: { marcasDeEntrada: jest.fn(async () => new Map()), dias: () => 0 },
         },
       OrdenesService, { provide: PrismaService, useValue: { orden_trabajo: { findFirst } } },
       { provide: CloudinaryService, useValue: { subirEvidencia } },
@@ -69,6 +74,10 @@ describe('detalle de OT para la vista', () => {
           // Doble: estas pruebas no son de RF-08. La regla tiene su propio spec.
           provide: ReparacionesRecurrentesService,
           useValue: { evaluar: jest.fn(async () => ({ activa: false, total_reparaciones_30_dias: 0, ots: [] })) },
+        },
+        {
+          provide: SinReagendarService,
+          useValue: { marcasDeEntrada: jest.fn(async () => new Map()), dias: () => 0 },
         },
         OrdenesService,
         { provide: PrismaService, useValue: { orden_trabajo: { findFirst } } },

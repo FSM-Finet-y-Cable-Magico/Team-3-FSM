@@ -11,6 +11,10 @@ export interface OT {
   fecha_programada?: string;
   fecha_completada?: string;
   antiguedad_dias?: number;
+  /** RF-09: dias desde que la OT entro en cliente ausente. Solo en ese estado. */
+  dias_sin_reagendar?: number;
+  /** RF-09: true cuando lleva mas de 30 dias sin reagendarse. */
+  alerta_sin_reagendar?: boolean;
   observaciones?: string;
   obs_cliente_ausente?: string;
   categoria_falla_otro?: string | null;

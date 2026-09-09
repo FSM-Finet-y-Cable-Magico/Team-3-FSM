@@ -3,6 +3,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, No
 import { Prisma, type orden_trabajo } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ReparacionesRecurrentesService } from './reparaciones-recurrentes.service.js';
+import { ESTADO_SIN_REAGENDAR, SinReagendarService, superaElUmbral } from './sin-reagendar.service.js';
 import { validarRut } from '../common/utils/rut.util.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
@@ -40,6 +41,7 @@ export class OrdenesService {
 
   constructor(
     private reparaciones: ReparacionesRecurrentesService,
+    private sinReagendar: SinReagendarService,
     private prisma: PrismaService,
     private cloudinary: CloudinaryService,
     @Inject(forwardRef(() => DashboardGateway)) private dashboardGateway: DashboardGateway,
@@ -202,13 +204,28 @@ export class OrdenesService {
       : [];
     const porId = new Map(filas.map((ot) => [ot.id_ot, ot]));
 
+    const enEspera = ids.filter((id) => porId.get(id)?.estado === ESTADO_SIN_REAGENDAR);
+    // Una sola consulta para toda la pagina, no una por OT.
+    const marcas = await this.sinReagendar.marcasDeEntrada(enEspera);
+
     const data = ids
       .map((id) => porId.get(id))
       .filter((ot): ot is NonNullable<typeof ot> => ot !== undefined)
-      .map((ot) => ({
-        ...ot,
-        antiguedad_dias: this.calcularAntiguedadDias(ot.fecha_creacion),
-      }));
+      .map((ot) => {
+        // RF-09 mide dias "sin reagendarse", que no es lo mismo que la
+        // antiguedad de la OT: se cuenta desde que entro al estado. Ver
+        // SinReagendarService.
+        const dias =
+          ot.estado === ESTADO_SIN_REAGENDAR
+            ? this.sinReagendar.dias(marcas.get(ot.id_ot) ?? ot.fecha_creacion)
+            : undefined;
+        return {
+          ...ot,
+          antiguedad_dias: this.calcularAntiguedadDias(ot.fecha_creacion),
+          dias_sin_reagendar: dias,
+          alerta_sin_reagendar: dias !== undefined && superaElUmbral(dias),
+        };
+      });
 
     return { data, total, page, limit };
   }

@@ -27,6 +27,8 @@ export interface IndicadoresDashboard {
   }[];
   total_clientes_activos: number;
   resueltas_remotamente_hoy: number;
+  /** RF-37, segun RF-09: OT con mas de 30 dias sin reagendar. */
+  ot_sin_reagendar_30_dias: number;
   ot_completadas_hoy: number;
   tiempo_promedio_cierre: number | null;
   fecha_actualizacion: string;
