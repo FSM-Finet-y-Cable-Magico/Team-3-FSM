@@ -12,6 +12,14 @@ interface Destino {
  * (`CIERRE_WEBHOOK_G1_URL`, `CIERRE_WEBHOOK_G8_URL`). Reintenta ante 5xx / error
  * de red con backoff. Nunca lanza: un fallo se registra y G1/G8 reconcilian por
  * el GET.
+ *
+ * La URL admite el marcador `{id_ot}`, que se reemplaza por la OT de cada envío.
+ * Hace falta porque G1 recibe el cierre en
+ * `POST /api/integraciones/ordenes/{id_ot}/cierre`: el número va en la ruta, no
+ * solo en el cuerpo. Sin esto, la variable de entorno se mandaría literal y
+ * todos los cierres irían a parar a una ruta con llaves.
+ *
+ * Una URL sin el marcador se usa tal cual, que es como quedó G8.
  */
 export class WebhookFanOut implements FanOutCierre {
   readonly nombre = 'webhook';
@@ -27,7 +35,7 @@ export class WebhookFanOut implements FanOutCierre {
     const maxIntentos = 3;
     for (let intento = 1; intento <= maxIntentos; intento++) {
       try {
-        const res = await fetch(destino.url, {
+        const res = await fetch(this.urlDe(destino, payload), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -80,6 +88,14 @@ export class WebhookFanOut implements FanOutCierre {
    * registra el exito y se sigue; fallar aca convertiria un cierre correcto en
    * un error por culpa de un formato de respuesta.
    */
+  /**
+   * Resuelve `{id_ot}` en la URL del destino. Se codifica el valor aunque hoy
+   * sea siempre un entero: la URL viene de configuración y no de nosotros.
+   */
+  private urlDe(destino: Destino, payload: PayloadCierre): string {
+    return destino.url.replace(/\{id_ot\}/g, encodeURIComponent(String(payload.id_ot)));
+  }
+
   private async registrarRespuesta(
     destino: Destino,
     payload: PayloadCierre,
