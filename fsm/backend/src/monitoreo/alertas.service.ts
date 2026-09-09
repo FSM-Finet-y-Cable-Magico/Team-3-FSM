@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizarNombreCaja } from './ligado-caja.js';
 import { descomponerFicha } from './ficha-cliente.js';
-import { evaluar, type EstadoOnt } from './reglas-alerta.js';
+import { evaluar, afectaAlGrupo, type EstadoOnt } from './reglas-alerta.js';
 import { ESTADO_CONEXION } from './monitoreo.constants.js';
 import {
   DIAS_MAX_INCIDENTE,
@@ -619,9 +619,10 @@ export class AlertasService {
   async criticosPorCaja(id_empresa: number, zona?: string) {
     const onts = await this.cargarEstado(id_empresa);
 
-    const esCritica = (o: EstadoOnt) =>
-      (o.estado_conexion != null && o.estado_conexion !== ESTADO_CONEXION.ONLINE) ||
-      potenciaFueraDeRango(o.potencia_dbm);
+    // La misma funcion que usa el motor para el porcentaje de RF-15. Estaba
+    // escrita dos veces, y por eso este panel podia mostrar una caja al 80 %
+    // afectada mientras el motor no levantaba la alerta.
+    const esCritica = afectaAlGrupo;
 
     // Se agrupa por id_caja_nap y no por el nombre normalizado: dos cajas
     // distintas pueden llamarse igual en zonas distintas -- la red real de FiNet

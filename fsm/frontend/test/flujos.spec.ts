@@ -12,7 +12,7 @@ const ot = { id_ot: 1, id_tecnico: 7, id_empresa: 1, id_cliente: 1, tipo_ot: 'IN
 
 async function preparar(page: Page) {
   page.on('pageerror', error => console.error('Error de navegador:', error.message));
-  const registro = { cierres: [] as unknown[], estados: [] as Record<string, unknown>[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok', equiposCaidos: false, tokenVencido: false, estadoFalla: false, tecnicos: [] as any[], detenidas: [] as any[], descartadas: [] as number[], reasignaciones: [] as any[], prioridades: [] as any[], alertas: [] as any[], destinatarios: null as any, avisos: [] as any[], plantillas: [{ id_plantilla: 5, id_empresa: 1, tipo_evento: 'FALLA', canal: 'SMS', contenido_texto: 'Hola', tiempo_estimado_reparacion: '1 hora', activa: true, es_base: false, editable: true, variables_usadas: [] }] as any[] };
+  const registro = { cierres: [] as unknown[], estados: [] as Record<string, unknown>[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok', equiposCaidos: false, tokenVencido: false, estadoFalla: false, tecnicos: [] as any[], detenidas: [] as any[], descartadas: [] as number[], reasignaciones: [] as any[], prioridades: [] as any[], alertas: [] as any[], destinatarios: null as any, avisos: [] as any[], configuracion: { umbral: null as number | null, guardados: [] as (number | null)[] }, plantillas: [{ id_plantilla: 5, id_empresa: 1, tipo_evento: 'FALLA', canal: 'SMS', contenido_texto: 'Hola', tiempo_estimado_reparacion: '1 hora', activa: true, es_base: false, editable: true, variables_usadas: [] }] as any[] };
   await page.addInitScript(() => {
     const urls = { creadas: [] as string[], liberadas: [] as string[] };
     Object.assign(window, { urlsDePrueba: urls });
@@ -72,6 +72,19 @@ async function preparar(page: Page) {
     if (ruta === '/api/ordenes/categorias-falla' || ruta === '/api/auth/usuarios') return responder([]);
     if (ruta === '/api/ordenes/tecnicos') return responder(registro.tecnicos);
     // --- RF-45: panel de OT detenidas ---
+    // --- RF-46: umbral de desconexion configurable ---
+    if (ruta === '/api/configuracion') {
+      if (req.method() === 'PATCH') {
+        const v = req.postDataJSON().umbral_desconexion_min;
+        registro.configuracion.guardados.push(v);
+        registro.configuracion.umbral = v;
+      }
+      const u = registro.configuracion.umbral;
+      return responder({
+        id_empresa: 1, nombre: 'FiNet', umbral_desconexion_min: u,
+        umbral_vigente: u ?? 30, umbral_por_defecto: 30, umbral_min: 10, umbral_max: 120,
+      });
+    }
     if (ruta === '/api/notificaciones/opciones') return responder({
       canales: ['SMS'], tipos_evento: ['FALLA'], variables: ['zona'],
       horas_ot_inactiva: 24, envio_real_disponible: false,
@@ -701,4 +714,64 @@ test('RF-42: se advierte cuando la alerta no es una falla de caja', async ({ pag
   await dialogo.getByRole('button', { name: /Avisar a 1 cliente/ }).click();
 
   await expect.poll(() => registro.avisos.map((a) => a.id_alerta)).toEqual([79]);
+});
+
+test('RF-46: el administrador puede configurar el umbral, dentro del rango del RF', async ({ page }) => {
+  // El motor ya leia este valor y caia al default si estaba en null, pero no
+  // habia forma de escribirlo: sin endpoint ni pantalla, el unico camino era
+  // SQL directo. O sea que el RF no estaba cumplido.
+  const registro = await preparar(page);
+
+  await login(page, 'admin');
+  await page.goto('/admin/configuracion');
+
+  // Con null se dice cual rige de verdad, no se deja el campo mudo.
+  await expect(page.getByText(/Vacío usa el valor del sistema: 30 minutos/)).toBeVisible();
+
+  const guardar = page.getByRole('button', { name: 'Guardar' });
+  // Sin cambios no hay nada que guardar.
+  await expect(guardar).toBeDisabled();
+
+  // Fuera del rango que fija el RF: se dice cual es y no se deja guardar.
+  await page.getByLabel('Minutos sin señal').fill('9');
+  await expect(page.getByText(/entre 10 y 120 minutos/)).toBeVisible();
+  await expect(guardar).toBeDisabled();
+
+  await page.getByLabel('Minutos sin señal').fill('121');
+  await expect(guardar).toBeDisabled();
+  expect(registro.configuracion.guardados).toEqual([]);
+
+  await page.getByLabel('Minutos sin señal').fill('45');
+  await expect(guardar).toBeEnabled();
+  await guardar.click();
+
+  await expect.poll(() => registro.configuracion.guardados).toEqual([45]);
+  await expect(page.getByText(/se levantan a los 45 minutos/)).toBeVisible();
+});
+
+test('RF-46: se puede volver al valor del sistema', async ({ page }) => {
+  // Vacio significa "usar el del sistema", no cero. Sin ese camino de vuelta,
+  // una empresa que configuro un valor no podria deshacerlo desde la pantalla.
+  const registro = await preparar(page);
+  registro.configuracion.umbral = 45;
+
+  await login(page, 'admin');
+  await page.goto('/admin/configuracion');
+
+  await expect(page.getByText(/Hoy se aplican 45 minutos/)).toBeVisible();
+  await page.getByRole('button', { name: 'Volver al del sistema' }).click();
+  await page.getByRole('button', { name: 'Guardar' }).click();
+
+  await expect.poll(() => registro.configuracion.guardados).toEqual([null]);
+});
+
+test('RF-46: la pantalla es solo de ADMIN', async ({ page }) => {
+  // Escribir el umbral es de ADMIN, que es lo que dice el RF. Un TECNICO que
+  // llega por la URL directa no debe ver el formulario.
+  await preparar(page);
+  await login(page, 'tecnico');
+  await page.goto('/admin/configuracion');
+
+  await expect(page).toHaveURL(/\/(terreno|dashboard)/);
+  await expect(page.getByLabel('Minutos sin señal')).toHaveCount(0);
 });

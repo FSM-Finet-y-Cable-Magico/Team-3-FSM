@@ -52,6 +52,17 @@ export const MIN_ONT_PARA_FALLA_CAJA = 5;
 export const UMBRAL_DESCONEXION_MIN_DEFECTO = 30;
 
 /**
+ * RF-46: el valor de N es configurable por el administrador en un rango de 10
+ * a 120 minutos. El rango es del RF, no una eleccion nuestra.
+ *
+ * Por debajo de 10 el aviso llegaria por cortes que se resuelven solos --un
+ * reinicio de la ONT ya dura mas que eso-- y por encima de 120 la alerta
+ * llegaria cuando el cliente ya llamo.
+ */
+export const UMBRAL_DESCONEXION_MIN = 10;
+export const UMBRAL_DESCONEXION_MAX = 120;
+
+/**
  * Días caída tras los cuales una ONT deja de considerarse un incidente y pasa
  * a ser equipo inactivo.
  *

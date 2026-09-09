@@ -33,6 +33,8 @@ import {
   UMBRAL_FALLA_OLT_PCT,
   UMBRAL_FALLA_PLACA_PCT,
   potenciaEnFranjaPreventiva,
+  potenciaFueraDeRango,
+  ESTADO_CONEXION,
 } from './monitoreo.constants.js';
 
 export interface EstadoOnt {
@@ -73,7 +75,39 @@ const claveDePlaca = (o: EstadoOnt) => `OLT ${o.olt_externo ?? '?'} / placa ${o.
 const claveDeOlt = (o: EstadoOnt) => `OLT ${o.olt_externo ?? '?'}`;
 
 function estaCaida(o: EstadoOnt): boolean {
-  return o.estado_conexion != null && o.estado_conexion !== 'ONLINE';
+  return o.estado_conexion != null && o.estado_conexion !== ESTADO_CONEXION.ONLINE;
+}
+
+/**
+ * RF-15: "cuando el 70 % o mas de los clientes de una misma caja NAP presenten
+ * POTENCIA FUERA DE RANGO simultaneamente".
+ *
+ * El porcentaje de las alertas agregadas contaba solo las ONT caidas, que no es
+ * lo mismo y no se solapa con lo que dice el RF:
+ *
+ *   - una ONT ONLINE con -30 dBm esta fuera de rango y el RF la cuenta; el
+ *     motor no la contaba;
+ *   - una ONT OFFLINE no tiene lectura de potencia, asi que el texto literal
+ *     del RF no la cuenta, pero operativamente una caja partida deja a todos
+ *     sin senal, no con senal mala.
+ *
+ * Se toma la union de las dos: sin servicio O fuera de rango. Es la unica
+ * lectura que no se pierde ninguno de los dos casos, y sobre todo es la que YA
+ * usa el resto del sistema. `criticosPorCaja` (CU-15) define exactamente asi al
+ * cliente critico de una caja, y de ahi sale el `pct_afectado` del panel.
+ *
+ * Con dos definiciones distintas, el panel de CU-15 podia mostrar una caja al
+ * 80 % afectada mientras el motor no levantaba la alerta porque solo el 40 %
+ * estaba caida: dos cifras de la misma caja en dos pantallas.
+ *
+ * OJO: esto cambia QUE alertas se levantan. Conviene confirmarlo con FiNet.
+ *
+ * No se toca `estaCaida`, que sigue significando "sin conexion" y es lo
+ * correcto para los otros dos usos: detectar el equipo de un cliente dado de
+ * baja, y la alerta individual de sin senal.
+ */
+export function afectaAlGrupo(o: EstadoOnt): boolean {
+  return estaCaida(o) || potenciaFueraDeRango(o.potencia_dbm);
 }
 
 /**
@@ -123,8 +157,8 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
     for (const [clave, miembros] of grupos) {
       if (miembros.length < minPadron) continue;
       if (yaExplicado(miembros)) continue;
-      const caidas = miembros.filter(estaCaida).length;
-      const pct = Math.round((caidas / miembros.length) * 100);
+      const afectadas = miembros.filter(afectaAlGrupo).length;
+      const pct = Math.round((afectadas / miembros.length) * 100);
       if (pct < umbralPct) continue;
 
       marcar(clave);
@@ -132,12 +166,12 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
       propuestas.push({
         tipo,
         severidad,
-        mensaje: `${caidas} de ${miembros.length} ONT activas caídas (${pct}%) en ${etiqueta(clave)}`,
+        mensaje: `${afectadas} de ${miembros.length} ONT activas afectadas (${pct}%) en ${etiqueta(clave)}`,
         id_registro_ont: null,
         id_cliente: null,
         clave_caja: clave,
         id_caja_nap: tipo === TIPO_ALERTA.FALLA_CAJA_NAP ? (conCaja?.id_caja_nap ?? null) : null,
-        afectados: caidas,
+        afectados: afectadas,
       });
     }
   };
