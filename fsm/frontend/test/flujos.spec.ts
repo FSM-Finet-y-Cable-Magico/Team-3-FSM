@@ -12,7 +12,7 @@ const ot = { id_ot: 1, id_tecnico: 7, id_empresa: 1, id_cliente: 1, tipo_ot: 'IN
 
 async function preparar(page: Page) {
   page.on('pageerror', error => console.error('Error de navegador:', error.message));
-  const registro = { cierres: [] as unknown[], estados: [] as Record<string, unknown>[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok', equiposCaidos: false, tokenVencido: false, estadoFalla: false };
+  const registro = { cierres: [] as unknown[], estados: [] as Record<string, unknown>[], clientes: 0, fotos: 0, imagenesRemotas: 0, pendientes: [] as Route[], modo: 'ok', equiposCaidos: false, tokenVencido: false, estadoFalla: false, tecnicos: [] as any[], detenidas: [] as any[], descartadas: [] as number[], reasignaciones: [] as any[], prioridades: [] as any[] };
   await page.addInitScript(() => {
     const urls = { creadas: [] as string[], liberadas: [] as string[] };
     Object.assign(window, { urlsDePrueba: urls });
@@ -69,7 +69,32 @@ async function preparar(page: Page) {
     if (ruta === '/api/ordenes/materiales') return responder([
       { id_tipo_equipo: 3, nombre: 'Conector SC/APC', categoria: 'Fibra', requiere_serie_individual: false, stock: { cantidad_disponible: 12 } },
     ]);
-    if (ruta === '/api/ordenes/categorias-falla' || ruta === '/api/ordenes/tecnicos' || ruta === '/api/auth/usuarios') return responder([]);
+    if (ruta === '/api/ordenes/categorias-falla' || ruta === '/api/auth/usuarios') return responder([]);
+    if (ruta === '/api/ordenes/tecnicos') return responder(registro.tecnicos);
+    // --- RF-45: panel de OT detenidas ---
+    if (ruta === '/api/notificaciones/opciones') return responder({
+      canales: ['SMS'], tipos_evento: ['FALLA'], variables: ['zona'],
+      horas_ot_inactiva: 24, envio_real_disponible: false,
+    });
+    if (ruta === '/api/notificaciones/plantillas') return responder([]);
+    if (ruta === '/api/notificaciones/ot-detenidas') return responder(registro.detenidas);
+    if (/\/notificaciones\/ot-detenidas\/\d+\/descartar$/.test(ruta)) {
+      const id = Number(ruta.split('/').at(-2));
+      registro.descartadas.push(id);
+      registro.detenidas = registro.detenidas.filter((o) => o.id_ot !== id);
+      return responder({ id_ot: id, descartada_en: new Date().toISOString(), reaparece_en: new Date().toISOString(), horas_silencio: 48 });
+    }
+    if (/\/ordenes\/\d+\/reasignar$/.test(ruta)) {
+      registro.reasignaciones.push({ id_ot: Number(ruta.split('/').at(-2)), ...req.postDataJSON() });
+      registro.detenidas = [];
+      return responder(ot);
+    }
+    if (/\/ordenes\/\d+\/prioridad$/.test(ruta)) {
+      const id = Number(ruta.split('/').at(-2));
+      registro.prioridades.push({ id_ot: id, ...req.postDataJSON() });
+      registro.detenidas = registro.detenidas.map((o) => (o.id_ot === id ? { ...o, prioridad: 'CRITICA' } : o));
+      return responder(ot);
+    }
     if (ruta === '/api/ordenes') return responder({ data: [ot], page: 1, limit: 20, total: 1 });
     if (/\/ordenes\/\d+\/foto$/.test(ruta)) {
       registro.fotos++;
@@ -490,4 +515,60 @@ test('RF-09: el listado avisa de las OT con mas de 30 dias sin reagendar', async
 
   const avisos = page.locator('span.border-red-200', { hasText: 'sin reagendar' });
   await expect(avisos).toHaveCount(1);
+});
+
+test('RF-45: el panel deja reasignar, marcar CRITICA y descartar la alerta', async ({ page }) => {
+  // Antes la pantalla solo ofrecia "Abrir". Las dos acciones que el RF nombra
+  // no existian, y una alerta ya vista seguia apareciendo igual en cada carga.
+  const registro = await preparar(page);
+  registro.tecnicos = [
+    { id_usuario: 8, nombre_completo: 'Ana Soto' },
+    { id_usuario: 9, nombre_completo: 'Luis Vera' },
+  ];
+  registro.detenidas = [
+    { id_ot: 31, tipo_ot: 'REPARACION', estado: 'ASIGNADA', prioridad: 'MEDIA', cliente: 'Cliente A', tecnico: 'Ana Soto', sin_movimiento_desde: new Date().toISOString(), horas_detenida: 30, sin_tecnico: false },
+    { id_ot: 32, tipo_ot: 'INSTALACION', estado: 'EN_CURSO', prioridad: 'ALTA', cliente: 'Cliente B', tecnico: null, sin_movimiento_desde: new Date().toISOString(), horas_detenida: 80, sin_tecnico: true },
+  ];
+
+  await login(page, 'admin');
+  await page.goto('/admin/notificaciones');
+  await page.getByRole('tab', { name: /OT detenidas/ }).click();
+
+  // Marcar CRITICA: la accion mas directa del RF.
+  await page.getByRole('row', { name: /#31/ }).getByRole('button', { name: 'Marcar CRÍTICA' }).click();
+  await expect.poll(() => registro.prioridades).toEqual([{ id_ot: 31, prioridad: 'CRITICA' }]);
+  // Ya marcada, el boton no se vuelve a ofrecer para esa fila.
+  await expect(page.getByRole('row', { name: /#31/ }).getByRole('button', { name: 'Marcar CRÍTICA' })).toHaveCount(0);
+
+  // Descartar: la fila se va de la lista.
+  await page.getByRole('row', { name: /#32/ }).getByRole('button', { name: 'Descartar' }).click();
+  await expect.poll(() => registro.descartadas).toEqual([32]);
+  await expect(page.getByText('vuelve en 48 horas')).toBeVisible();
+
+  // Reasignar: se pregunta a quien antes de hacerlo.
+  await page.getByRole('row', { name: /#31/ }).getByRole('button', { name: 'Reasignar' }).click();
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo).toBeVisible();
+  await expect(dialogo.getByRole('button', { name: 'Reasignar' })).toBeDisabled();
+  await dialogo.getByLabel('Nuevo técnico').selectOption('9');
+  await dialogo.getByRole('button', { name: 'Reasignar' }).click();
+
+  await expect.poll(() => registro.reasignaciones).toEqual([{ id_ot: 31, id_tecnico: 9 }]);
+});
+
+test('RF-45: sin lista de tecnicos el panel sigue sirviendo, solo sin reasignar', async ({ page }) => {
+  // Degradar en vez de romper: las otras dos acciones no dependen de esa lista.
+  const registro = await preparar(page);
+  registro.tecnicos = [];
+  registro.detenidas = [
+    { id_ot: 40, tipo_ot: 'REPARACION', estado: 'ASIGNADA', prioridad: 'MEDIA', cliente: 'Cliente C', tecnico: 'Ana Soto', sin_movimiento_desde: new Date().toISOString(), horas_detenida: 26, sin_tecnico: false },
+  ];
+
+  await login(page, 'admin');
+  await page.goto('/admin/notificaciones');
+  await page.getByRole('tab', { name: /OT detenidas/ }).click();
+
+  await expect(page.getByRole('button', { name: 'Reasignar' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Marcar CRÍTICA' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Descartar' })).toBeVisible();
 });

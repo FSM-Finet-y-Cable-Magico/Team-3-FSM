@@ -18,6 +18,9 @@ describe('Notificaciones', () => {
   let plantilla: any;
   let logs: any[];
   let ots: any[];
+  const otFindMany = jest.fn(async (_a: unknown) => ots);
+  const otFindFirst = jest.fn(async (_a: unknown) => null as any);
+  const otUpdate = jest.fn(async (_a: unknown) => ({}) as any);
 
   const createMany = jest.fn(async (args: any) => ({ count: args.data.length }));
   const plantillaFindUnique = jest.fn(async () => plantilla);
@@ -66,7 +69,11 @@ describe('Notificaciones', () => {
       empresa: { findUnique: jest.fn(async () => ({ nombre: 'FiNet' })) },
       cliente: { findFirst: jest.fn(async () => ({ id_cliente: 1 })) },
       registro_ont: { findUnique: jest.fn(async () => null) },
-      orden_trabajo: { findMany: jest.fn(async () => ots) },
+      orden_trabajo: {
+        findMany: otFindMany,
+        findFirst: otFindFirst,
+        update: otUpdate,
+      },
     };
 
     const mod = await Test.createTestingModule({
@@ -257,7 +264,7 @@ describe('Notificaciones', () => {
 
   it('cae a la fecha de creacion cuando la OT nunca se movio', async () => {
     ots = [
-      { id_ot: 2, tipo_ot: 'INSTALACION', estado: 'PENDIENTE', prioridad: 'ALTA',
+      { id_ot: 2, tipo_ot: 'INSTALACION', estado: 'ASIGNADA', prioridad: 'ALTA',
         fecha_creacion: hace(50), cliente: null, tecnico: null, historial: [] },
     ];
 
@@ -270,12 +277,71 @@ describe('Notificaciones', () => {
 
   it('ordena por la que lleva mas tiempo parada', async () => {
     ots = [
-      { id_ot: 1, tipo_ot: 'REPARACION', estado: 'PENDIENTE', prioridad: 'ALTA',
+      { id_ot: 1, tipo_ot: 'REPARACION', estado: 'ASIGNADA', prioridad: 'ALTA',
         fecha_creacion: hace(30), cliente: null, tecnico: null, historial: [] },
-      { id_ot: 2, tipo_ot: 'REPARACION', estado: 'PENDIENTE', prioridad: 'BAJA',
+      { id_ot: 2, tipo_ot: 'REPARACION', estado: 'ASIGNADA', prioridad: 'BAJA',
         fecha_creacion: hace(96), cliente: null, tecnico: null, historial: [] },
     ];
 
     expect((await service.otDetenidas(1)).map((o) => o.id_ot)).toEqual([2, 1]);
+  });
+  it('solo mira los dos estados que nombra el RF, no todo lo no terminal', async () => {
+    // Antes filtraba `notIn: ['COMPLETADA','CANCELADA']`, con lo que entraban
+    // PENDIENTE y PENDIENTE_CLIENTE_AUSENTE. Esta ultima tiene su propia regla
+    // en RF-09 --treinta dias-- y aparecer tambien aca la duplicaba.
+    ots = [];
+    await service.otDetenidas(1);
+
+    const where = (otFindMany.mock.calls.at(-1)![0] as any).where;
+    expect(where.estado).toEqual({ in: ['ASIGNADA', 'EN_CURSO'] });
+    expect(where.id_empresa).toBe(1);
+  });
+
+  it('omite las alertas descartadas hace menos de 48 horas', async () => {
+    ots = [];
+    await service.otDetenidas(1);
+
+    const where = (otFindMany.mock.calls.at(-1)![0] as any).where;
+    const [sinDescartar, yaVencido] = where.OR;
+    expect(sinDescartar).toEqual({ alerta_detenida_descartada_en: null });
+
+    // El corte tiene que caer 48 h atras, ni 24 ni 72.
+    const corte: Date = yaVencido.alerta_detenida_descartada_en.lt;
+    const horas = (Date.now() - corte.getTime()) / 3600_000;
+    expect(Math.round(horas)).toBe(48);
+  });
+
+  it('descartar deja la marca y dice cuando vuelve', async () => {
+    otFindFirst.mockResolvedValue({ id_ot: 5, estado: 'ASIGNADA' });
+
+    const r = await service.descartarAlertaDetenida(5, 1, 9);
+
+    const data = (otUpdate.mock.calls.at(-1)![0] as any).data;
+    expect(data.alerta_detenida_descartada_por).toBe(9);
+    expect(data.alerta_detenida_descartada_en).toBeInstanceOf(Date);
+    // Descartar no toca la OT: ni su estado ni su prioridad.
+    expect(Object.keys(data).sort()).toEqual([
+      'alerta_detenida_descartada_en',
+      'alerta_detenida_descartada_por',
+    ]);
+
+    const horas = (r.reaparece_en.getTime() - r.descartada_en.getTime()) / 3600_000;
+    expect(horas).toBe(48);
+  });
+
+  it('no deja descartar la alerta de una OT que no esta detenida', async () => {
+    otFindFirst.mockResolvedValue({ id_ot: 6, estado: 'COMPLETADA' });
+
+    await expect(service.descartarAlertaDetenida(6, 1, 9)).rejects.toThrow(
+      /ASIGNADA o EN_CURSO/,
+    );
+    expect(otUpdate).not.toHaveBeenCalled();
+  });
+
+  it('no deja descartar una OT de otra empresa', async () => {
+    otFindFirst.mockResolvedValue(null);
+
+    await expect(service.descartarAlertaDetenida(6, 99, 9)).rejects.toThrow(/no encontrada/i);
+    expect((otFindFirst.mock.calls.at(-1)![0] as any).where.id_empresa).toBe(99);
   });
 });

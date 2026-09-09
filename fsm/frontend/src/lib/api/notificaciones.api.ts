@@ -131,3 +131,11 @@ export const otDetenidas = (token: string, horas?: number) =>
     token,
     `${API_URL}/api/notificaciones/ot-detenidas${horas ? `?horas=${horas}` : ''}`,
   );
+
+/** RF-45: descartar la alerta de una OT detenida. Vuelve a las 48 h. */
+export const descartarAlertaDetenida = (token: string, id_ot: number) =>
+  pedirJson<{ id_ot: number; descartada_en: string; reaparece_en: string; horas_silencio: number }>(
+    token,
+    `${API_URL}/api/notificaciones/ot-detenidas/${id_ot}/descartar`,
+    { method: 'POST' },
+  );

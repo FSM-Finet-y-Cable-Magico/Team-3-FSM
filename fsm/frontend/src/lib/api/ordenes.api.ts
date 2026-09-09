@@ -114,6 +114,33 @@ export async function crearOT(token: string, dto: Record<string, unknown>): Prom
   });
 }
 
+/**
+ * RF-45: reasignar una OT que ya tiene tecnico, desde el panel de detenidas.
+ * No es lo mismo que `asignarTecnico`, que solo acepta OT en PENDIENTE.
+ */
+export async function reasignarTecnico(
+  token: string,
+  id: number,
+  id_tecnico: number,
+): Promise<OT> {
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}/reasignar`, {
+    method: 'PATCH',
+    body: JSON.stringify({ id_tecnico }),
+  });
+}
+
+/** RF-45: la otra accion del panel. Sirve para subir y para bajar la prioridad. */
+export async function cambiarPrioridad(
+  token: string,
+  id: number,
+  prioridad: 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAJA',
+): Promise<OT> {
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}/prioridad`, {
+    method: 'PATCH',
+    body: JSON.stringify({ prioridad }),
+  });
+}
+
 export async function asignarTecnico(
   token: string,
   id: number,

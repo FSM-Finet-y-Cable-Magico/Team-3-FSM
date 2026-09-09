@@ -136,4 +136,14 @@ export class NotificacionesController {
   private empresaDe(user: UsuarioAutenticado, empresa?: string) {
     return user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
   }
+
+  /** RF-45: descartar la alerta de una OT detenida; vuelve a las 48 h. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Post('ot-detenidas/:id/descartar')
+  descartarAlertaDetenida(
+    @Param('id') id: string,
+    @CurrentUser() user: UsuarioAutenticado,
+  ) {
+    return this.svc.descartarAlertaDetenida(+id, user.id_empresa, user.userId);
+  }
 }
