@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
+import {
+  DIAS_VENTANA_RECURRENCIA,
+  UMBRAL_REPARACIONES_RECURRENTES,
+} from '../ordenes/reparaciones-recurrentes.service.js';
 
 @Injectable()
 export class DashboardService {
@@ -13,8 +17,10 @@ export class DashboardService {
     // Calcularla en SQL con AT TIME ZONE daba medianoche de Santiago como texto
     // sin zona, y el dashboard terminaba contando de 21:00 a 21:00.
     const { desde: inicio_dia, hasta: fin_dia } = rangoDiaOperacion();
-    const hace30Dias = new Date();
-    hace30Dias.setDate(hace30Dias.getDate() - 30);
+    // La ventana de RF-08 sale de la regla compartida, no de un 30 escrito
+    // aca: este contador tenia su propia copia y ya habia divergido.
+    const desdeRecurrencia = new Date();
+    desdeRecurrencia.setDate(desdeRecurrencia.getDate() - DIAS_VENTANA_RECURRENCIA);
 
     const [
       otsPorEstado,
@@ -78,14 +84,24 @@ export class DashboardService {
         },
       }),
 
+      // RF-08 cuenta reparaciones CERRADAS y ancla en la fecha de cierre.
+      // Aca se contaba `estado: { not: 'CANCELADA' }` sobre `fecha_creacion`,
+      // que es la version vieja de la regla: sumaba OT todavia abiertas y se
+      // perdia las creadas antes de la ventana pero cerradas dentro. Sobre los
+      // datos actuales daba 8 reparaciones para un cliente que tiene 5.
+      //
+      // No se llama a ReparacionesRecurrentesService porque aca hace falta un
+      // agregado sobre todos los clientes, y evaluar uno por uno seria una
+      // consulta por cliente. Lo que se comparte es la regla: mismo filtro,
+      // misma ventana y mismo umbral, tomados de sus constantes.
       this.prisma.orden_trabajo.groupBy({
         by: ['id_cliente'],
         where: {
           id_empresa,
           id_cliente: { not: null },
           tipo_ot: 'REPARACION',
-          estado: { not: 'CANCELADA' },
-          fecha_creacion: { gte: hace30Dias },
+          estado: 'COMPLETADA',
+          fecha_completada: { gte: desdeRecurrencia },
         },
         _count: { id_cliente: true },
       }),
@@ -163,7 +179,7 @@ export class DashboardService {
       ot_por_estado,
       ot_criticas_activas: criticas,
       clientes_reparacion_recurrente: clientesConReparacionesRecurrentes.filter(
-        (row) => row._count.id_cliente >= 3,
+        (row) => row._count.id_cliente >= UMBRAL_REPARACIONES_RECURRENTES,
       ).length,
       tecnicos,
       ultimas_completadas: ultimasCompletadas,
