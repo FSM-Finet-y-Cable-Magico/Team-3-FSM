@@ -95,7 +95,7 @@
 
       const cliente = await clientesApi.registrarCliente(token, dto);
       successMsg = 'Cliente registrado correctamente';
-      programar(() => goto(`/clientes/${cliente.rut}`), 500);
+      programar(() => goto(`/admin/clientes/${cliente.rut}`), 500);
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : 'Error al registrar';
     } finally {

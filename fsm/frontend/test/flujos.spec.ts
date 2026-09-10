@@ -775,3 +775,47 @@ test('RF-46: la pantalla es solo de ADMIN', async ({ page }) => {
   await expect(page).toHaveURL(/\/(terreno|dashboard)/);
   await expect(page.getByLabel('Minutos sin señal')).toHaveCount(0);
 });
+
+test('ninguna navegacion interna apunta fuera de su area', async () => {
+  // MOD RF-34 movio las pantallas a /admin y /terreno. Cuatro navegaciones se
+  // quedaron con la ruta vieja --"Ver ficha", "Ver" de una OT, y las que van
+  // despues de crear un cliente o una OT-- y llevaban a un 404.
+  //
+  // Es un fallo silencioso: no hay error en consola ni prueba que lo note,
+  // solo un 404 cuando alguien hace clic. Por eso se revisa el codigo entero.
+  const { readdirSync, readFileSync, statSync } = await import('node:fs');
+  const { join } = await import('node:path');
+
+  const archivos: string[] = [];
+  const recorrer = (dir: string) => {
+    for (const e of readdirSync(dir)) {
+      const p = join(dir, e);
+      if (statSync(p).isDirectory()) recorrer(p);
+      else if (e.endsWith('.svelte')) archivos.push(p);
+    }
+  };
+  recorrer('src/routes');
+
+  // Las rutas de primer nivel que existen de verdad.
+  const areas = ['/admin', '/terreno', '/login', '/cambiar-password'];
+  const malas: string[] = [];
+
+  for (const archivo of archivos) {
+    const texto = readFileSync(archivo, 'utf-8');
+    for (const m of texto.matchAll(/goto\(\s*[`'"](\/[^`'"$]*)/g)) {
+      const destino = m[1];
+      if (!areas.some((a) => destino === a || destino.startsWith(a + '/'))) {
+        malas.push(`${archivo.replace(/\\/g, '/')} -> goto('${destino}…')`);
+      }
+    }
+    for (const m of texto.matchAll(/href="(\/[^"{}#]*)"/g)) {
+      const destino = m[1];
+      if (destino.includes('.')) continue;           // /logo_finet.png y similares
+      if (!areas.some((a) => destino === a || destino.startsWith(a + '/'))) {
+        malas.push(`${archivo.replace(/\\/g, '/')} -> href="${destino}"`);
+      }
+    }
+  }
+
+  expect(malas, 'navegaciones que no caen en un area valida').toEqual([]);
+});
