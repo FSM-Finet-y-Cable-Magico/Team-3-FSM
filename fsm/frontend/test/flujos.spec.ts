@@ -777,9 +777,10 @@ test('RF-46: la pantalla es solo de ADMIN', async ({ page }) => {
 });
 
 test('ninguna navegacion interna apunta fuera de su area', async () => {
-  // MOD RF-34 movio las pantallas a /admin y /terreno. Cuatro navegaciones se
-  // quedaron con la ruta vieja --"Ver ficha", "Ver" de una OT, y las que van
-  // despues de crear un cliente o una OT-- y llevaban a un 404.
+  // MOD RF-34 movio las pantallas a /admin y /terreno. Cinco navegaciones se
+  // quedaron con la ruta vieja: "Ver ficha", "Ver" de una OT, las que van
+  // despues de crear un cliente o una OT, y el rebote por rol de /admin/clientes.
+  // Todas llevaban a un 404.
   //
   // Es un fallo silencioso: no hay error en consola ni prueba que lo note,
   // solo un 404 cuando alguien hace clic. Por eso se revisa el codigo entero.
@@ -802,10 +803,16 @@ test('ninguna navegacion interna apunta fuera de su area', async () => {
 
   for (const archivo of archivos) {
     const texto = readFileSync(archivo, 'utf-8');
-    for (const m of texto.matchAll(/goto\(\s*[`'"](\/[^`'"$]*)/g)) {
-      const destino = m[1];
-      if (!areas.some((a) => destino === a || destino.startsWith(a + '/'))) {
-        malas.push(`${archivo.replace(/\\/g, '/')} -> goto('${destino}…')`);
+    // Se toma el argumento completo de goto(...) y se revisan TODAS las rutas
+    // literales que aparezcan adentro. Mirar solo la que va pegada al parentesis
+    // dejaba pasar los ternarios --goto(rol === 'TECNICO' ? '/terreno' : '/dashboard')--,
+    // que es como se escribe el rebote por rol en cinco pantallas.
+    for (const llamada of texto.matchAll(/goto\(([^)]*)\)/g)) {
+      for (const m of llamada[1].matchAll(/[`'"](\/[^`'"$]*)/g)) {
+        const destino = m[1];
+        if (!areas.some((a) => destino === a || destino.startsWith(a + '/'))) {
+          malas.push(`${archivo.replace(/\\/g, '/')} -> goto('${destino}…')`);
+        }
       }
     }
     for (const m of texto.matchAll(/href="(\/[^"{}#]*)"/g)) {
