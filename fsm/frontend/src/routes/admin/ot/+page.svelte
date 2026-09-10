@@ -232,7 +232,7 @@
                 </p>
               {/if}
               <button
-                onclick={() => goto(`/ot/${ot.id_ot}`)}
+                onclick={() => goto(`/admin/ot/${ot.id_ot}`)}
                 class="btn-texto hover:underline whitespace-nowrap"
               >
                 Ver →

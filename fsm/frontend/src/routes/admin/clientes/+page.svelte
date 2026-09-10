@@ -231,7 +231,7 @@
             </td>
             <td class="px-6 py-4">
               <button
-                onclick={() => goto(`/clientes/${c.rut}`)}
+                onclick={() => goto(`/admin/clientes/${c.rut}`)}
                 class="btn-texto hover:underline"
               >
                 Ver ficha →

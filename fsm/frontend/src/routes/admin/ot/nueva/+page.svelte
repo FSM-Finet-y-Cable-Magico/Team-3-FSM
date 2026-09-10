@@ -122,7 +122,7 @@
         bloque_horario: buildBloqueHorario(),
         observaciones: observaciones || undefined,
       });
-      goto(`/ot/${nueva.id_ot}`);
+      goto(`/admin/ot/${nueva.id_ot}`);
     } catch (err) {
       crearError = err instanceof Error ? err.message : 'Error al crear OT';
     } finally {
