@@ -152,10 +152,12 @@ describe('CU-15 · clientes criticos por caja', () => {
         { ...ont(4, 1, 'LOS', null), sin_senal_desde: hace(1) },
       ];
       const r = await service.criticosPorCaja(1);
-      const nap1 = r.cajas.find((c: any) => c.id_caja_nap === 1);
 
-      expect(nap1.clientes_en_la_caja).toBe(1);
-      expect(nap1.criticos).toBe(1);
+      expect(r.cajas[0]).toMatchObject({
+        id_caja_nap: 1,
+        clientes_en_la_caja: 1,
+        criticos: 1,
+      });
     });
 
     it('saca del panel la caja que solo tiene bajas', async () => {
@@ -177,11 +179,13 @@ describe('CU-15 · clientes criticos por caja', () => {
         { ...ont(2, 1, 'ONLINE', -21), sin_senal_desde: null },
       ];
       const r = await service.criticosPorCaja(1);
-      const nap1 = r.cajas.find((c: any) => c.id_caja_nap === 1);
 
-      expect(nap1.clientes_en_la_caja).toBe(2);
-      expect(nap1.criticos).toBe(1);
-      expect(nap1.pct_afectado).toBe(50);
+      expect(r.cajas[0]).toMatchObject({
+        id_caja_nap: 1,
+        clientes_en_la_caja: 2,
+        criticos: 1,
+        pct_afectado: 50,
+      });
     });
   });
 
