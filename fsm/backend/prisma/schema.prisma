@@ -638,7 +638,12 @@ model intento_fallido {
   id_intento      BigInt    @id @default(autoincrement())
   id_empresa      Int?
   ip_address      String    @db.VarChar(45)
-  rut_intentado   String?   @db.VarChar(12)
+  /// Guarda el `nombre_usuario` con que se intento entrar, no un RUT: el login
+  /// es por nombre de usuario desde CU-39. El nombre queda con el que nacio la
+  /// tabla. El largo sigue a `usuario.nombre_usuario` (50) a proposito: con
+  /// VarChar(12) todo intento fallido de un usuario mas largo --que son casi
+  /// todos los tecnicos-- reventaba el INSERT, y el 401 salia como 500.
+  rut_intentado   String?   @db.VarChar(50)
   timestamp       DateTime  @default(now())
   bloqueado_hasta DateTime?
   empresa         empresa?  @relation(fields: [id_empresa], references: [id_empresa])
