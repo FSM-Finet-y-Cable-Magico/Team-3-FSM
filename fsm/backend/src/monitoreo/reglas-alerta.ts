@@ -114,7 +114,7 @@ export function afectaAlGrupo(o: EstadoOnt): boolean {
  * Equipo de un cliente dado de baja: sigue en SmartOLT, OFFLINE para siempre.
  * No es un incidente y no participa de ningún cálculo — ver `DIAS_MAX_INCIDENTE`.
  */
-function esInactiva(o: EstadoOnt, ahora: Date): boolean {
+export function esInactiva(o: EstadoOnt, ahora: Date): boolean {
   if (!estaCaida(o)) return false;
   if (!o.sin_senal_desde) return false;
   return (ahora.getTime() - o.sin_senal_desde.getTime()) / 86_400_000 > DIAS_MAX_INCIDENTE;
