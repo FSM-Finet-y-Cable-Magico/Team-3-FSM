@@ -516,10 +516,24 @@
                   {#if cargandoDetalle}
                     <p class="text-sm text-gray-500">Cargando clientes…</p>
                   {:else if detalle}
+                    <!-- Los contadores tienen que explicar el "N de M afectadas"
+                         del titular. Faltaba el de potencia fuera de rango, que
+                         suele ser la mayor parte: sobre la placa 2 de la OLT 2
+                         eran 6 caidos y 42 fuera de rango, asi que quien sumaba
+                         lo que veia en pantalla daba 27 y el titular decia 44.
+                         "Degradandose" NO entra: es la franja preventiva, esos
+                         clientes todavia tienen servicio. -->
+                    {@const activas = detalle.afectados.filter((f) => !f.inactiva)}
+                    {@const sinSenal = activas.filter((f) => f.estado && f.estado !== 'ONLINE').length}
+                    {@const fueraDeRango = activas.filter((f) => f.potencia_fuera_de_rango).length}
+                    {@const inactivas = detalle.afectados.length - activas.length}
                     <div class="flex gap-4 text-xs text-gray-600 mb-2 flex-wrap">
-                      <span><strong class="text-gray-900">{detalle.total}</strong> clientes en la caja</span>
-                      <span><strong class="text-red-700">{detalle.afectados.filter((f) => f.estado && f.estado !== 'ONLINE' && !f.inactiva).length}</strong> caídos</span>
-                      <span><strong class="text-gray-600">{detalle.afectados.filter((f) => f.inactiva).length}</strong> inactivos (bajas)</span>
+                      <!-- "en el padron" y no "en la caja": esta lista tambien se
+                           abre para alertas de OLT y de placa, que no son cajas. -->
+                      <span><strong class="text-gray-900">{detalle.total}</strong> en el padrón</span>
+                      <span><strong class="text-red-700">{sinSenal}</strong> sin señal</span>
+                      <span><strong class="text-orange-700">{fueraDeRango}</strong> con potencia fuera de rango</span>
+                      <span><strong class="text-gray-600">{inactivas}</strong> inactivos (bajas)</span>
                       <span><strong class="text-amber-700">{detalle.degradados}</strong> degradándose</span>
                     </div>
                     <div class="overflow-x-auto rounded-lg border bg-white">
