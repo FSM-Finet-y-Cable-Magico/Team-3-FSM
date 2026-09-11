@@ -50,7 +50,7 @@
       return;
     }
     if (!['ADMIN', 'JEFE_TECNICO'].includes(state.usuario?.rol ?? '')) {
-      goto(state.usuario?.rol === 'TECNICO' ? '/terreno' : '/dashboard');
+      goto(state.usuario?.rol === 'TECNICO' ? '/terreno' : '/admin/dashboard');
       return;
     }
 
