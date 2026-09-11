@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { urlMiniaturaEvidencia } from '../src/lib/utils/cloudinary';
+import { urlSegura } from '../src/lib/utils/url';
 
 const imagen = readFileSync(new URL('../static/logo_finet.png', import.meta.url));
 const archivo = { name: 'evidencia.png', mimeType: 'image/png', buffer: imagen };
@@ -167,6 +168,35 @@ test('miniaturas conservan URLs históricas o no transformables', () => {
   for (const original of ['data:image/png;base64,YWJj', 'https://example.com/image/upload/foto.jpg', 'https://res.cloudinary.com/demo/image/upload/s--firma--/v1/foto.jpg', '/foto.jpg']) {
     expect(urlMiniaturaEvidencia(original)).toBe(original);
   }
+});
+test('urlSegura solo deja enlazar URLs https', () => {
+  expect(urlSegura(remota)).toBe(remota);
+  // Las variantes con mayusculas, espacios o tabuladores son las que se usan
+  // para saltarse un filtro que compara el texto en vez de parsear la URL.
+  for (const insegura of [
+    'javascript:alert(document.domain)', 'JavaScript:alert(1)', ' javascript:alert(1)', 'java\tscript:alert(1)',
+    'data:image/png;base64,YWJj', 'data:text/html,<script>alert(1)</script>', 'vbscript:msgbox(1)',
+    'http://res.cloudinary.com/demo/image/upload/v1/evidencia.png', '/foto.jpg', '', null, undefined,
+  ]) {
+    expect(urlSegura(insegura), JSON.stringify(insegura)).toBeNull();
+  }
+});
+test('la galería de la OT solo enlaza evidencias https y muestra igual las demás', async ({ page }) => {
+  // Svelte no revisa el esquema de un href: un javascript: guardado en la base
+  // se ejecutaria al hacer clic en la foto. La base es compartida y ya guarda
+  // filas que el DTO de hoy rechazaria, asi que la Vista no puede confiar en ella.
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes/1', route => route.fulfill({ json: { ...ot, fotos: [
+    { id_foto: 1, url_cloudinary: remota, formato: 'png' },
+    { id_foto: 2, url_cloudinary: 'javascript:alert(document.domain)', formato: 'png' },
+    { id_foto: 3, url_cloudinary: 'data:image/png;base64,YWJj', formato: 'png' },
+  ] } }));
+  await login(page, 'admin'); await page.goto('/admin/ot/1');
+  const fotos = page.getByAltText(/^Evidencia \d de la OT #1$/);
+  await expect(fotos).toHaveCount(3);
+  const enlaces = page.getByRole('link').filter({ has: fotos });
+  await expect(enlaces).toHaveCount(1);
+  await expect(enlaces).toHaveAttribute('href', remota);
 });
 test('paginación de clientes conserva mensajes y permite ir y volver', async ({ page }, info) => {
   await preparar(page); await login(page, 'admin'); await page.goto('/admin/clientes');
