@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   UnauthorizedException,
   ForbiddenException,
   BadRequestException,
@@ -14,6 +15,8 @@ import { CrearUsuarioDto } from './dto/crear-usuario.dto.js';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
@@ -184,13 +187,36 @@ export class AuthService {
     }));
   }
 
+  /**
+   * Anota el intento fallido para el bloqueo de C6 (#19).
+   *
+   * No propaga el error a proposito. Esta escritura es contabilidad: ocurre
+   * ANTES de lanzar el 401, asi que si falla se lleva puesta la respuesta y el
+   * usuario recibe un 500 "Internal server error" en vez de "usuario o
+   * contrasena incorrectos". Fue exactamente lo que paso con `rut_intentado`
+   * en VarChar(12): todo login fallido de una cuenta con nombre de mas de 12
+   * caracteres --casi todos los tecnicos-- salia como 500, y encima parecia
+   * una caida del servidor en vez de una clave mala.
+   *
+   * Pero callarse tampoco sirve: si esto falla, el bloqueo por intentos
+   * fallidos deja de protegerte y nadie se entera. Por eso se registra como
+   * error en el log, con el nombre de usuario, para que quede a la vista.
+   */
   private async registrarIntentoFallido(id_empresa: number | null, ip: string, rut_intentado: string) {
-    await this.prisma.intento_fallido.create({
-      data: {
-        id_empresa,
-        ip_address: ip,
-        rut_intentado,
-      },
-    });
+    try {
+      await this.prisma.intento_fallido.create({
+        data: {
+          id_empresa,
+          ip_address: ip,
+          rut_intentado,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `No se pudo registrar el intento fallido de "${rut_intentado}": el bloqueo por ` +
+          'intentos no se esta aplicando para esa cuenta',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 }
