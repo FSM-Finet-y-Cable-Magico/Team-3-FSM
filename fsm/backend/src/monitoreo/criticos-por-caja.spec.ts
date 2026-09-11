@@ -135,6 +135,56 @@ describe('CU-15 · clientes criticos por caja', () => {
     expect(r.totales.clientes_criticos).toBe(0);
   });
 
+  // Los equipos de clientes dados de baja siguen en SmartOLT, OFFLINE para
+  // siempre. El motor de RF-15 nunca los conto; este panel si, y por eso
+  // mostraba cajas "100% afectadas" que no tenian un solo cliente activo.
+  describe('equipos dados de baja', () => {
+    const hace = (dias: number) => new Date(Date.now() - dias * 86_400_000);
+
+    it('no los cuenta como afectados ni como padron de la caja', async () => {
+      // NAP 1: 4 equipos, 3 caidos hace meses (bajas) y 1 activo caido hoy.
+      // Contando las bajas seria 4/4 = 100%. Sin ellas es 1/1 = 100%, pero
+      // sobre un padron de uno: la caja queda marcada como padron chico.
+      estado = [
+        { ...ont(1, 1, 'OFFLINE', null), sin_senal_desde: hace(200) },
+        { ...ont(2, 1, 'OFFLINE', null), sin_senal_desde: hace(180) },
+        { ...ont(3, 1, 'OFFLINE', null), sin_senal_desde: hace(90) },
+        { ...ont(4, 1, 'LOS', null), sin_senal_desde: hace(1) },
+      ];
+      const r = await service.criticosPorCaja(1);
+      const nap1 = r.cajas.find((c: any) => c.id_caja_nap === 1);
+
+      expect(nap1.clientes_en_la_caja).toBe(1);
+      expect(nap1.criticos).toBe(1);
+    });
+
+    it('saca del panel la caja que solo tiene bajas', async () => {
+      // Todos sus equipos son de clientes que ya no estan: no hay incidente
+      // que despachar, la caja no deberia aparecer.
+      estado = [
+        { ...ont(1, 1, 'OFFLINE', null), sin_senal_desde: hace(300) },
+        { ...ont(2, 1, 'OFFLINE', null), sin_senal_desde: hace(300) },
+        { ...ont(3, 2, 'LOS', null), sin_senal_desde: hace(1) },
+      ];
+      const r = await service.criticosPorCaja(1);
+
+      expect(r.cajas.map((c: any) => c.id_caja_nap)).toEqual([2]);
+    });
+
+    it('una caida reciente si cuenta: la baja se define por antiguedad', async () => {
+      estado = [
+        { ...ont(1, 1, 'LOS', null), sin_senal_desde: hace(2) },
+        { ...ont(2, 1, 'ONLINE', -21), sin_senal_desde: null },
+      ];
+      const r = await service.criticosPorCaja(1);
+      const nap1 = r.cajas.find((c: any) => c.id_caja_nap === 1);
+
+      expect(nap1.clientes_en_la_caja).toBe(2);
+      expect(nap1.criticos).toBe(1);
+      expect(nap1.pct_afectado).toBe(50);
+    });
+  });
+
   it('deja fuera las cajas sin ningun critico', async () => {
     estado = [ont(1, 1, 'ONLINE', -21), ont(2, 2, 'LOS', null)];
 
