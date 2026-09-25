@@ -1,10 +1,13 @@
 <script lang="ts">
+  import type { IconoStatCard } from './iconos-statcard';
+
   interface Props {
     titulo: string;
     valor: number | string;
     subtitulo?: string;
     color: 'blue' | 'green' | 'yellow' | 'red' | 'gray' | 'orange';
-    icono: string;
+    // Se pinta con {@html}: solo iconos propios, nunca un string cualquiera.
+    icono: IconoStatCard;
     clickable?: boolean;
     href?: string;
   }
