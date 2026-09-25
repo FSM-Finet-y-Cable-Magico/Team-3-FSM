@@ -8,6 +8,7 @@
   import * as ordenesApi from '$lib/api/ordenes.api';
   import EstadoBadge from '$lib/components/EstadoBadge.svelte';
   import { urlTransformada } from '$lib/utils/cloudinary';
+  import { urlSegura } from '$lib/utils/url';
   import { estadoPotencia, POTENCIA_MINIMA_DBM, POTENCIA_MAXIMA_DBM } from '$lib/utils/potencia';
 
   let token = '';
@@ -482,17 +483,26 @@
         <h3 class="font-semibold text-gray-700 mb-4">Galería de evidencia</h3>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {#each ot.fotos as foto, indice (foto.id_foto)}
-            <a href={foto.url_cloudinary} target="_blank" rel="noopener noreferrer">
+            {@const enlace = urlSegura(foto.url_cloudinary)}
+            {@const alt = `Evidencia ${indice + 1} de la OT #${ot.id_ot}`}
+            {#snippet miniatura()}
               <!-- El <img> mide 384 px de ancho como maximo; se pide el doble
                    para pantallas de densidad alta. Servir el original de 2 a 4 MB
                    que sube el tecnico desde el telefono es lo que corrige M12. -->
               <img
                 src={urlTransformada(foto.url_cloudinary, { ancho: 768, alto: 384, modo: 'fill' })}
-                alt="Evidencia {indice + 1} de la OT #{ot.id_ot}"
+                {alt}
                 loading="lazy"
                 class="w-full h-48 object-cover rounded-lg shadow-sm hover:opacity-90 transition-opacity"
               />
-            </a>
+            {/snippet}
+            <!-- Solo se enlaza una URL https (ver urlSegura). Si no pasa, la foto
+                 se sigue viendo, pero sin enlace. -->
+            {#if enlace}
+              <a href={enlace} target="_blank" rel="noopener noreferrer">{@render miniatura()}</a>
+            {:else}
+              {@render miniatura()}
+            {/if}
           {/each}
         </div>
       </div>
