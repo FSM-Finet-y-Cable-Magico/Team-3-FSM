@@ -36,6 +36,18 @@ export interface PayloadCierre {
   resultado_llamada: string;
   potencia_optica_dbm: number;
   resuelto_remotamente: boolean;
+  /**
+   * Tecnico que ejecuto y cerro la OT. Lo pidio G1 el 28-09 para atribuir el
+   * movimiento de equipos a una persona.
+   *
+   * Es inequivoco: `cerrarOT` exige rol TECNICO y que `ot.id_tecnico` sea el
+   * usuario autenticado, asi que quien cierra ES el asignado. Va el id y no el
+   * nombre por minima exposicion; si G1 necesita mostrarlo, lo consulta.
+   *
+   * Nullable porque el tipo del modelo lo es, aunque en la practica una OT
+   * cerrada siempre lo trae: sin tecnico asignado no se puede cerrar.
+   */
+  id_tecnico: number | null;
   cliente: { rut: string | null; nombre: string } | null;
   direccion: { direccion_completa: string; comuna: string } | null;
   categoria_falla: { id_categoria: number; nombre: string } | null;

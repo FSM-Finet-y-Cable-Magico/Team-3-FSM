@@ -177,6 +177,7 @@ export class IntegracionesService {
       resultado_llamada: ot.llamada?.resultado ?? '',
       potencia_optica_dbm: ot.potencia_optica_dbm == null ? 0 : Number(ot.potencia_optica_dbm),
       resuelto_remotamente: ot.resuelto_remotamente,
+      id_tecnico: ot.id_tecnico,
       cliente: ot.cliente ? { rut: ot.cliente.rut, nombre: ot.cliente.nombre_completo } : null,
       direccion: ot.direccion ?? null,
       categoria_falla: ot.categoria_falla
