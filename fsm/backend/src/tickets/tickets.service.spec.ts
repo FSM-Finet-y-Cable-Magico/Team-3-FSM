@@ -5,6 +5,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TicketsService, MENSAJE_RUT_INVALIDO, MENSAJE_SIN_SERVICIO } from './tickets.service.js';
 import { TicketsController } from './tickets.controller.js';
+import { OrdenesService } from '../ordenes/ordenes.service.js';
 
 /**
  * Tickets de soporte: CU-29 (reportar), CU-30 (gestionar) y CU-32
@@ -98,7 +99,12 @@ describe('TicketsService', () => {
     auditoria = [];
     siguienteId = 1;
     const mod = await Test.createTestingModule({
-      providers: [TicketsService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        TicketsService,
+        { provide: PrismaService, useValue: prisma },
+        // La derivacion a OT tiene su propio spec (escalar-ticket.spec.ts).
+        { provide: OrdenesService, useValue: {} },
+      ],
     }).compile();
     service = mod.get(TicketsService);
   });

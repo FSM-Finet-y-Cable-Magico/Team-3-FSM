@@ -1,6 +1,12 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { TicketsService } from './tickets.service.js';
-import { AsignarTicketDto, CrearTicketDto, ReclasificarTicketDto, ResolverTicketDto } from './dto/tickets.dto.js';
+import {
+  AsignarTicketDto,
+  CrearTicketDto,
+  EscalarTicketDto,
+  ReclasificarTicketDto,
+  ResolverTicketDto,
+} from './dto/tickets.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
@@ -62,6 +68,17 @@ export class TicketsController {
     @CurrentUser() user: UsuarioAutenticado,
   ) {
     return this.tickets.resolver(id, dto, user);
+  }
+
+  /** CU-30: derivar a una OT de terreno. Va al final: es lo unico que toca ordenes. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Post(':id/escalar')
+  escalar(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: EscalarTicketDto,
+    @CurrentUser() user: UsuarioAutenticado,
+  ) {
+    return this.tickets.escalar(id, dto, user);
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO')

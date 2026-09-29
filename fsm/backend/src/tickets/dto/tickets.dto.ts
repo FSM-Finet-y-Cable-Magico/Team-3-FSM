@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
 import { ORIGENES_DIGITALES, ORIGENES_INTERNOS, type OrigenTicket } from '../tickets.constants.js';
 
 /**
@@ -58,6 +58,30 @@ export class ResolverTicketDto {
   @IsString()
   @MaxLength(1000)
   observacion: string;
+}
+
+/**
+ * CU-30: derivar el ticket a una OT de terreno. Solo tipos de OT que resuelven
+ * un problema de servicio: una instalacion o una baja no nacen de un reclamo.
+ */
+export class EscalarTicketDto {
+  @IsOptional()
+  @IsIn(['REPARACION', 'REEMPLAZO', 'PREVENTIVO'])
+  tipo_ot?: string;
+
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  id_tecnico?: number;
+
+  @IsOptional()
+  @IsDateString()
+  bloque_horario?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  observaciones?: string;
 }
 
 export class ReclasificarTicketDto {

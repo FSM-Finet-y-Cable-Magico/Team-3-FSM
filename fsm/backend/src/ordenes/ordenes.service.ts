@@ -17,6 +17,7 @@ import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payloa
 import { MOMENTO_FAN_OUT, type MomentoFanOut } from './fan-out/momento-fan-out.js';
 import { AprobarCierreDto } from './dto/aprobar-cierre.dto.js';
 import { RechazarCierreDto } from './dto/rechazar-cierre.dto.js';
+import { ESTADO_TICKET } from '../tickets/tickets.constants.js';
 import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
@@ -77,7 +78,11 @@ export class OrdenesService {
     @Inject(MOMENTO_FAN_OUT) private momentoFanOut: MomentoFanOut,
   ) {}
 
-  async crearOT(dto: CrearOtDto, userId: number, id_empresa: number) {
+  /**
+   * `opciones.id_ticket`: la OT nace de un ticket (CU-30) y queda vinculada.
+   * No viene del DTO: solo lo pasa TicketsService.escalar.
+   */
+  async crearOT(dto: CrearOtDto, userId: number, id_empresa: number, opciones: { id_ticket?: number } = {}) {
     if (!validarRut(dto.rut_cliente)) {
       throw new BadRequestException('RUT inválido');
     }
@@ -111,6 +116,7 @@ export class OrdenesService {
           id_cliente: cliente.id_cliente,
           id_tecnico: dto.id_tecnico ?? null,
           id_direccion,
+          id_ticket: opciones.id_ticket ?? null,
           tipo_ot: dto.tipo_ot,
           prioridad: dto.prioridad ?? 'MEDIA',
           estado,
@@ -553,6 +559,10 @@ export class OrdenesService {
     }
 
     const observacionEstado = dto.obs_cancelacion ?? dto.obs_cliente_ausente ?? null;
+    // CU-30: si la OT venia de un ticket y se cancela, el ticket vuelve a
+    // ABIERTO para que el jefe tecnico decida de nuevo, y se desvincula:
+    // `id_ticket` es UNIQUE en la OT y vinculado no se podria volver a derivar.
+    const soltarTicket = dto.estado === 'CANCELADA' && ot.id_ticket ? ot.id_ticket : null;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.orden_trabajo.update({
@@ -568,8 +578,10 @@ export class OrdenesService {
               obs_cliente_ausente: null,
             }),
           ...(dto.estado === 'COMPLETADA' && { fecha_completada: new Date() }),
+          ...(soltarTicket && { id_ticket: null }),
         },
       });
+      if (soltarTicket) await this.moverTicket(tx, soltarTicket, id_ot, userId, 'cancelada');
 
       await tx.historial_ot.create({
         data: {
@@ -767,6 +779,35 @@ export class OrdenesService {
     return { ...otActualizada, advertencia_potencia, alerta_reparaciones_30_dias };
   }
 
+  /**
+   * Lo que le pasa al ticket cuando su OT termina (CU-30). Solo si el ticket
+   * sigue DERIVADO_OT: un ticket que alguien ya movio a mano no se pisa.
+   */
+  private async moverTicket(
+    tx: Prisma.TransactionClient,
+    id_ticket: number,
+    id_ot: number,
+    userId: number,
+    como: 'completada' | 'cancelada',
+  ) {
+    const data =
+      como === 'completada'
+        ? { estado: ESTADO_TICKET.RESUELTO, fecha_cierre: new Date(), resuelto_remotamente: false }
+        : { estado: ESTADO_TICKET.ABIERTO };
+    const r = await tx.ticket.updateMany({ where: { id_ticket, estado: ESTADO_TICKET.DERIVADO_OT }, data });
+    if (r.count === 0) return;
+    await tx.log_auditoria.create({
+      data: {
+        id_usuario: userId,
+        accion: 'CAMBIAR_ESTADO_TICKET',
+        entidad_afectada: 'ticket',
+        id_entidad_afectada: id_ticket,
+        valor_anterior: { estado: ESTADO_TICKET.DERIVADO_OT },
+        valor_nuevo: { estado: data.estado, id_ot },
+      },
+    });
+  }
+
   private async otPendienteDeAprobacion(id_ot: number, id_empresa: number) {
     const ot = await this.prisma.orden_trabajo.findFirst({ where: { id_ot, id_empresa } });
     if (!ot) throw new NotFoundException('OT no encontrada');
@@ -783,7 +824,7 @@ export class OrdenesService {
    */
   async aprobarCierre(id_ot: number, dto: AprobarCierreDto, user: UsuarioAutenticado) {
     const { userId, id_empresa } = user;
-    await this.otPendienteDeAprobacion(id_ot, id_empresa);
+    const ot = await this.otPendienteDeAprobacion(id_ot, id_empresa);
     const observaciones = dto.observaciones?.trim() || null;
 
     await this.prisma.$transaction(async (tx) => {
@@ -807,6 +848,8 @@ export class OrdenesService {
           valor_nuevo: { estado: 'COMPLETADA', observaciones },
         },
       });
+      // CU-30: el ticket derivado se resuelve cuando su OT se completa.
+      if (ot.id_ticket) await this.moverTicket(tx, ot.id_ticket, id_ot, userId, 'completada');
     });
 
     if (this.momentoFanOut === 'APROBACION') void this.notificarCierre(id_ot);

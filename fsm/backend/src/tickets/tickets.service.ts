@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { OrdenesService } from '../ordenes/ordenes.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizarPaginacion } from '../common/utils/paginacion.util.js';
@@ -47,7 +48,10 @@ const HORA_MS = 3_600_000;
  */
 @Injectable()
 export class TicketsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private ordenes: OrdenesService,
+  ) {}
 
   /** Separado para poder forzar un choque de codigos en las pruebas. */
   private nuevoCodigo() {
@@ -227,6 +231,51 @@ export class TicketsService {
     return this.obtener(id_ticket, actor.id_empresa, ahora);
   }
 
+  /**
+   * CU-30: "si el problema requiere visita presencial, el ticket queda
+   * vinculado a la OT creada y se cierra automaticamente cuando la OT se
+   * complete". Lo ultimo lo hace OrdenesService al aprobar el cierre.
+   *
+   * La OT se crea con `crearOT` y no con un insert propio, asi hereda sus
+   * reglas: valida el tecnico, escribe historial y auditoria, y aplica la
+   * lista negra. Como `crearOT` busca al cliente por RUT, un ticket sin
+   * cliente no se deriva por aca.
+   */
+  async escalar(
+    id_ticket: number,
+    dto: { tipo_ot?: string; id_tecnico?: number; bloque_horario?: string; observaciones?: string },
+    actor: Actor & { userId: number },
+  ) {
+    const t = await this.buscar(id_ticket, actor.id_empresa);
+    if (t.orden_trabajo) {
+      throw new BadRequestException(`El ticket ya está derivado a la OT ${t.orden_trabajo.id_ot}`);
+    }
+    if (!(TRANSICIONES_TICKET[t.estado as EstadoTicket] ?? []).includes(ESTADO_TICKET.DERIVADO_OT)) {
+      throw new BadRequestException(`Un ticket ${t.estado} no se puede derivar a una OT`);
+    }
+    if (!t.cliente?.rut) {
+      throw new BadRequestException('Un ticket sin cliente no se puede derivar a una OT desde aquí');
+    }
+
+    const contexto = [`Ticket ${t.codigo_seguimiento} (${t.categoria.nombre})`, t.descripcion].filter(Boolean).join(': ');
+    const ot = await this.ordenes.crearOT(
+      {
+        rut_cliente: t.cliente.rut,
+        tipo_ot: dto.tipo_ot ?? 'REPARACION',
+        prioridad: t.prioridad,
+        id_tecnico: dto.id_tecnico,
+        bloque_horario: dto.bloque_horario,
+        observaciones: [contexto, dto.observaciones?.trim()].filter(Boolean).join('\n'),
+      },
+      actor.userId,
+      actor.id_empresa,
+      { id_ticket },
+    );
+
+    await this.transicion(t, ESTADO_TICKET.DERIVADO_OT, actor, {}, { id_ot: ot!.id_ot });
+    return this.obtener(id_ticket, actor.id_empresa);
+  }
+
   // ---------------------------------------------------------------------------
   // CU-32
   // ---------------------------------------------------------------------------
@@ -286,7 +335,7 @@ export class TicketsService {
     destino: EstadoTicket,
     actor: Actor,
     extra: Prisma.ticketUncheckedUpdateInput = {},
-    detalle: Record<string, string> = {},
+    detalle: Record<string, string | number> = {},
   ) {
     const permitidas = TRANSICIONES_TICKET[t.estado as EstadoTicket] ?? [];
     if (!permitidas.includes(destino)) {
