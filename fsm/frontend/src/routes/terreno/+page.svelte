@@ -1,4 +1,6 @@
 <script lang="ts">
+  import SemaforoRiesgo from '$lib/components/SemaforoRiesgo.svelte';
+  import { nivelDeCliente } from '$lib/utils/riesgo';
   import Alert from '$lib/components/Alert.svelte';
   import Spinner from '$lib/components/Spinner.svelte';
   import Cargando from '$lib/components/Cargando.svelte';
@@ -246,10 +248,9 @@
                 </span>
                 <EstadoBadge estado={ot.prioridad} />
                 <EstadoBadge estado={ot.estado} />
-                {#if ot.cliente?.es_conflictivo}
-                  <span class="text-xs font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
-                    CONFLICTIVO
-                  </span>
+                <!-- MOD RF-32: el tecnico ve el nivel antes de la visita. VERDE no se muestra. -->
+                {#if nivelDeCliente(ot.cliente) !== 'VERDE'}
+                  <SemaforoRiesgo nivel={nivelDeCliente(ot.cliente)} />
                 {/if}
               </div>
 

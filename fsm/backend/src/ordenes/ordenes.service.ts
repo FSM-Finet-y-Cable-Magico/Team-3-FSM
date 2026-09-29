@@ -18,6 +18,13 @@ import { MOMENTO_FAN_OUT, type MomentoFanOut } from './fan-out/momento-fan-out.j
 import { AprobarCierreDto } from './dto/aprobar-cierre.dto.js';
 import { RechazarCierreDto } from './dto/rechazar-cierre.dto.js';
 import { ESTADO_TICKET } from '../tickets/tickets.constants.js';
+import {
+  ADVERTENCIA_DIRECCION,
+  MENSAJE_SOLO_ADMIN,
+  MIN_JUSTIFICACION_RIESGO,
+  direccionConAntecedentes,
+  mensajeVetado,
+} from '../clientes/lista-roja.js';
 import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
@@ -56,8 +63,16 @@ const MAX_EVIDENCIAS_DETALLE = 50;
  */
 const CONTACTO_SOLICITUD = { select: { nombre_completo: true, telefono: true } } as const;
 
+/**
+ * MOD RF-32: el nivel vigente del semaforo es la ultima fila del cliente en
+ * lista_negra (ver clientes/lista-roja.ts). La Vista lo lee de aca.
+ */
+const NIVEL_RIESGO_VIGENTE = { orderBy: { id_vetado: 'desc' }, take: 1, select: { nivel: true } } as const;
+
 const OT_INCLUDE = {
-  cliente: { select: { id_cliente: true, nombre_completo: true, rut: true, es_conflictivo: true } },
+  cliente: {
+    select: { id_cliente: true, nombre_completo: true, rut: true, es_conflictivo: true, lista_negra: NIVEL_RIESGO_VIGENTE },
+  },
   tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
   direccion: { select: { direccion_completa: true, comuna: true } },
   categoria_falla: { select: { id_categoria: true, nombre: true, sla_horas: true } },
@@ -82,7 +97,12 @@ export class OrdenesService {
    * `opciones.id_ticket`: la OT nace de un ticket (CU-30) y queda vinculada.
    * No viene del DTO: solo lo pasa TicketsService.escalar.
    */
-  async crearOT(dto: CrearOtDto, userId: number, id_empresa: number, opciones: { id_ticket?: number } = {}) {
+  async crearOT(
+    dto: CrearOtDto,
+    userId: number,
+    id_empresa: number,
+    opciones: { id_ticket?: number; rol?: string } = {},
+  ) {
     if (!validarRut(dto.rut_cliente)) {
       throw new BadRequestException('RUT inválido');
     }
@@ -94,8 +114,21 @@ export class OrdenesService {
 
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
-    if (cliente.es_conflictivo && dto.tipo_ot === 'INSTALACION') {
-      throw new BadRequestException('Cliente en lista negra. No se puede crear OT de instalación');
+    // CU-35: un cliente en ROJO (es_conflictivo, ver lista-roja.ts) no recibe
+    // instalacion. El administrador puede anular el bloqueo con una
+    // justificacion escrita; queda en la auditoria con la OT creada.
+    const justificacion = dto.justificacion_lista_roja?.trim() ?? '';
+    const anulaBloqueo = cliente.es_conflictivo && dto.tipo_ot === 'INSTALACION';
+    if (anulaBloqueo) {
+      if (!justificacion) {
+        throw new BadRequestException(mensajeVetado(cliente.obs_conflictivo ?? 'CONFLICTIVO'));
+      }
+      if (opciones.rol !== 'ADMIN') throw new ForbiddenException(MENSAJE_SOLO_ADMIN);
+      if (justificacion.length < MIN_JUSTIFICACION_RIESGO) {
+        throw new BadRequestException(
+          `La justificación para anular el bloqueo debe tener al menos ${MIN_JUSTIFICACION_RIESGO} caracteres`,
+        );
+      }
     }
 
     let estado = 'PENDIENTE';
@@ -107,7 +140,25 @@ export class OrdenesService {
       estado = 'ASIGNADA';
     }
 
-    const id_direccion = dto.id_direccion ?? cliente.direcciones[0]?.id_direccion ?? null;
+    // La direccion tiene que ser del cliente: antes se aceptaba cualquier id, y
+    // la OT podia terminar apuntando a la casa de otro cliente o de otra empresa.
+    let direccion: { id_direccion: number; direccion_completa: string; comuna: string } | null =
+      cliente.direcciones[0] ?? null;
+    if (dto.id_direccion !== undefined && dto.id_direccion !== direccion?.id_direccion) {
+      direccion = await this.prisma.direccion_servicio.findFirst({
+        where: { id_direccion: dto.id_direccion, id_cliente: cliente.id_cliente },
+        select: { id_direccion: true, direccion_completa: true, comuna: true },
+      });
+      if (!direccion) throw new BadRequestException('La dirección no pertenece al cliente');
+    }
+    const id_direccion = direccion?.id_direccion ?? null;
+
+    // CU-35, excepcion 2: la direccion es de un cliente en ROJO. No bloquea:
+    // la OT se crea y vuelve con la advertencia para verificar la identidad.
+    const advertencia_lista_roja =
+      !cliente.es_conflictivo && direccion && (await direccionConAntecedentes(this.prisma, id_empresa, direccion, cliente.id_cliente))
+        ? ADVERTENCIA_DIRECCION
+        : null;
 
     const nueva = await this.prisma.$transaction(async (tx) => {
       const ot = await tx.orden_trabajo.create({
@@ -146,13 +197,27 @@ export class OrdenesService {
         },
       });
 
+      if (anulaBloqueo) {
+        await tx.log_auditoria.create({
+          data: {
+            id_usuario: userId,
+            accion: 'ANULAR_BLOQUEO_LISTA_ROJA',
+            entidad_afectada: 'orden_trabajo',
+            id_entidad_afectada: ot.id_ot,
+            valor_nuevo: { justificacion, motivo_bloqueo: cliente.obs_conflictivo ?? 'CONFLICTIVO' },
+          },
+        });
+      }
+
       return ot;
     });
 
-    return this.prisma.orden_trabajo.findUnique({
+    const creada = await this.prisma.orden_trabajo.findUnique({
       where: { id_ot: nueva.id_ot },
       include: OT_INCLUDE,
     });
+    // Recien creada en la transaccion de arriba: la relectura siempre la encuentra.
+    return { ...creada!, advertencia_lista_roja };
   }
 
   async listarOT(
@@ -397,6 +462,7 @@ export class OrdenesService {
             nombre_completo: true,
             rut: true,
             es_conflictivo: true,
+            lista_negra: NIVEL_RIESGO_VIGENTE,
             // El tecnico debe poder llamar al cliente antes de marcar PENDIENTE_CLIENTE_AUSENTE; el email no hace falta para eso y se deja fuera por minima exposicion.
             telefono: true,
             direcciones: { where: { es_principal: true }, take: 1 },

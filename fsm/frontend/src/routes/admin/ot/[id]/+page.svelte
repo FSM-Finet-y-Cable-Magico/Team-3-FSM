@@ -7,6 +7,8 @@
   import { authStore } from '$lib/stores/auth.store';
   import * as ordenesApi from '$lib/api/ordenes.api';
   import EstadoBadge from '$lib/components/EstadoBadge.svelte';
+  import SemaforoRiesgo from '$lib/components/SemaforoRiesgo.svelte';
+  import { nivelDeCliente } from '$lib/utils/riesgo';
   import { urlTransformada } from '$lib/utils/cloudinary';
   import { urlSegura } from '$lib/utils/url';
   import { estadoPotencia, POTENCIA_MINIMA_DBM, POTENCIA_MAXIMA_DBM } from '$lib/utils/potencia';
@@ -296,6 +298,9 @@
               {persona ? 'Solicitud de instalación (CRM)' : 'Cliente'}
             </p>
             <p class="text-gray-900 font-medium">{ot.cliente?.nombre_completo ?? persona?.nombre_completo ?? '-'}</p>
+            {#if ot.cliente && nivelDeCliente(ot.cliente) !== 'VERDE'}
+              <SemaforoRiesgo nivel={nivelDeCliente(ot.cliente)} />
+            {/if}
             <p class="text-gray-500 font-mono text-xs">{ot.cliente?.rut ?? ''}</p>
             {#if telefono}
               <a href={`tel:${telefono}`} class="btn-texto text-xs font-mono">{telefono}</a>

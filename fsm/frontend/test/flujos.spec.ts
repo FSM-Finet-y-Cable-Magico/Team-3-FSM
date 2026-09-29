@@ -1220,3 +1220,114 @@ test('CU-30: un ticket se deriva a una OT y queda el enlace a la OT', async ({ p
   await expect(page.getByRole('link', { name: 'OT #500' })).toHaveAttribute('href', '/admin/ot/500');
   expect(registro.acciones.at(-1)).toEqual({ ruta: '/api/tickets/7/escalar', cuerpo: { tipo_ot: 'REPARACION', observaciones: 'Revisar roseta' } });
 });
+
+// MOD RF-32: semaforo de riesgo del cliente, en la ficha y en terreno.
+test('MOD RF-32: la ficha muestra el semaforo y pide justificacion para subir el nivel', async ({ page }) => {
+  await preparar(page);
+  const cambios: unknown[] = [];
+  let nivel = 'VERDE';
+  await page.route('http://127.0.0.1:3000/api/clientes/rut/12345678-5', route =>
+    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: nivel, contratos_activos: [] }, historial_ot: [] } }));
+  await page.route(/\/api\/clientes\/1\/riesgo$/, route => {
+    const cuerpo = route.request().postDataJSON();
+    cambios.push(cuerpo);
+    nivel = cuerpo.nivel;
+    return route.fulfill({ json: { id_cliente: 1, nivel_riesgo: cuerpo.nivel, motivo: cuerpo.motivo ?? null } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/clientes/12345678-5');
+
+  await expect(page.getByText('Riesgo VERDE')).toBeVisible();
+  await page.getByRole('button', { name: 'Cambiar nivel de riesgo' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByLabel('Nivel').selectOption('AMARILLO');
+  await dialogo.getByLabel('Justificación').fill('Muy corto');
+  await dialogo.getByRole('button', { name: 'Guardar nivel' }).click();
+  await expect(dialogo.getByText('al menos 20 caracteres')).toBeVisible();
+  expect(cambios).toEqual([]);
+
+  await dialogo.getByLabel('Justificación').fill('Discusión fuerte con el técnico en la última visita');
+  await dialogo.getByRole('button', { name: 'Guardar nivel' }).click();
+  await expect(page.getByText('Riesgo AMARILLO')).toBeVisible();
+  expect(cambios).toEqual([{ nivel: 'AMARILLO', motivo: 'Discusión fuerte con el técnico en la última visita' }]);
+});
+
+test('MOD RF-32: la tarjeta de terreno muestra el nivel del cliente', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes?*', route =>
+    route.fulfill({ json: { data: [{ ...ot, estado: 'ASIGNADA', cliente: { ...cliente, lista_negra: [{ nivel: 'AMARILLO' }] } }], page: 1, limit: 20, total: 1 } }));
+  await login(page);
+  await expect(page.getByText('Riesgo AMARILLO')).toBeVisible();
+});
+
+// CU-35: lista roja al crear la OT.
+async function prepararNuevaOt(page: Page, verificacion: unknown) {
+  const creadas: any[] = [];
+  await page.route(/\/api\/clientes\/rut\//, route =>
+    route.fulfill({ json: { cliente: { ...cliente, es_conflictivo: true, nivel_riesgo: 'ROJO', contratos_activos: [] }, historial_ot: [] } }));
+  await page.route('http://127.0.0.1:3000/api/clientes/lista-roja/verificar*', route => route.fulfill({ json: verificacion }));
+  await page.route('http://127.0.0.1:3000/api/ordenes', route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    creadas.push(route.request().postDataJSON());
+    return route.fulfill({ status: 201, json: { ...ot, id_ot: 901, advertencia_lista_roja: null } });
+  });
+  return creadas;
+}
+const vetado = {
+  vetado: { motivo: 'Deuda impaga de tres meses' },
+  mensaje: 'CLIENTE VETADO — Motivo: Deuda impaga de tres meses. No es posible crear la instalación hasta regularizar la situación.',
+  advertencia: null,
+};
+
+test('CU-35: un cliente vetado bloquea la instalacion y solo el ADMIN la anula con justificacion', async ({ page }) => {
+  await preparar(page);
+  const creadas = await prepararNuevaOt(page, vetado);
+  await login(page, 'admin'); await page.goto('/admin/ot/nueva');
+  await page.getByLabel('RUT del cliente').fill('12345678-5');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+
+  await expect(page.getByText('CLIENTE VETADO — Motivo: Deuda impaga de tres meses')).toBeVisible();
+  await page.getByLabel('Tipo de OT *').selectOption('INSTALACION');
+  const crear = page.getByRole('button', { name: 'Crear OT' });
+  await expect(crear).toBeDisabled();
+
+  await page.getByLabel('Justificación para anular el bloqueo').fill('Pagó la deuda completa ayer, comprobante 4471');
+  await expect(crear).toBeEnabled();
+  await crear.click();
+  await expect.poll(() => creadas.length).toBe(1);
+  expect(creadas[0]).toMatchObject({ tipo_ot: 'INSTALACION', justificacion_lista_roja: 'Pagó la deuda completa ayer, comprobante 4471' });
+});
+
+test('CU-35: el jefe tecnico no puede anular el bloqueo y se le dice por que', async ({ page }) => {
+  await preparar(page);
+  await prepararNuevaOt(page, vetado);
+  await page.route('http://127.0.0.1:3000/api/auth/login', route => {
+    const payload = { rol: 'JEFE_TECNICO', id_empresa: 1, userId: 3, nombre_usuario: 'jefe.prueba', exp: Math.floor(Date.now() / 1000) + 3600 };
+    const token = ['e30', Buffer.from(JSON.stringify(payload)).toString('base64'), 'prueba'].join('.');
+    return route.fulfill({ json: { token, rol: 'JEFE_TECNICO', id_empresa: 1, cambiar_password: false } });
+  });
+  await login(page, 'jefe'); await page.goto('/admin/ot/nueva');
+  await page.getByLabel('RUT del cliente').fill('12345678-5');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  await page.getByLabel('Tipo de OT *').selectOption('INSTALACION');
+
+  await expect(page.getByText('Solo el administrador puede anular un bloqueo por lista roja.')).toBeVisible();
+  await expect(page.getByLabel('Justificación para anular el bloqueo')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Crear OT' })).toBeDisabled();
+});
+
+test('CU-35: una direccion con antecedentes muestra la advertencia sin bloquear', async ({ page }) => {
+  await preparar(page);
+  await prepararNuevaOt(page, {
+    vetado: null, mensaje: null,
+    advertencia: 'Esta dirección tiene antecedentes de clientes vetados. Verifique la identidad del solicitante antes de continuar.',
+  });
+  await page.route(/\/api\/clientes\/rut\//, route =>
+    route.fulfill({ json: { cliente: { ...cliente, contratos_activos: [] }, historial_ot: [] } }));
+  await login(page, 'admin'); await page.goto('/admin/ot/nueva');
+  await page.getByLabel('RUT del cliente').fill('12345678-5');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  await page.getByLabel('Tipo de OT *').selectOption('INSTALACION');
+
+  await expect(page.getByText('Esta dirección tiene antecedentes de clientes vetados')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Crear OT' })).toBeEnabled();
+});

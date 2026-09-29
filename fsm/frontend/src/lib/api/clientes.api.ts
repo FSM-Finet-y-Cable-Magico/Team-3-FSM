@@ -10,6 +10,8 @@ export interface ClienteFicha {
   estado: string;
   es_conflictivo: boolean;
   obs_conflictivo?: string;
+  /** MOD RF-32: semaforo de riesgo. El motivo es obs_conflictivo. */
+  nivel_riesgo?: import('$lib/utils/riesgo').NivelRiesgo;
   fecha_creacion: string;
   direccion_principal?: {
     direccion_completa: string;
@@ -89,6 +91,29 @@ export async function editarCliente(token: string, id: number, dto: Record<strin
     method: 'PATCH',
     body: JSON.stringify(dto),
   });
+}
+
+/** MOD RF-32: cambiar el nivel del semaforo. AMARILLO y ROJO exigen motivo. */
+export async function cambiarNivelRiesgo(
+  token: string,
+  id: number,
+  nivel: import('$lib/utils/riesgo').NivelRiesgo,
+  motivo?: string,
+): Promise<{ id_cliente: number; nivel_riesgo: string; motivo: string | null }> {
+  return fetchApi(token, `${API_URL}/api/clientes/${id}/riesgo`, {
+    method: 'PATCH',
+    body: JSON.stringify(motivo ? { nivel, motivo } : { nivel }),
+  });
+}
+
+/** CU-35: lista roja por RUT (bloquea) y por direccion (advierte). */
+export async function verificarListaRoja(
+  token: string,
+  q: { rut?: string; direccion_completa?: string; comuna?: string },
+): Promise<{ vetado: { motivo: string } | null; mensaje: string | null; advertencia: string | null }> {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v) p.set(k, v);
+  return fetchApi(token, `${API_URL}/api/clientes/lista-roja/verificar?${p.toString()}`);
 }
 
 export async function marcarConflictivo(token: string, id: number, motivo: string): Promise<void> {

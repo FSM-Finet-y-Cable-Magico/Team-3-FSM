@@ -272,7 +272,7 @@ export class TicketsService {
       { id_ticket },
     );
 
-    await this.transicion(t, ESTADO_TICKET.DERIVADO_OT, actor, {}, { id_ot: ot!.id_ot });
+    await this.transicion(t, ESTADO_TICKET.DERIVADO_OT, actor, {}, { id_ot: ot.id_ot });
     return this.obtener(id_ticket, actor.id_empresa);
   }
 

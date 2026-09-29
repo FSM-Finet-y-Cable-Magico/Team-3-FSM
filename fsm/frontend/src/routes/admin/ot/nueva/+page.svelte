@@ -44,6 +44,11 @@
   let creando = $state(false);
   let crearError = $state('');
 
+  // CU-35: lista roja. Por RUT bloquea la instalacion; por direccion advierte.
+  let rol = $state('');
+  let listaRoja = $state<{ vetado: { motivo: string } | null; mensaje: string | null; advertencia: string | null } | null>(null);
+  let justificacion = $state('');
+
   onMount(() => {
     authStore.checkAuth();
     const state = get(authStore);
@@ -58,6 +63,7 @@
     }
 
     token = state.token ?? '';
+    rol = state.usuario?.rol ?? '';
     cargarTecnicos();
   });
 
@@ -84,6 +90,14 @@
     clienteEncontrado = null;
     try {
       clienteEncontrado = await clientesApi.buscarPorRut(token, rutCliente);
+      const dir = clienteEncontrado.cliente.direccion_principal;
+      listaRoja = await clientesApi
+        .verificarListaRoja(token, {
+          rut: rutCliente,
+          direccion_completa: dir?.direccion_completa,
+          comuna: dir?.comuna,
+        })
+        .catch(() => null);
       paso = 2;
     } catch (err) {
       busquedaError = err instanceof Error ? err.message : 'Cliente no encontrado';
@@ -100,8 +114,12 @@
     crearError = '';
   }
 
+  const vetado = $derived.by(() => Boolean(listaRoja?.vetado ?? clienteEncontrado?.cliente.es_conflictivo));
+  // Solo la instalacion se bloquea. El ADMIN la destraba con una justificacion
+  // de al menos 20 caracteres (CU-35, excepcion 1); el resto no puede.
   const bloqueadoPorConflictivo = $derived.by(() => {
-    return Boolean(clienteEncontrado?.cliente.es_conflictivo && tipoOT === 'INSTALACION');
+    if (!vetado || tipoOT !== 'INSTALACION') return false;
+    return rol !== 'ADMIN' || justificacion.trim().length < 20;
   });
 
   async function crearOT() {
@@ -121,6 +139,7 @@
         id_tecnico: idTecnico ? +idTecnico : undefined,
         bloque_horario: buildBloqueHorario(),
         observaciones: observaciones || undefined,
+        ...(vetado && tipoOT === 'INSTALACION' && { justificacion_lista_roja: justificacion.trim() }),
       });
       goto(`/admin/ot/${nueva.id_ot}`);
     } catch (err) {
@@ -160,7 +179,7 @@
       <h3 class="font-semibold text-gray-700 mb-4">Buscar cliente por RUT</h3>
       <div class="flex items-end gap-4">
         <div class="flex-1">
-          <RutInput onchange={handleRutChange} />
+          <RutInput onchange={handleRutChange} etiqueta="RUT del cliente" />
         </div>
         <button
           onclick={buscarCliente}
@@ -196,13 +215,14 @@
           {/if}
         </div>
 
-        {#if clienteEncontrado.cliente.es_conflictivo}
+        {#if vetado}
           <Alert class="mt-3 text-sm rounded-lg">
-            Este cliente está marcado como conflictivo.
-            {#if tipoOT === 'INSTALACION'}
-              No se pueden crear OT de instalación para clientes conflictivos.
-            {/if}
+            {listaRoja?.mensaje ?? 'Este cliente está en la lista roja.'}
           </Alert>
+        {:else if listaRoja?.advertencia}
+          <div role="status" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {listaRoja.advertencia}
+          </div>
         {/if}
       </div>
 
@@ -210,8 +230,9 @@
         <h3 class="font-semibold text-gray-700 mb-5">Datos de la OT</h3>
         <div class="space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de OT *</label>
+            <label for="tipo-ot" class="block text-sm font-medium text-gray-700 mb-1">Tipo de OT *</label>
             <select
+              id="tipo-ot"
               bind:value={tipoOT}
               class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
@@ -300,6 +321,26 @@
             ></textarea>
           </div>
         </div>
+
+        {#if vetado && tipoOT === 'INSTALACION'}
+          {#if rol === 'ADMIN'}
+            <div class="mt-4">
+              <label for="justificacion-lista-roja" class="block text-sm font-medium text-gray-700 mb-1">
+                Justificación para anular el bloqueo
+              </label>
+              <textarea
+                id="justificacion-lista-roja"
+                bind:value={justificacion}
+                rows={2}
+                maxlength={500}
+                class="w-full border rounded-lg px-3 py-2 text-sm resize-none"
+              ></textarea>
+              <p class="text-xs text-gray-500 mt-1">Mínimo 20 caracteres. Queda registrada en la auditoría.</p>
+            </div>
+          {:else}
+            <p class="mt-4 text-sm text-red-700">Solo el administrador puede anular un bloqueo por lista roja.</p>
+          {/if}
+        {/if}
 
         {#if crearError}
           <Alert class="mt-4 rounded-lg text-sm">

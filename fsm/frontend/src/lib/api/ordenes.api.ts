@@ -26,6 +26,8 @@ export interface OT {
     es_conflictivo: boolean;
     /** Solo en el detalle: el tecnico debe poder llamar antes de marcar ausente. */
     telefono?: string | null;
+    /** MOD RF-32: la ultima fila del semaforo; ver utils/riesgo. */
+    lista_negra?: { nivel: string | null }[];
     direcciones?: { direccion_completa: string; comuna: string }[];
   } | null;
   /**

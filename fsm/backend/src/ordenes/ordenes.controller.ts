@@ -133,7 +133,7 @@ export class OrdenesController {
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Post()
   crearOT(@Body() dto: CrearOtDto, @CurrentUser() user: UsuarioAutenticado) {
-    return this.ordenesService.crearOT(dto, user.userId, user.id_empresa);
+    return this.ordenesService.crearOT(dto, user.userId, user.id_empresa, { rol: user.rol });
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO')

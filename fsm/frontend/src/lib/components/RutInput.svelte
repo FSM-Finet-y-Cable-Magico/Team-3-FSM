@@ -3,10 +3,13 @@
     value?: string;
     error?: string;
     required?: boolean;
+    /** Texto de la etiqueta. Queda asociada al campo, para lectores de pantalla. */
+    etiqueta?: string;
     onchange?: (detail: { rut: string; valido: boolean }) => void;
   }
 
-  let { value = '', error = '', required = false, onchange }: Props = $props();
+  let { value = '', error = '', required = false, etiqueta = 'RUT', onchange }: Props = $props();
+  const uid = $props.id();
 
   let displayValue = $state('');
   let isValid = $state<boolean | null>(null);
@@ -68,14 +71,15 @@
 </script>
 
 <div class="mb-4">
-  <label class="block text-sm font-medium text-gray-700 mb-1">
-    RUT
+  <label for={uid} class="block text-sm font-medium text-gray-700 mb-1">
+    {etiqueta}
     {#if required}
       <span class="text-red-500">*</span>
     {/if}
   </label>
   <div class="relative">
     <input
+      id={uid}
       type="text"
       value={displayValue}
       oninput={handleInput}

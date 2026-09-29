@@ -3,6 +3,7 @@ import { ClientesService } from './clientes.service.js';
 import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
 import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
+import { CambiarNivelRiesgoDto } from './dto/cambiar-nivel-riesgo.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
@@ -38,6 +39,18 @@ export class ClientesController {
     return this.clientesService.listarPlanes(user.id_empresa);
   }
 
+  /** CU-35: lista roja por RUT y por direccion, antes de crear una OT. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('lista-roja/verificar')
+  verificarListaRoja(
+    @CurrentUser() user: { id_empresa: number },
+    @Query('rut') rut?: string,
+    @Query('direccion_completa') direccion_completa?: string,
+    @Query('comuna') comuna?: string,
+  ) {
+    return this.clientesService.verificarListaRoja(user.id_empresa, { rut, direccion_completa, comuna });
+  }
+
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Get('rut/:rut')
   consultarPorRut(
@@ -64,6 +77,17 @@ export class ClientesController {
     @CurrentUser() user: { userId: number; id_empresa: number },
   ) {
     return this.clientesService.editarFicha(+id, dto, user.userId, user.id_empresa);
+  }
+
+  /** MOD RF-32: semaforo de riesgo VERDE, AMARILLO o ROJO. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Patch(':id/riesgo')
+  cambiarNivelRiesgo(
+    @Param('id') id: string,
+    @Body() dto: CambiarNivelRiesgoDto,
+    @CurrentUser() user: { userId: number; id_empresa: number },
+  ) {
+    return this.clientesService.cambiarNivelRiesgo(+id, dto, user.userId, user.id_empresa);
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO')

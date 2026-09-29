@@ -38,4 +38,13 @@ export class CrearOtDto {
   @IsString()
   @MaxLength(1000)
   observaciones?: string;
+
+  /**
+   * CU-35, excepcion 1: el administrador anula el bloqueo por lista roja con
+   * una justificacion escrita. Solo lo acepta si quien crea la OT es ADMIN.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  justificacion_lista_roja?: string;
 }
