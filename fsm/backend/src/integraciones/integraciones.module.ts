@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { IntegracionesController } from './integraciones.controller.js';
 import { IntegracionesService } from './integraciones.service.js';
+import { InstalacionesService } from './instalaciones.service.js';
 import { ApiKeyGuard } from '../common/guards/api-key.guard.js';
 
 @Module({
   // PrismaModule y ConfigModule son globales.
   controllers: [IntegracionesController],
-  providers: [IntegracionesService, ApiKeyGuard],
+  providers: [IntegracionesService, InstalacionesService, ApiKeyGuard],
 })
 export class IntegracionesModule {}

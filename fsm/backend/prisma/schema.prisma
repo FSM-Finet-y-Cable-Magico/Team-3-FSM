@@ -411,6 +411,9 @@ model orden_trabajo {
   fotos                          evidencia_foto[]
   llamada                        llamada_cortes?
   alertas_origen                 alerta_monitoreo[]
+  /// P0 del acuerdo con G8: la solicitud con la que G8 pidio esta OT por
+  /// `POST /integraciones/instalaciones`. Null en toda OT creada dentro de G3.
+  solicitud_integracion          solicitud_instalacion_integracion?
 
   // C6 (#19). PostgreSQL no indexa las claves foraneas por si solo: de estas
   // columnas, solo la PK y el @unique de id_ticket tenian indice.
@@ -429,6 +432,47 @@ model orden_trabajo {
   @@index([id_empresa, tipo_ot])
   // FK que consulta el panel para listar las OT de una caja.
   @@index([id_caja_nap])
+}
+
+/// P0 del acuerdo con G8 (Respuesta de G8 del 24-09, §4 y §5).
+///
+/// G8 pide instalaciones para personas que todavia no son clientes: el cliente
+/// lo crea G8 recien despues de un cierre exitoso. Esta tabla guarda el
+/// comando tal como llego --snapshot inmutable de persona y direccion-- y la
+/// correlacion con el CRM, sin meter el dominio comercial en `orden_trabajo`.
+///
+/// - `request_id` UNIQUE + `hash_payload`: el mismo comando reintentado
+///   devuelve la OT original; el mismo `request_id` con otro contenido es 409.
+/// - `id_*_externo` son ids de G8: sin FK, a proposito. `id_empresa` tampoco
+///   lleva FK: la migracion no toca ni referencia tablas compartidas.
+/// - No hay columna de email: G8 pidio no replicarlo si no hace falta para
+///   ejecutar la OT, y el tecnico solo necesita nombre y telefono.
+/// - La direccion que usa el tecnico es una `direccion_servicio` sin cliente a
+///   la que apunta la OT; la de aca es la evidencia de lo que se pidio.
+model solicitud_instalacion_integracion {
+  id_solicitud            Int            @id @default(autoincrement())
+  request_id              String         @unique @db.VarChar(100)
+  trace_id                String         @db.VarChar(100)
+  hash_payload            String         @db.VarChar(64)
+  id_empresa              Int
+  id_prospecto_externo    Int
+  id_contrato_externo     Int
+  id_plan_externo         Int?
+  rut                     String         @db.VarChar(12)
+  nombre_completo         String         @db.VarChar(120)
+  telefono                String         @db.VarChar(21)
+  direccion_completa      String         @db.VarChar(200)
+  comuna                  String         @db.VarChar(80)
+  ciudad                  String?        @db.VarChar(80)
+  observaciones           String?        @db.Text
+  requisitos_equipamiento Json?
+  id_ot                   Int?           @unique
+  estado                  String         @db.VarChar(30)
+  fecha_creacion          DateTime       @default(now()) @db.Timestamptz()
+  fecha_actualizacion     DateTime       @default(now()) @updatedAt @db.Timestamptz()
+  orden_trabajo           orden_trabajo? @relation(fields: [id_ot], references: [id_ot])
+
+  @@index([id_empresa])
 }
 
 model historial_ot {
