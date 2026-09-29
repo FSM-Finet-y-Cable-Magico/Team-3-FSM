@@ -86,6 +86,11 @@ const prisma = {
       clientes.filter(c => c.id_empresa === where?.id_empresa).slice(skip, take === undefined ? undefined : skip + take)),
     count: jest.fn(async ({ where }: Prisma.clienteCountArgs = {}) => clientes.filter(c => c.id_empresa === where?.id_empresa).length),
   },
+  // CU-33: la estrategia JWT valida que la empresa activa del ADMIN exista.
+  empresa: {
+    findUnique: jest.fn(async ({ where }: Prisma.empresaFindUniqueArgs) =>
+      [1, 2].includes(where.id_empresa as number) ? { id_empresa: where.id_empresa } : null),
+  },
   categoria_falla: { findUnique: jest.fn(async () => ({ id_categoria: 1, nombre: 'Señal', sla_horas: 24 })) },
   evidencia_foto: { createMany: jest.fn(async (_args: Prisma.evidencia_fotoCreateManyArgs) => ({ count: 1 })) },
   historial_ot: { create: jest.fn(async (_args: Prisma.historial_otCreateArgs) => ({})) },
@@ -340,6 +345,22 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
     expect(prisma.llamada_cortes.create).toHaveBeenCalled();
     expect(prisma.historial_ot.create).toHaveBeenCalled();
     expect(prisma.log_auditoria.create).toHaveBeenCalled();
+  });
+  describe('CU-33: empresa activa del ADMIN', () => {
+    const verOT = (id: number, rol: string, empresa?: string) => {
+      const req = request(app.getHttpServer()).get(`/api/ordenes/${id}`).auth(token(rol), { type: 'bearer' });
+      return empresa === undefined ? req : req.set('X-Empresa-Activa', empresa);
+    };
+    it('el ADMIN que elige la otra empresa ve sus OT', async () => {
+      await verOT(3, 'ADMIN').expect(404);
+      await verOT(3, 'ADMIN', '2').expect(200);
+    });
+    it('al JEFE_TECNICO el header no le abre la otra empresa', async () => {
+      await verOT(3, 'JEFE_TECNICO', '2').expect(404);
+    });
+    it('una empresa que no existe es 400', async () => {
+      await verOT(1, 'ADMIN', '99').expect(400);
+    });
   });
   describe('MOD RF-04: aprobacion del cierre', () => {
     const aprobar = (id: number, rol: string, body: object = {}) => request(app.getHttpServer())

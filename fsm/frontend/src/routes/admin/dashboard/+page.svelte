@@ -6,8 +6,7 @@
   import { API_URL } from '$lib/api/config.js';
   import { authStore } from '$lib/stores/auth.store';
   import { dashboardStore } from '$lib/stores/dashboard.store';
-  import { listarEmpresas } from '$lib/api/dashboard.api';
-  import type { Empresa, IndicadoresDashboard } from '$lib/api/dashboard.api';
+  import type { IndicadoresDashboard } from '$lib/api/dashboard.api';
   import StatCard from '$lib/components/StatCard.svelte';
   import TecnicoCard from '$lib/components/TecnicoCard.svelte';
   import {
@@ -24,9 +23,6 @@
 
   let token = '';
   let rol = $state('');
-  let id_empresa = $state(0);
-  let empresas = $state<Empresa[]>([]);
-  let empresaSeleccionada = $state<number>(0);
   let actualizando = $state(false);
   let indicadores = $state<IndicadoresDashboard | null>(null);
   let isLoading = $state(true);
@@ -80,8 +76,6 @@
 
     token = state.token ?? '';
     rol = state.usuario?.rol ?? '';
-    id_empresa = (state.usuario as unknown as { id_empresa?: number })?.id_empresa ?? 0;
-    empresaSeleccionada = id_empresa;
 
     unsubDashboard = dashboardStore.subscribe((s) => {
       indicadores = s.indicadores;
@@ -94,15 +88,7 @@
     // ningun `await`: por eso alcanzan para cubrir tambien al `setInterval`.
     // Si mas adelante se agrega una llamada mas, va con su propio chequeo.
     await cargar();
-    // No tiene sentido pedir las empresas de una pantalla que ya no existe.
     if (destruido) return;
-
-    if (rol === 'ADMIN') {
-      try {
-        empresas = await listarEmpresas(token);
-      } catch {}
-      if (destruido) return;
-    }
 
     // Por si `inicializarDashboard` llegara a correr dos veces: reasignar sin
     // desconectar dejaba la instancia anterior viva y ya sin referencia.
@@ -135,7 +121,8 @@
 
   async function cargar() {
     actualizando = true;
-    await dashboardStore.cargarIndicadores(token, empresaSeleccionada || undefined);
+    // CU-33: la empresa la elige el ADMIN en el menu y viaja en cada peticion.
+    await dashboardStore.cargarIndicadores(token);
     actualizando = false;
   }
 
@@ -152,17 +139,6 @@
       <p class="text-sm text-gray-500 capitalize mt-0.5">{fechaFormateada}</p>
     </div>
     <div class="flex items-center gap-3">
-      {#if rol === 'ADMIN' && empresas.length > 1}
-        <select
-          bind:value={empresaSeleccionada}
-          onchange={cargar}
-          class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          {#each empresas as emp}
-            <option value={emp.id_empresa}>{emp.nombre}</option>
-          {/each}
-        </select>
-      {/if}
       <button
         onclick={cargar}
         disabled={actualizando}

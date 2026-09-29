@@ -886,3 +886,49 @@ test('P0-d: el detalle de la OT de G8 muestra nombre y telefono de la persona', 
   await expect(page.getByText('Solicitud de instalación (CRM)')).toBeVisible();
   await expect(page.getByRole('link', { name: '+56912345678' })).toHaveAttribute('href', 'tel:+56912345678');
 });
+
+// CU-33: el ADMIN elige con que empresa trabaja y TODA pantalla lo respeta. La
+// empresa viaja en un header que resuelve el backend en un solo lugar, asi que
+// basta con que la Vista lo mande en cada peticion.
+const empresas = [
+  { id_empresa: 1, nombre: 'FiNet', rut_empresa: null },
+  { id_empresa: 2, nombre: 'Cable Mágico', rut_empresa: null },
+];
+
+test('CU-33: el ADMIN cambia la empresa activa y las pantallas la usan', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/dashboard/empresas', route => route.fulfill({ json: empresas }));
+  const cabeceras: (string | undefined)[] = [];
+  await page.route('http://127.0.0.1:3000/api/ordenes?*', route => {
+    cabeceras.push(route.request().headers()['x-empresa-activa']);
+    return route.fulfill({ json: { data: [], page: 1, limit: 20, total: 0 } });
+  });
+  await login(page, 'admin');
+
+  const selector = page.getByLabel('Empresa activa');
+  await expect(selector).toHaveValue('1');
+  await selector.selectOption({ label: 'Cable Mágico' });
+  await expect(page.getByLabel('Empresa activa')).toHaveValue('2');
+
+  await page.goto('/admin/ot');
+  await expect.poll(() => cabeceras.length).toBeGreaterThan(0);
+  expect(cabeceras.at(-1)).toBe('2');
+
+  // Volver a la propia empresa deja de mandar el header.
+  await page.getByLabel('Empresa activa').selectOption({ label: 'FiNet' });
+  await page.goto('/admin/ot');
+  await expect.poll(() => cabeceras.length).toBeGreaterThan(1);
+  expect(cabeceras.at(-1)).toBeUndefined();
+});
+
+test('CU-33: el JEFE_TECNICO no tiene selector de empresa', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/auth/login', route => {
+    const payload = { rol: 'JEFE_TECNICO', id_empresa: 1, userId: 3, nombre_usuario: 'jefe.prueba', exp: Math.floor(Date.now() / 1000) + 3600 };
+    const token = ['e30', Buffer.from(JSON.stringify(payload)).toString('base64'), 'prueba'].join('.');
+    return route.fulfill({ json: { token, rol: 'JEFE_TECNICO', id_empresa: 1, cambiar_password: false } });
+  });
+  await login(page, 'jefe');
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByLabel('Empresa activa')).toHaveCount(0);
+});
