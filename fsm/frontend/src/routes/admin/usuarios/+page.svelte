@@ -18,9 +18,34 @@
     email: string | null;
     fecha_creacion: string;
     rol: string;
+    activo: boolean;
   }
 
   let usuarios = $state<UsuarioRow[]>([]);
+  let miId = $state(0);
+
+  // CU-43: desactivar pide confirmacion, porque corta el acceso en el acto.
+  let porDesactivar = $state<UsuarioRow | null>(null);
+  let cambiandoActivo = $state<number | null>(null);
+  let avisoActivo = $state('');
+
+  async function cambiarActivo(u: UsuarioRow, activo: boolean) {
+    cambiandoActivo = u.id_usuario;
+    errorMsg = '';
+    avisoActivo = '';
+    try {
+      const r = await authApi.cambiarActivo(token, u.id_usuario, activo);
+      usuarios = usuarios.map((x) => (x.id_usuario === u.id_usuario ? { ...x, activo: r.activo } : x));
+      if (!r.activo && r.ot_activas > 0) {
+        avisoActivo = `${u.nombre_completo} tiene ${r.ot_activas} OT activas. Reasígnalas desde Órdenes de Trabajo.`;
+      }
+      porDesactivar = null;
+    } catch (err) {
+      errorMsg = err instanceof Error ? err.message : 'Error al cambiar el estado de la cuenta';
+    } finally {
+      cambiandoActivo = null;
+    }
+  }
   let loading = $state(true);
   let errorMsg = $state('');
 
@@ -48,6 +73,7 @@
     }
 
     token = state.token || '';
+    miId = state.usuario?.userId ?? 0;
     cargarUsuarios();
   });
 
@@ -143,6 +169,12 @@
       </Alert>
     {/if}
 
+    {#if avisoActivo}
+      <div role="status" class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        {avisoActivo}
+      </div>
+    {/if}
+
     {#if loading}
       <div class="text-center py-8 text-gray-500">Cargando usuarios...</div>
     {:else}
@@ -155,6 +187,7 @@
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rol</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Empresa</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha creación</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acciones</th>
             </tr>
           </thead>
@@ -170,13 +203,67 @@
                 </td>
                 <td class="px-6 py-4 text-sm text-gray-500">{u.id_empresa}</td>
                 <td class="px-6 py-4 text-sm text-gray-500">{new Date(u.fecha_creacion).toLocaleDateString('es-CL')}</td>
-                <td class="px-6 py-4 text-sm text-gray-500">—</td>
+                <td class="px-6 py-4">
+                  {#if u.activo}
+                    <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Activa</span>
+                  {:else}
+                    <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">Desactivada</span>
+                  {/if}
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500">
+                  {#if u.id_usuario === miId}
+                    —
+                  {:else if u.activo}
+                    <button
+                      onclick={() => (porDesactivar = u)}
+                      disabled={cambiandoActivo === u.id_usuario}
+                      class="btn-texto-peligro"
+                    >
+                      Desactivar
+                    </button>
+                  {:else}
+                    <button
+                      onclick={() => cambiarActivo(u, true)}
+                      disabled={cambiandoActivo === u.id_usuario}
+                      class="btn-texto"
+                    >
+                      {cambiandoActivo === u.id_usuario ? 'Reactivando...' : 'Reactivar'}
+                    </button>
+                  {/if}
+                </td>
               </tr>
             {/each}
           </tbody>
         </table>
       </div>
     {/if}
+
+<!-- CU-43: confirmacion de desactivar -->
+{#if porDesactivar}
+  <div
+    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="titulo-desactivar"
+  >
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+      <h3 id="titulo-desactivar" class="font-semibold text-gray-800 mb-3">Desactivar la cuenta de {porDesactivar.nombre_completo}</h3>
+      <p class="text-sm text-gray-600 mb-4">
+        No podrá iniciar sesión, y si tiene la sesión abierta la pierde en su próxima acción. Su historial y sus OT se conservan. Se puede reactivar después.
+      </p>
+      <div class="flex gap-3">
+        <button onclick={() => (porDesactivar = null)} class="flex-1 btn btn-secundario text-sm">Volver</button>
+        <button
+          onclick={() => porDesactivar && cambiarActivo(porDesactivar, false)}
+          disabled={cambiandoActivo !== null}
+          class="btn btn-peligro flex-1 text-sm"
+        >
+          {cambiandoActivo !== null ? 'Desactivando...' : 'Desactivar cuenta'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <!-- Modal -->
 {#if showModal}

@@ -1000,3 +1000,38 @@ test('MOD RF-04: el listado de OT filtra por cierres por aprobar desde la URL', 
   expect(estados.at(-1)).toBe('PENDIENTE_APROBACION');
   await expect(page.getByLabel('Estado')).toHaveValue('PENDIENTE_APROBACION');
 });
+
+// CU-43: desactivar una cuenta corta el acceso en el acto, asi que se pide
+// confirmacion en la vista (no en un dialogo del navegador) y se avisa si el
+// tecnico deja OT activas sin hacer.
+test('CU-43: el ADMIN desactiva una cuenta, ve sus OT pendientes y la reactiva', async ({ page }) => {
+  await preparar(page);
+  const usuarios = [
+    { id_usuario: 7, id_empresa: 1, nombre_completo: 'Admin de prueba', nombre_usuario: 'admin.prueba', email: null, fecha_creacion: '2026-01-01T12:00:00Z', rol: 'ADMIN', activo: true },
+    { id_usuario: 14, id_empresa: 1, nombre_completo: 'Pedro Rojas', nombre_usuario: 'pedro.rojas', email: null, fecha_creacion: '2026-01-01T12:00:00Z', rol: 'TECNICO', activo: true },
+  ];
+  const cambios: unknown[] = [];
+  await page.route('http://127.0.0.1:3000/api/auth/usuarios', route => route.fulfill({ json: usuarios }));
+  await page.route(/\/api\/auth\/usuarios\/14\/activo$/, route => {
+    const { activo } = route.request().postDataJSON();
+    cambios.push(activo);
+    usuarios[1].activo = activo;
+    return route.fulfill({ json: { id_usuario: 14, activo, ot_activas: activo ? 0 : 2 } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/usuarios');
+
+  const fila = page.getByRole('row', { name: /Pedro Rojas/ });
+  // Nadie se desactiva a si mismo desde aca.
+  await expect(page.getByRole('row', { name: /Admin de prueba/ }).getByRole('button', { name: 'Desactivar' })).toHaveCount(0);
+
+  await fila.getByRole('button', { name: 'Desactivar' }).click();
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo).toContainText('Pedro Rojas');
+  await dialogo.getByRole('button', { name: 'Desactivar cuenta' }).click();
+
+  await expect(page.getByText('Pedro Rojas tiene 2 OT activas')).toBeVisible();
+  await expect(fila.getByText('Desactivada', { exact: true })).toBeVisible();
+  await fila.getByRole('button', { name: 'Reactivar' }).click();
+  await expect(fila.getByText('Activa', { exact: true })).toBeVisible();
+  expect(cambios).toEqual([false, true]);
+});

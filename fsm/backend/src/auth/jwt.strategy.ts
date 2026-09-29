@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
@@ -44,6 +44,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
    * con 500 por la FK, o una lectura devolveria vacio sin explicar por que.
    */
   async validate(req: { headers: Record<string, string | string[] | undefined> }, payload: PayloadJwt) {
+    // CU-43: una cuenta desactivada pierde el acceso en el acto. Sin esto, el
+    // token que ya tenia seguia sirviendo hasta que venciera (8 horas). Es una
+    // lectura por clave primaria por peticion.
+    const cuenta = await this.prisma.usuario.findUnique({
+      where: { id_usuario: payload.userId },
+      select: { activo: true },
+    });
+    if (!cuenta?.activo) throw new UnauthorizedException('La cuenta está desactivada');
+
     const usuario = {
       userId: payload.userId,
       nombre_usuario: payload.nombre_usuario,

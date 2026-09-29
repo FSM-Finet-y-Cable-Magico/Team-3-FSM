@@ -18,7 +18,10 @@ describe('empresa activa del ADMIN (CU-33)', () => {
   const findUnique = jest.fn(async (a: any) => (a.where.id_empresa === 2 ? { id_empresa: 2 } : null));
   const strategy = new JwtStrategy(
     { get: () => 'secreto' } as unknown as ConfigService,
-    { empresa: { findUnique } } as unknown as PrismaService,
+    {
+      empresa: { findUnique },
+      usuario: { findUnique: jest.fn(async () => ({ activo: true })) },
+    } as unknown as PrismaService,
   );
   const payload = (rol: string) => ({ userId: 1, nombre_usuario: 'x', rol, id_empresa: 1 });
   const req = (valor?: string) => ({ headers: valor === undefined ? {} : { [HEADER_EMPRESA_ACTIVA]: valor } });

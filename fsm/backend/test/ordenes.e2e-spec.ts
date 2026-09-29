@@ -86,6 +86,8 @@ const prisma = {
       clientes.filter(c => c.id_empresa === where?.id_empresa).slice(skip, take === undefined ? undefined : skip + take)),
     count: jest.fn(async ({ where }: Prisma.clienteCountArgs = {}) => clientes.filter(c => c.id_empresa === where?.id_empresa).length),
   },
+  // CU-43: la estrategia JWT rechaza el token de una cuenta desactivada.
+  usuario: { findUnique: jest.fn(async () => ({ activo: true })) },
   // CU-33: la estrategia JWT valida que la empresa activa del ADMIN exista.
   empresa: {
     findUnique: jest.fn(async ({ where }: Prisma.empresaFindUniqueArgs) =>
