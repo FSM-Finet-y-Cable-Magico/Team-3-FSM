@@ -6,6 +6,7 @@ import { GUARDS_METADATA } from '@nestjs/common/constants.js';
 import { IntegracionesController } from './integraciones.controller.js';
 import { IntegracionesService } from './integraciones.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { MOMENTO_FAN_OUT } from '../ordenes/fan-out/momento-fan-out.js';
 import { ApiKeyGuard } from '../common/guards/api-key.guard.js';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator.js';
 
@@ -123,6 +124,7 @@ describe('IntegracionesService: aislamiento y topes', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         IntegracionesService,
+        { provide: MOMENTO_FAN_OUT, useValue: 'CIERRE' },
         {
           provide: PrismaService,
           useValue: {
@@ -164,19 +166,26 @@ describe('IntegracionesService: aislamiento y topes', () => {
     expect(findMany.mock.calls[0][0]).toMatchObject({ where: { id_empresa: 1, estado: 'ASIGNADA', id_tecnico: 14 } });
   });
 
-  it('cierres exige rango, lo limita a 90 dias y solo mira COMPLETADA', async () => {
+  // Cambio de contrato con MOD RF-04: con el aviso al cierre del tecnico (el
+  // modo por defecto), una OT que espera aprobacion ya se aviso y se reconcilia.
+  it('cierres exige rango, lo limita a 90 dias y solo mira cierres ya avisados', async () => {
     await expect(service.cierres(scopeG1, { id_empresa: 1 })).rejects.toBeInstanceOf(BadRequestException);
     await expect(
       service.cierres(scopeG1, { id_empresa: 1, desde: '2026-01-01', hasta: '2026-09-01' }),
     ).rejects.toBeInstanceOf(BadRequestException);
 
     await service.cierres(scopeG1, { id_empresa: 1, desde: '2026-09-01', hasta: '2026-09-02' });
-    expect(findMany.mock.calls[0][0]).toMatchObject({ where: { id_empresa: 1, estado: 'COMPLETADA' }, take: 100 });
+    expect(findMany.mock.calls[0][0]).toMatchObject({
+      where: { id_empresa: 1, estado: { in: ['COMPLETADA', 'PENDIENTE_APROBACION'] } },
+      take: 100,
+    });
   });
 
-  it('cierre responde 404 si la OT no esta COMPLETADA en esa empresa', async () => {
+  it('cierre responde 404 si la OT no esta cerrada en esa empresa', async () => {
     await expect(service.cierre(scopeG1, 41, 1)).rejects.toBeInstanceOf(NotFoundException);
-    expect(findFirst.mock.calls[0][0]).toMatchObject({ where: { id_ot: 41, id_empresa: 1, estado: 'COMPLETADA' } });
+    expect(findFirst.mock.calls[0][0]).toMatchObject({
+      where: { id_ot: 41, id_empresa: 1, estado: { in: ['COMPLETADA', 'PENDIENTE_APROBACION'] } },
+    });
   });
 
   it('buscarClientes exige al menos 3 caracteres', async () => {

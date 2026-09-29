@@ -18,6 +18,8 @@ import { ReasignarTecnicoDto } from './dto/reasignar-tecnico.dto.js';
 import { CambiarPrioridadDto } from './dto/cambiar-prioridad.dto.js';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
+import { AprobarCierreDto } from './dto/aprobar-cierre.dto.js';
+import { RechazarCierreDto } from './dto/rechazar-cierre.dto.js';
 import {
   ACCION_EQUIPO,
   ACCIONES_EQUIPO_RETIRO,
@@ -184,6 +186,30 @@ export class OrdenesController {
     @CurrentUser() user: UsuarioAutenticado,
   ) {
     return this.ordenesService.cerrarOT(+id, dto, user);
+  }
+
+  /**
+   * MOD RF-04: el cierre del tecnico queda PENDIENTE_APROBACION hasta que el
+   * jefe tecnico o el administrador lo aprueba o lo rechaza.
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Patch(':id/aprobar-cierre')
+  aprobarCierre(
+    @Param('id') id: string,
+    @Body() dto: AprobarCierreDto,
+    @CurrentUser() user: UsuarioAutenticado,
+  ) {
+    return this.ordenesService.aprobarCierre(+id, dto, user);
+  }
+
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Patch(':id/rechazar-cierre')
+  rechazarCierre(
+    @Param('id') id: string,
+    @Body() dto: RechazarCierreDto,
+    @CurrentUser() user: UsuarioAutenticado,
+  ) {
+    return this.ordenesService.rechazarCierre(+id, dto, user);
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')

@@ -14,15 +14,31 @@ import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
 import { ACCION_A_ESTADO_G1 } from './estado-equipo.constants.js';
 import { FAN_OUT_CIERRE, type FanOutCierre, type EquipoDeclarado } from './fan-out/fan-out-cierre.js';
 import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payload-cierre.js';
+import { MOMENTO_FAN_OUT, type MomentoFanOut } from './fan-out/momento-fan-out.js';
+import { AprobarCierreDto } from './dto/aprobar-cierre.dto.js';
+import { RechazarCierreDto } from './dto/rechazar-cierre.dto.js';
 import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
 
+/**
+ * MOD RF-04: el cierre del tecnico deja la OT esperando que el jefe tecnico o
+ * el administrador la apruebe. 20 caracteres: entra en orden_trabajo.estado
+ * (VARCHAR(25)) sin migrar (D4 del plan).
+ */
+export const ESTADO_PENDIENTE_APROBACION = 'PENDIENTE_APROBACION';
+
 const TRANSICIONES_VALIDAS: Record<string, string[]> = {
   PENDIENTE: ['ASIGNADA', 'CANCELADA'],
   ASIGNADA: ['EN_CURSO', 'PENDIENTE', 'PENDIENTE_CLIENTE_AUSENTE', 'CANCELADA'],
-  EN_CURSO: ['COMPLETADA', 'PENDIENTE_CLIENTE_AUSENTE', 'CANCELADA'],
+  // A COMPLETADA no se llega por aca: solo por el cierre del tecnico
+  // (cerrarOT, que exige fotos, llamada y potencia) y la aprobacion del jefe
+  // tecnico (aprobarCierre). Antes EN_CURSO → COMPLETADA estaba abierto y
+  // salteaba las dos cosas.
+  EN_CURSO: ['PENDIENTE_CLIENTE_AUSENTE', 'CANCELADA'],
   PENDIENTE_CLIENTE_AUSENTE: ['ASIGNADA', 'CANCELADA'],
+  // Sale solo por aprobarCierre o rechazarCierre.
+  PENDIENTE_APROBACION: [],
   COMPLETADA: [],
   CANCELADA: [],
 };
@@ -58,6 +74,7 @@ export class OrdenesService {
     private cloudinary: CloudinaryService,
     @Inject(forwardRef(() => DashboardGateway)) private dashboardGateway: DashboardGateway,
     @Inject(FAN_OUT_CIERRE) private fanOut: FanOutCierre,
+    @Inject(MOMENTO_FAN_OUT) private momentoFanOut: MomentoFanOut,
   ) {}
 
   async crearOT(dto: CrearOtDto, userId: number, id_empresa: number) {
@@ -165,7 +182,7 @@ export class OrdenesService {
       // sigue siendo de hoy—, mas COMPLETADA solo si se cerro dentro del dia.
       condiciones.push(Prisma.sql`(
         estado IN ('ASIGNADA', 'EN_CURSO', 'PENDIENTE_CLIENTE_AUSENTE')
-        OR (estado = 'COMPLETADA' AND fecha_completada >= ${filtros.dia_desde} AND fecha_completada < ${filtros.dia_hasta})
+        OR (estado IN ('COMPLETADA', 'PENDIENTE_APROBACION') AND fecha_completada >= ${filtros.dia_desde} AND fecha_completada < ${filtros.dia_hasta})
       )`);
     } else if (filtros.estado) {
       condiciones.push(Prisma.sql`estado = ${filtros.estado}`);
@@ -679,7 +696,10 @@ export class OrdenesService {
       await tx.orden_trabajo.update({
         where: { id_ot },
         data: {
-          estado: 'COMPLETADA',
+          // MOD RF-04: queda esperando aprobacion. fecha_completada es cuando
+          // se termino el trabajo en terreno, no cuando se aprobo: es la que
+          // miden los reportes y la que forma la clave de idempotencia.
+          estado: ESTADO_PENDIENTE_APROBACION,
           fecha_completada: new Date(),
           potencia_optica_dbm: dto.potencia_optica_dbm,
           id_categoria_falla: categoriaFalla?.id_categoria ?? null,
@@ -698,7 +718,7 @@ export class OrdenesService {
           id_ot,
           id_usuario: userId,
           estado_anterior: 'EN_CURSO',
-          estado_nuevo: 'COMPLETADA',
+          estado_nuevo: ESTADO_PENDIENTE_APROBACION,
         },
       });
 
@@ -733,7 +753,9 @@ export class OrdenesService {
     // el `await` que habia antes, esos 27 s se los comia el tecnico en terreno,
     // desde el celular, esperando por algo que ya estaba guardado -- y con el
     // riesgo de que reintentara el cierre creyendo que fallo.
-    void this.notificarCierre(id_ot);
+    // Con el aviso movido a la aprobacion (CIERRE_FAN_OUT_MOMENTO), aca no se
+    // avisa: el jefe tecnico todavia puede rechazar.
+    if (this.momentoFanOut === 'CIERRE') void this.notificarCierre(id_ot);
 
     const advertencia_potencia =
       dto.potencia_optica_dbm < -24 || dto.potencia_optica_dbm > -19;
@@ -743,6 +765,118 @@ export class OrdenesService {
 
     this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
     return { ...otActualizada, advertencia_potencia, alerta_reparaciones_30_dias };
+  }
+
+  private async otPendienteDeAprobacion(id_ot: number, id_empresa: number) {
+    const ot = await this.prisma.orden_trabajo.findFirst({ where: { id_ot, id_empresa } });
+    if (!ot) throw new NotFoundException('OT no encontrada');
+    if (ot.estado !== ESTADO_PENDIENTE_APROBACION) {
+      throw new BadRequestException('Solo se puede aprobar o rechazar el cierre de una OT que espera aprobación');
+    }
+    return ot;
+  }
+
+  /**
+   * MOD RF-04: el jefe tecnico o el administrador aprueba el cierre del
+   * tecnico. Recien aca la OT queda COMPLETADA. Quien aprobo y lo que anoto
+   * quedan en historial_ot, que ya guarda usuario y observaciones (D4).
+   */
+  async aprobarCierre(id_ot: number, dto: AprobarCierreDto, user: UsuarioAutenticado) {
+    const { userId, id_empresa } = user;
+    await this.otPendienteDeAprobacion(id_ot, id_empresa);
+    const observaciones = dto.observaciones?.trim() || null;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.orden_trabajo.update({ where: { id_ot }, data: { estado: 'COMPLETADA' } });
+      await tx.historial_ot.create({
+        data: {
+          id_ot,
+          id_usuario: userId,
+          estado_anterior: ESTADO_PENDIENTE_APROBACION,
+          estado_nuevo: 'COMPLETADA',
+          observaciones,
+        },
+      });
+      await tx.log_auditoria.create({
+        data: {
+          id_usuario: userId,
+          accion: 'APROBAR_CIERRE_OT',
+          entidad_afectada: 'orden_trabajo',
+          id_entidad_afectada: id_ot,
+          valor_anterior: { estado: ESTADO_PENDIENTE_APROBACION },
+          valor_nuevo: { estado: 'COMPLETADA', observaciones },
+        },
+      });
+    });
+
+    if (this.momentoFanOut === 'APROBACION') void this.notificarCierre(id_ot);
+
+    this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
+    return this.obtenerDetalle(id_ot, id_empresa);
+  }
+
+  /**
+   * MOD RF-04: el cierre no se acepta y la OT vuelve al tecnico, EN_CURSO,
+   * con el motivo en el historial para que sepa que corregir.
+   *
+   * Se deshace la declaracion del cierre para que el tecnico pueda volver a
+   * cerrar: la llamada de cortesia es 1:1 con la OT (id_ot UNIQUE) y el segundo
+   * cierre reventaria, y los materiales se sumarian dos veces. Las fotos se
+   * conservan: son evidencia de lo que se rechazo. Lo borrado queda en la
+   * auditoria.
+   *
+   * Nunca avisa a G1 ni G8. Con el aviso todavia al cierre del tecnico, el
+   * rechazo llega tarde: ese es el motivo para moverlo a la aprobacion.
+   */
+  async rechazarCierre(id_ot: number, dto: RechazarCierreDto, user: UsuarioAutenticado) {
+    const { userId, id_empresa } = user;
+    const motivo = dto.motivo?.trim();
+    if (!motivo) throw new BadRequestException('Se requiere el motivo del rechazo');
+    const ot = await this.otPendienteDeAprobacion(id_ot, id_empresa);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.uso_material_ot.deleteMany({ where: { id_ot } });
+      await tx.llamada_cortes.deleteMany({ where: { id_ot } });
+      await tx.orden_trabajo.update({
+        where: { id_ot },
+        data: {
+          estado: 'EN_CURSO',
+          fecha_completada: null,
+          potencia_optica_dbm: null,
+          id_categoria_falla: null,
+          categoria_falla_otro: null,
+          resuelto_remotamente: false,
+          cierre_equipos: Prisma.JsonNull,
+        },
+      });
+      await tx.historial_ot.create({
+        data: {
+          id_ot,
+          id_usuario: userId,
+          estado_anterior: ESTADO_PENDIENTE_APROBACION,
+          estado_nuevo: 'EN_CURSO',
+          observaciones: `Cierre rechazado: ${motivo}`,
+        },
+      });
+      await tx.log_auditoria.create({
+        data: {
+          id_usuario: userId,
+          accion: 'RECHAZAR_CIERRE_OT',
+          entidad_afectada: 'orden_trabajo',
+          id_entidad_afectada: id_ot,
+          valor_anterior: {
+            estado: ESTADO_PENDIENTE_APROBACION,
+            fecha_completada: ot.fecha_completada?.toISOString() ?? null,
+            potencia_optica_dbm: ot.potencia_optica_dbm == null ? null : Number(ot.potencia_optica_dbm),
+            cierre_equipos: (ot.cierre_equipos ?? null) as Prisma.InputJsonValue,
+          },
+          valor_nuevo: { estado: 'EN_CURSO', motivo },
+        },
+      });
+    });
+
+    this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
+    return this.obtenerDetalle(id_ot, id_empresa);
   }
 
   /**

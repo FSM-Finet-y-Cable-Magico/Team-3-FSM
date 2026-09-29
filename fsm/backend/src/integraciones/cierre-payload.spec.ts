@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test } from '@nestjs/testing';
 import { IntegracionesService } from './integraciones.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { MOMENTO_FAN_OUT } from '../ordenes/fan-out/momento-fan-out.js';
 
 /**
  * El payload de cierre se arma en DOS lugares: `OrdenesService.cerrarOT` para
@@ -41,6 +42,7 @@ describe('payload de cierre para los otros grupos', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         IntegracionesService,
+        { provide: MOMENTO_FAN_OUT, useValue: 'CIERRE' },
         {
           provide: PrismaService,
           useValue: { orden_trabajo: { findFirst: jest.fn(async () => OT) } },

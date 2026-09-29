@@ -90,7 +90,10 @@ const prisma = {
   evidencia_foto: { createMany: jest.fn(async (_args: Prisma.evidencia_fotoCreateManyArgs) => ({ count: 1 })) },
   historial_ot: { create: jest.fn(async (_args: Prisma.historial_otCreateArgs) => ({})) },
   log_auditoria: { create: jest.fn(async (_args: Prisma.log_auditoriaCreateArgs) => ({})) },
-  llamada_cortes: { create: jest.fn(async (_args: Prisma.llamada_cortesCreateArgs) => ({})) },
+  llamada_cortes: {
+    create: jest.fn(async (_args: Prisma.llamada_cortesCreateArgs) => ({})),
+    deleteMany: jest.fn(async (_args: Prisma.llamada_cortesDeleteManyArgs) => ({ count: 1 })),
+  },
   tipo_equipo: {
     findFirst: jest.fn(async () => ({ nombre: 'Cable' })),
     // La rama de monitoreo agrego al cierre una validacion de que el material
@@ -108,7 +111,10 @@ const prisma = {
     update: jest.fn(async (_args: Prisma.stock_consumibleUpdateArgs) => ({})),
   },
   movimiento_inventario: { create: jest.fn(async (_args: Prisma.movimiento_inventarioCreateArgs) => ({})) },
-  uso_material_ot: { createMany: jest.fn(async (_args: Prisma.uso_material_otCreateManyArgs) => ({ count: 1 })) },
+  uso_material_ot: {
+    createMany: jest.fn(async (_args: Prisma.uso_material_otCreateManyArgs) => ({ count: 1 })),
+    deleteMany: jest.fn(async (_args: Prisma.uso_material_otDeleteManyArgs) => ({ count: 1 })),
+  },
   $queryRaw: jest.fn(async (sql: Prisma.Sql) => sql.sql.includes('COUNT(*)') ? [{ total: 0 }] : []),
   $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
 };
@@ -317,7 +323,8 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
   it.each(['http', 'https'])('cierre con %s persiste evidencia, material, llamada, historial y auditoría', async protocolo => {
     const dto = cierre(); dto.fotos[0].url_cloudinary = protocolo + '://example.com/foto.jpg';
     const res = await cerrar(1, 'TECNICO', dto).expect(201);
-    expect(res.body.estado).toBe('COMPLETADA');
+    // MOD RF-04: el cierre del tecnico espera la aprobacion del jefe tecnico.
+    expect(res.body.estado).toBe('PENDIENTE_APROBACION');
     expect(prisma.evidencia_foto.createMany).toHaveBeenCalledWith({ data: [{ id_ot: 1, ...dto.fotos[0] }] });
     // ACUERDO G1-G3 (Opcion A): al cerrar, G3 DECLARA el material usado y avisa
     // a G1; el descuento lo confirma G1 desde su inventario. Antes este test
@@ -333,6 +340,40 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
     expect(prisma.llamada_cortes.create).toHaveBeenCalled();
     expect(prisma.historial_ot.create).toHaveBeenCalled();
     expect(prisma.log_auditoria.create).toHaveBeenCalled();
+  });
+  describe('MOD RF-04: aprobacion del cierre', () => {
+    const aprobar = (id: number, rol: string, body: object = {}) => request(app.getHttpServer())
+      .patch(`/api/ordenes/${id}/aprobar-cierre`).auth(token(rol), { type: 'bearer' }).send(body);
+    const rechazar = (id: number, rol: string, body: object = { motivo: 'Falta foto de la roseta' }) =>
+      request(app.getHttpServer())
+        .patch(`/api/ordenes/${id}/rechazar-cierre`).auth(token(rol), { type: 'bearer' }).send(body);
+
+    it('el tecnico no aprueba ni rechaza cierres', async () => {
+      ordenes[0].estado = 'PENDIENTE_APROBACION';
+      await aprobar(1, 'TECNICO').expect(403);
+      await rechazar(1, 'TECNICO').expect(403);
+      expect(ordenes[0].estado).toBe('PENDIENTE_APROBACION');
+    });
+    it.each(['ADMIN', 'JEFE_TECNICO'])('%s aprueba y la OT queda COMPLETADA', async (rol) => {
+      ordenes[0].estado = 'PENDIENTE_APROBACION';
+      await aprobar(1, rol).expect(200);
+      expect(ordenes[0].estado).toBe('COMPLETADA');
+    });
+    it('rechazar sin motivo es 400 y no toca la OT', async () => {
+      ordenes[0].estado = 'PENDIENTE_APROBACION';
+      await rechazar(1, 'JEFE_TECNICO', {}).expect(400);
+      expect(ordenes[0].estado).toBe('PENDIENTE_APROBACION');
+    });
+    it('el rechazo devuelve la OT al tecnico EN_CURSO', async () => {
+      ordenes[0].estado = 'PENDIENTE_APROBACION';
+      await rechazar(1, 'JEFE_TECNICO').expect(200);
+      expect(ordenes[0].estado).toBe('EN_CURSO');
+    });
+    it('no se aprueba el cierre de una OT de otra empresa', async () => {
+      ordenes[2].estado = 'PENDIENTE_APROBACION';
+      await aprobar(3, 'JEFE_TECNICO').expect(404);
+      expect(ordenes[2].estado).toBe('PENDIENTE_APROBACION');
+    });
   });
   it('técnico inicia su OT y se rechazan transiciones inválidas', async () => {
     ordenes[0].estado = 'ASIGNADA';
