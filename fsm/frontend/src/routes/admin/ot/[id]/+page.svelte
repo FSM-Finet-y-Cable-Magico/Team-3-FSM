@@ -56,6 +56,30 @@
 
   let cambiandoEstado = $state(false);
 
+  // CU-56: resolucion a distancia por el jefe tecnico.
+  let mostrarModalRemoto = $state(false);
+  let obsRemoto = $state('');
+  let resolviendoRemoto = $state(false);
+  let remotoError = $state('');
+
+  async function resolverRemoto() {
+    if (!obsRemoto.trim()) {
+      remotoError = 'Anota qué se hizo para resolverla';
+      return;
+    }
+    resolviendoRemoto = true;
+    remotoError = '';
+    try {
+      ot = await ordenesApi.resolverRemoto(token, idOT, obsRemoto.trim());
+      mostrarModalRemoto = false;
+      obsRemoto = '';
+    } catch (err) {
+      remotoError = err instanceof Error ? err.message : 'Error al resolver a distancia';
+    } finally {
+      resolviendoRemoto = false;
+    }
+  }
+
   // MOD RF-04: aprobacion del cierre del tecnico.
   let obsAprobacion = $state('');
   let aprobando = $state(false);
@@ -363,6 +387,11 @@
     {#if ot.estado !== 'COMPLETADA' && ot.estado !== 'CANCELADA'}
       <div class="bg-white rounded-xl shadow p-6">
         <h3 class="font-semibold text-gray-700 mb-4">Acciones</h3>
+
+        <!-- CU-56: el jefe tecnico puede resolverla sin visita. -->
+        {#if (rol === 'ADMIN' || rol === 'JEFE_TECNICO') && ot.estado !== 'PENDIENTE_APROBACION'}
+          <button onclick={() => (mostrarModalRemoto = true)} class="btn-texto mb-4">Resolver a distancia</button>
+        {/if}
 
         {#if ot.estado === 'PENDIENTE' && (rol === 'ADMIN' || rol === 'JEFE_TECNICO')}
           <div class="space-y-3">
@@ -744,6 +773,30 @@
           class="btn btn-bloque flex-1 bg-amber-500 text-white shadow-sm hover:bg-amber-600 focus-visible:ring-amber-500 text-sm"
         >
           {marcandoAusente ? 'Marcando...' : 'Marcar ausente'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Modal resolver a distancia (CU-56) -->
+{#if mostrarModalRemoto}
+  <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="titulo-remoto">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4 space-y-3">
+      <h3 id="titulo-remoto" class="font-semibold text-gray-800">Resolver la OT #{ot?.id_ot} a distancia</h3>
+      <p class="text-sm text-gray-600">La OT queda completada sin visita ni fotos, como resuelta remotamente.</p>
+      {#if ot?.fotos?.length}
+        <p class="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">
+          Esta OT tiene fotografías adjuntas, lo que sugiere que hubo visita presencial. ¿Confirmas que la resolución fue remota?
+        </p>
+      {/if}
+      <label for="obs-remoto" class="block text-xs font-medium text-gray-600">Qué se hizo</label>
+      <textarea id="obs-remoto" bind:value={obsRemoto} rows={3} maxlength={1000} class="w-full border rounded-lg px-3 py-2 text-sm resize-none"></textarea>
+      {#if remotoError}<p class="text-red-500 text-sm">{remotoError}</p>{/if}
+      <div class="flex gap-3">
+        <button onclick={() => (mostrarModalRemoto = false)} class="flex-1 btn btn-secundario text-sm">Volver</button>
+        <button onclick={resolverRemoto} disabled={resolviendoRemoto} class="flex-1 btn btn-exito text-sm">
+          {resolviendoRemoto ? 'Guardando...' : 'Marcar resuelta'}
         </button>
       </div>
     </div>

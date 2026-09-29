@@ -20,6 +20,7 @@ import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
 import { AprobarCierreDto } from './dto/aprobar-cierre.dto.js';
 import { RechazarCierreDto } from './dto/rechazar-cierre.dto.js';
+import { ResolverRemotoDto } from './dto/resolver-remoto.dto.js';
 import {
   ACCION_EQUIPO,
   ACCIONES_EQUIPO_RETIRO,
@@ -210,6 +211,17 @@ export class OrdenesController {
     @CurrentUser() user: UsuarioAutenticado,
   ) {
     return this.ordenesService.rechazarCierre(+id, dto, user);
+  }
+
+  /** CU-56: el jefe tecnico resuelve la OT a distancia, sin visita. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Patch(':id/resolver-remoto')
+  resolverRemoto(
+    @Param('id') id: string,
+    @Body() dto: ResolverRemotoDto,
+    @CurrentUser() user: UsuarioAutenticado,
+  ) {
+    return this.ordenesService.resolverRemoto(+id, dto, user);
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')

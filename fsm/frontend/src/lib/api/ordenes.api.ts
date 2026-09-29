@@ -193,6 +193,14 @@ export async function rechazarCierre(token: string, id: number, motivo: string):
   });
 }
 
+/** CU-56: el jefe tecnico resuelve la OT a distancia, sin visita. */
+export async function resolverRemoto(token: string, id: number, observaciones: string): Promise<OT> {
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}/resolver-remoto`, {
+    method: 'PATCH',
+    body: JSON.stringify({ observaciones }),
+  });
+}
+
 export async function listarTecnicos(token: string): Promise<Tecnico[]> {
   return fetchApi(token, `${API_URL}/api/ordenes/tecnicos`);
 }

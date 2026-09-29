@@ -1331,3 +1331,52 @@ test('CU-35: una direccion con antecedentes muestra la advertencia sin bloquear'
   await expect(page.getByText('Esta dirección tiene antecedentes de clientes vetados')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Crear OT' })).toBeEnabled();
 });
+
+// CU-56: modalidad de resolucion.
+test('CU-56: resuelta a distancia, el tecnico cierra sin fotos', async ({ page }) => {
+  const registro = await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  const siguiente = page.getByRole('button', { name: 'Siguiente', exact: true });
+  await expect(siguiente).toBeDisabled();
+
+  await page.getByRole('button', { name: 'A distancia' }).click();
+  await expect(siguiente).toBeEnabled();
+  await siguiente.click();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.locator('input[type=number]').fill('-21');
+  await page.getByRole('button', { name: 'Cerrar OT', exact: true }).click();
+
+  await expect(page).toHaveURL(/\/terreno$/);
+  expect(registro.cierres[0]).toMatchObject({ fotos: [], resuelto_remotamente: true });
+});
+
+test('CU-56: a distancia con fotos pide confirmar que no hubo visita', async ({ page }) => {
+  await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  await page.getByRole('button', { name: 'A distancia' }).click();
+
+  await expect(page.getByText('Esta OT tiene fotografías adjuntas, lo que sugiere que hubo visita presencial.')).toBeVisible();
+  const siguiente = page.getByRole('button', { name: 'Siguiente', exact: true });
+  await expect(siguiente).toBeDisabled();
+  await page.getByLabel('Confirmo que la resolución fue remota').check();
+  await expect(siguiente).toBeEnabled();
+});
+
+test('CU-56: el jefe tecnico resuelve una OT a distancia desde el detalle', async ({ page }) => {
+  await preparar(page);
+  const pedidos: unknown[] = [];
+  await page.route('http://127.0.0.1:3000/api/ordenes/1', route => route.fulfill({ json: { ...ot, estado: 'ASIGNADA', fotos: [] } }));
+  await page.route(/\/api\/ordenes\/1\/resolver-remoto$/, route => {
+    pedidos.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ...ot, estado: 'COMPLETADA', resuelto_remotamente: true } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/ot/1');
+
+  await page.getByRole('button', { name: 'Resolver a distancia' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByLabel('Qué se hizo').fill('Se reconfiguró la ONT desde SmartOLT');
+  await dialogo.getByRole('button', { name: 'Marcar resuelta' }).click();
+
+  await expect.poll(() => pedidos.length).toBe(1);
+  expect(pedidos[0]).toEqual({ observaciones: 'Se reconfiguró la ONT desde SmartOLT' });
+  await expect(page.getByText('estado final')).toBeVisible();
+});

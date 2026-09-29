@@ -8,7 +8,6 @@ import {
   IsString,
   MaxLength,
   IsBoolean,
-  ArrayMinSize,
   IsInt,
   IsPositive,
   Matches,
@@ -95,8 +94,12 @@ export class EquipoOtDto {
 }
 
 export class CerrarOtDto {
+  /**
+   * CU-56: obligatorias si la resolucion es PRESENCIAL, opcionales si es
+   * REMOTA (`resuelto_remotamente`). Lo decide el servicio, porque depende de
+   * otro campo.
+   */
   @IsArray()
-  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => FotoDto)
   fotos: FotoDto[];

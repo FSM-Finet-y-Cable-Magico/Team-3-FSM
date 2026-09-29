@@ -17,6 +17,7 @@ import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payloa
 import { MOMENTO_FAN_OUT, type MomentoFanOut } from './fan-out/momento-fan-out.js';
 import { AprobarCierreDto } from './dto/aprobar-cierre.dto.js';
 import { RechazarCierreDto } from './dto/rechazar-cierre.dto.js';
+import { ResolverRemotoDto } from './dto/resolver-remoto.dto.js';
 import { ESTADO_TICKET } from '../tickets/tickets.constants.js';
 import {
   ADVERTENCIA_DIRECCION,
@@ -689,6 +690,13 @@ export class OrdenesService {
       throw new BadRequestException('Solo se pueden cerrar OT en estado EN_CURSO');
     }
 
+    // CU-56: sin visita no hay que fotografiar; con visita, la evidencia es
+    // obligatoria (CU-17).
+    const remota = dto.resuelto_remotamente ?? false;
+    if (!remota && dto.fotos.length === 0) {
+      throw new BadRequestException('Una resolución presencial requiere al menos una foto de evidencia');
+    }
+
     let categoriaFalla: { id_categoria: number; nombre: string; sla_horas: number | null } | null = null;
     if (ot.tipo_ot === 'REPARACION') {
       if (!dto.id_categoria_falla) {
@@ -797,6 +805,8 @@ export class OrdenesService {
           id_usuario: userId,
           estado_anterior: 'EN_CURSO',
           estado_nuevo: ESTADO_PENDIENTE_APROBACION,
+          // CU-56: la modalidad queda en el historial de la OT.
+          observaciones: `Modalidad de resolución: ${remota ? 'REMOTA' : 'PRESENCIAL'}`,
         },
       });
 
@@ -855,10 +865,11 @@ export class OrdenesService {
     id_ot: number,
     userId: number,
     como: 'completada' | 'cancelada',
+    remoto = false,
   ) {
     const data =
       como === 'completada'
-        ? { estado: ESTADO_TICKET.RESUELTO, fecha_cierre: new Date(), resuelto_remotamente: false }
+        ? { estado: ESTADO_TICKET.RESUELTO, fecha_cierre: new Date(), resuelto_remotamente: remoto }
         : { estado: ESTADO_TICKET.ABIERTO };
     const r = await tx.ticket.updateMany({ where: { id_ticket, estado: ESTADO_TICKET.DERIVADO_OT }, data });
     if (r.count === 0) return;
@@ -872,6 +883,65 @@ export class OrdenesService {
         valor_nuevo: { estado: data.estado, id_ot },
       },
     });
+  }
+
+  /**
+   * CU-56: el jefe tecnico resuelve la OT a distancia (por telefono o
+   * reconfigurando la ONT), sin que nadie vaya. No hay fotos, materiales ni
+   * potencia medida en terreno. Queda COMPLETADA sin pasar por aprobacion: la
+   * resolvio quien aprueba. Por eso el aviso a G1 y G8 sale aca en los dos
+   * modos de CIERRE_FAN_OUT_MOMENTO.
+   */
+  async resolverRemoto(id_ot: number, dto: ResolverRemotoDto, user: UsuarioAutenticado) {
+    const { userId, id_empresa } = user;
+    const observaciones = dto.observaciones?.trim();
+    if (!observaciones) throw new BadRequestException('Anota qué se hizo para resolverla');
+
+    const ot = await this.prisma.orden_trabajo.findFirst({ where: { id_ot, id_empresa } });
+    if (!ot) throw new NotFoundException('OT no encontrada');
+    if (!['PENDIENTE', 'ASIGNADA', 'EN_CURSO', 'PENDIENTE_CLIENTE_AUSENTE'].includes(ot.estado)) {
+      throw new BadRequestException(`Una OT ${ot.estado} no se puede resolver a distancia`);
+    }
+    if (dto.id_categoria_falla) {
+      const cat = await this.prisma.categoria_falla.findUnique({ where: { id_categoria: dto.id_categoria_falla } });
+      if (!cat) throw new NotFoundException('Categoria de falla no encontrada');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.orden_trabajo.update({
+        where: { id_ot },
+        data: {
+          estado: 'COMPLETADA',
+          fecha_completada: new Date(),
+          resuelto_remotamente: true,
+          ...(dto.id_categoria_falla && { id_categoria_falla: dto.id_categoria_falla }),
+        },
+      });
+      await tx.historial_ot.create({
+        data: {
+          id_ot,
+          id_usuario: userId,
+          estado_anterior: ot.estado,
+          estado_nuevo: 'COMPLETADA',
+          observaciones: `Modalidad de resolución: REMOTA. ${observaciones}`,
+        },
+      });
+      await tx.log_auditoria.create({
+        data: {
+          id_usuario: userId,
+          accion: 'RESOLVER_REMOTO_OT',
+          entidad_afectada: 'orden_trabajo',
+          id_entidad_afectada: id_ot,
+          valor_anterior: { estado: ot.estado },
+          valor_nuevo: { estado: 'COMPLETADA', resuelto_remotamente: true, observaciones },
+        },
+      });
+      if (ot.id_ticket) await this.moverTicket(tx, ot.id_ticket, id_ot, userId, 'completada', true);
+    });
+
+    void this.notificarCierre(id_ot);
+    this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
+    return this.obtenerDetalle(id_ot, id_empresa);
   }
 
   private async otPendienteDeAprobacion(id_ot: number, id_empresa: number) {
@@ -915,7 +985,7 @@ export class OrdenesService {
         },
       });
       // CU-30: el ticket derivado se resuelve cuando su OT se completa.
-      if (ot.id_ticket) await this.moverTicket(tx, ot.id_ticket, id_ot, userId, 'completada');
+      if (ot.id_ticket) await this.moverTicket(tx, ot.id_ticket, id_ot, userId, 'completada', ot.resuelto_remotamente);
     });
 
     if (this.momentoFanOut === 'APROBACION') void this.notificarCierre(id_ot);
