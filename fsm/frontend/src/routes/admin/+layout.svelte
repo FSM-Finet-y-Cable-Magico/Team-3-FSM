@@ -60,6 +60,7 @@
   // Edificio: una empresa, no un grupo de personas.
   const ICON_EMPRESA = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 21V5a2 2 0 012-2h8a2 2 0 012 2v16m-12 0h16m-4 0v-9a1 1 0 011-1h2a1 1 0 011 1v9M8 7h4M8 11h4M8 15h4"/></svg>`;
 
+  const ICON_TELEFONO = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>`;
   // Globo de conversacion: un reclamo del cliente.
   const ICON_TICKET = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h8M8 14h5m-9 6l2.5-3H19a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v14z"/></svg>`;
 
@@ -67,6 +68,8 @@
     { href: '/admin/dashboard', label: 'Dashboard', icon: ICON_HOME, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/clientes', label: 'Clientes', icon: ICON_USERS, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/ot', label: 'Órdenes de Trabajo', icon: ICON_CLIP, roles: ['ADMIN', 'JEFE_TECNICO'] },
+    // CU-31: llamadas de cortesia post-OT.
+    { href: '/admin/llamadas', label: 'Llamadas de cortesía', icon: ICON_TELEFONO, roles: ['ADMIN', 'JEFE_TECNICO'] },
     // CU-30: el panel de tickets del jefe tecnico.
     { href: '/admin/tickets', label: 'Tickets', icon: ICON_TICKET, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/alertas', label: 'Alertas de Red', icon: ICON_ALERTA, roles: ['ADMIN', 'JEFE_TECNICO'] },

@@ -56,7 +56,9 @@
 
   // Paso 3 - Cierre
   let potencia = $state<string>('');
-  let resultadoLlamada = $state<'CONFORME' | 'NO_CONFORME'>('CONFORME');
+  // CU-31: la llamada de cortesia la hace el jefe tecnico con la OT completada.
+  // Si el tecnico hablo con el cliente en el domicilio, la puede dejar aca.
+  let resultadoLlamada = $state<'CONFORME' | 'NO_CONFORME' | null>(null);
   let obsLlamada = $state('');
   // CU-56: modalidad de resolucion. PRESENCIAL exige fotos; REMOTA no, pero
   // si hay fotos pide confirmar que no hubo visita (excepcion 1 del CU).
@@ -246,8 +248,7 @@
         numero_serie: series[m.id_tipo_equipo] || undefined,
       })),
       potencia_optica_dbm: parseFloat(potencia),
-      resultado_llamada: resultadoLlamada,
-      obs_llamada: obsLlamada || undefined,
+      ...(resultadoLlamada && { resultado_llamada: resultadoLlamada, obs_llamada: obsLlamada || undefined }),
       resuelto_remotamente: resueltoRemotamente,
       id_categoria_falla: idCategoriaFalla ? Number(idCategoriaFalla) : undefined,
       categoria_falla_otro: categoriaFallaOtro.trim() || undefined,
@@ -712,17 +713,21 @@
 
           <!-- Resultado llamada -->
           <div>
-            <label class="block text-sm font-medium text-slate-700 mb-2">Resultado llamada de cortesia *</label>
+            <label class="block text-sm font-medium text-slate-700 mb-2">
+              Llamada de cortesia <span class="text-slate-400 text-xs">(opcional: si no, la hace el jefe tecnico)</span>
+            </label>
             <div class="grid grid-cols-2 gap-3">
               <button
-                onclick={() => (resultadoLlamada = 'CONFORME')}
+                onclick={() => (resultadoLlamada = resultadoLlamada === 'CONFORME' ? null : 'CONFORME')}
+                aria-pressed={resultadoLlamada === 'CONFORME'}
                 class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
                   {resultadoLlamada === 'CONFORME' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 text-slate-500'}"
               >
                 Conforme
               </button>
               <button
-                onclick={() => (resultadoLlamada = 'NO_CONFORME')}
+                onclick={() => (resultadoLlamada = resultadoLlamada === 'NO_CONFORME' ? null : 'NO_CONFORME')}
+                aria-pressed={resultadoLlamada === 'NO_CONFORME'}
                 class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
                   {resultadoLlamada === 'NO_CONFORME' ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-200 text-slate-500'}"
               >

@@ -1380,3 +1380,67 @@ test('CU-56: el jefe tecnico resuelve una OT a distancia desde el detalle', asyn
   expect(pedidos[0]).toEqual({ observaciones: 'Se reconfiguró la ONT desde SmartOLT' });
   await expect(page.getByText('estado final')).toBeVisible();
 });
+
+// CU-31: llamada de cortesia post-OT.
+async function prepararLlamadas(page: Page) {
+  const registro = { pedidos: [] as { id: number; cuerpo: any }[] };
+  let pendientes = [
+    { id_ot: 40, tipo_ot: 'INSTALACION', fecha_completada: '2026-09-29T10:00:00.000Z', tecnico: 'Pedro Rojas',
+      contacto: { nombre: 'Ana Soto', telefono: '+56911111111' }, intentos: 0, proximo_intento: null, toca_llamar: true },
+    { id_ot: 41, tipo_ot: 'REPARACION', fecha_completada: '2026-09-29T09:00:00.000Z', tecnico: null,
+      contacto: { nombre: 'Juan Pérez', telefono: '+56922222222' }, intentos: 1, proximo_intento: '2026-09-29T16:00:00.000Z', toca_llamar: false },
+  ];
+  await page.route('http://127.0.0.1:3000/api/ordenes/llamadas-cortesia', route => route.fulfill({ json: pendientes }));
+  await page.route(/\/api\/ordenes\/\d+\/llamada-cortesia$/, route => {
+    const id = Number(new URL(route.request().url()).pathname.split('/').at(-2));
+    const cuerpo = route.request().postDataJSON();
+    registro.pedidos.push({ id, cuerpo });
+    pendientes = pendientes.filter((p) => p.id_ot !== id);
+    return route.fulfill({ status: 201, json: { id_ot: id, resultado: cuerpo.resultado, intento: null, id_ot_reparacion: cuerpo.resultado === 'NO_CONFORME' ? 777 : null } });
+  });
+  return registro;
+}
+
+test('CU-31: el panel lista a quien llamar y registra una llamada conforme', async ({ page }) => {
+  await preparar(page);
+  const registro = await prepararLlamadas(page);
+  await login(page, 'admin');
+  await page.getByRole('link', { name: 'Llamadas de cortesía' }).click();
+
+  const fila = page.getByRole('row', { name: /Ana Soto/ });
+  await expect(fila.getByRole('link', { name: '+56911111111' })).toHaveAttribute('href', 'tel:+56911111111');
+  await expect(page.getByRole('row', { name: /Juan Pérez/ })).toContainText('Próximo intento');
+
+  await fila.getByRole('button', { name: 'Conforme', exact: true }).click();
+  await expect(page.getByRole('row', { name: /Ana Soto/ })).toHaveCount(0);
+  expect(registro.pedidos).toEqual([{ id: 40, cuerpo: { resultado: 'CONFORME' } }]);
+});
+
+test('CU-31: no conforme pide el reclamo y enlaza la reparacion creada', async ({ page }) => {
+  await preparar(page);
+  const registro = await prepararLlamadas(page);
+  await login(page, 'admin'); await page.goto('/admin/llamadas');
+
+  await page.getByRole('row', { name: /Ana Soto/ }).getByRole('button', { name: 'No conforme' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByRole('button', { name: 'Registrar y crear reparación' }).click();
+  await expect(dialogo.getByText('Describe el problema')).toBeVisible();
+  expect(registro.pedidos).toEqual([]);
+
+  await dialogo.getByLabel('Qué reporta el cliente').fill('Se corta el internet cada tarde');
+  await dialogo.getByRole('button', { name: 'Registrar y crear reparación' }).click();
+  await expect(page.getByRole('link', { name: 'OT #777' })).toHaveAttribute('href', '/admin/ot/777');
+  expect(registro.pedidos).toEqual([{ id: 40, cuerpo: { resultado: 'NO_CONFORME', observaciones: 'Se corta el internet cada tarde' } }]);
+});
+
+test('CU-31: el tecnico puede cerrar sin registrar la llamada, que la hace despues el jefe tecnico', async ({ page }) => {
+  const registro = await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.locator('input[type=number]').fill('-21');
+  await page.getByRole('button', { name: 'Cerrar OT', exact: true }).click();
+
+  await expect(page).toHaveURL(/\/terreno$/);
+  expect(registro.cierres[0]).not.toHaveProperty('resultado_llamada');
+});

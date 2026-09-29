@@ -133,8 +133,13 @@ export class CerrarOtDto {
   @IsNotEmpty()
   potencia_optica_dbm: number;
 
+  /**
+   * Opcional desde CU-31: la llamada de cortesia la hace el jefe tecnico con la
+   * OT ya completada. Si el tecnico la hizo en el domicilio, la registra aca.
+   */
+  @IsOptional()
   @IsIn(['CONFORME', 'NO_CONFORME'])
-  resultado_llamada: string;
+  resultado_llamada?: string;
 
   @IsOptional()
   @IsString()

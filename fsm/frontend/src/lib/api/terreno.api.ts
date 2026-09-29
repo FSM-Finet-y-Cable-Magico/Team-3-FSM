@@ -43,7 +43,8 @@ export interface CerrarOTDto {
   fotos: { url_cloudinary: string; formato: string; tamano_kb: number }[];
   materiales: { id_tipo_equipo: number; cantidad: number; numero_serie?: string }[];
   potencia_optica_dbm: number;
-  resultado_llamada: 'CONFORME' | 'NO_CONFORME';
+  /** CU-31: opcional; si no, la llamada la hace despues el jefe tecnico. */
+  resultado_llamada?: 'CONFORME' | 'NO_CONFORME';
   obs_llamada?: string;
   resuelto_remotamente?: boolean;
   id_categoria_falla?: number;
