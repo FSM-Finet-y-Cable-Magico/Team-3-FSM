@@ -55,6 +55,19 @@ export interface PayloadCierre {
   materiales: { id_tipo_equipo: number; cantidad: number }[];
   equipos_instalados: EquipoDeclarado[];
   equipos_retirados: EquipoDeclarado[];
+  /**
+   * P0-c del acuerdo con G8: correlacion con la solicitud de instalacion que
+   * origino la OT. G8 la usa para activar al cliente del contrato correcto.
+   *
+   * Opcionales, y van null en toda OT que no pidio G8 --hoy, casi todas--. El
+   * mismo payload lo recibe G1, que no conoce el CRM: si fueran obligatorios,
+   * cualquier cierre ajeno a G8 quedaria invalido contra el contrato.
+   */
+  request_id: string | null;
+  trace_id: string | null;
+  id_prospecto: number | null;
+  id_contrato: number | null;
+  id_plan: number | null;
 }
 
 export interface FanOutCierre {

@@ -10,7 +10,8 @@ import {
   type AccionEquipo,
 } from '../ordenes/estado-equipo.constants.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
-import type { PayloadCierre, EquipoDeclarado } from '../ordenes/fan-out/fan-out-cierre.js';
+import type { PayloadCierre } from '../ordenes/fan-out/fan-out-cierre.js';
+import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from '../ordenes/fan-out/payload-cierre.js';
 
 const MAX_RANGO_DIAS = 90;
 
@@ -208,41 +209,11 @@ export class IntegracionesService {
 
     const ot = await this.prisma.orden_trabajo.findFirst({
       where: { id_ot, id_empresa, estado: 'COMPLETADA' },
-      include: {
-        cliente: { select: { rut: true, nombre_completo: true } },
-        direccion: { select: { direccion_completa: true, comuna: true } },
-        categoria_falla: { select: { id_categoria: true, nombre: true } },
-        materiales: { select: { id_tipo_equipo: true, cantidad: true } },
-        llamada: { select: { resultado: true } },
-      },
+      include: INCLUDE_PAYLOAD_CIERRE,
     });
     if (!ot) throw new NotFoundException(`OT ${id_ot} cerrada no encontrada en la empresa ${id_empresa}`);
 
-    const equipos = (ot.cierre_equipos as { instalados?: EquipoDeclarado[]; retirados?: EquipoDeclarado[] } | null) ?? {};
-    const fecha = (ot.fecha_completada ?? ot.fecha_creacion).toISOString();
-
-    return {
-      clave_idempotencia: `${id_ot}:${fecha}`,
-      id_ot,
-      id_empresa: ot.id_empresa,
-      tipo_ot: ot.tipo_ot,
-      fecha_completada: fecha,
-      resultado_llamada: ot.llamada?.resultado ?? '',
-      potencia_optica_dbm: ot.potencia_optica_dbm == null ? 0 : Number(ot.potencia_optica_dbm),
-      resuelto_remotamente: ot.resuelto_remotamente,
-      id_tecnico: ot.id_tecnico,
-      cliente: ot.cliente ? { rut: ot.cliente.rut, nombre: ot.cliente.nombre_completo } : null,
-      direccion: ot.direccion ?? null,
-      categoria_falla: ot.categoria_falla
-        ? { id_categoria: ot.categoria_falla.id_categoria, nombre: ot.categoria_falla.nombre }
-        : null,
-      categoria_falla_otro: ot.categoria_falla_otro,
-      materiales: ot.materiales
-        .filter((m): m is typeof m & { id_tipo_equipo: number } => m.id_tipo_equipo != null)
-        .map((m) => ({ id_tipo_equipo: m.id_tipo_equipo, cantidad: Number(m.cantidad) })),
-      equipos_instalados: equipos.instalados ?? [],
-      equipos_retirados: equipos.retirados ?? [],
-    };
+    return construirPayloadCierre(ot);
   }
 
   // ---- catálogo / clientes ----

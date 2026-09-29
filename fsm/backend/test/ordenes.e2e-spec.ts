@@ -55,7 +55,20 @@ const prisma = {
         llamada: null,
       };
     }),
-    findUnique: jest.fn(async ({ where }: Prisma.orden_trabajoFindUniqueArgs) => ordenes.find(o => o.id_ot === where.id_ot)),
+    // Mismo criterio que `findFirst`: con `include`, Prisma devuelve las
+    // relaciones siempre (array vacio o null), nunca las omite. El payload del
+    // fan-out se arma desde esta relectura.
+    findUnique: jest.fn(async ({ where, include }: Prisma.orden_trabajoFindUniqueArgs) => {
+      const row = ordenes.find(o => o.id_ot === where.id_ot);
+      if (!row || !include) return row;
+      return {
+        ...row,
+        fecha_creacion: new Date(2026, 0, 1),
+        fecha_completada: new Date(2026, 0, 2),
+        cliente: null, direccion: null, categoria_falla: null, llamada: null,
+        solicitud_integracion: null, materiales: [], fotos: [],
+      };
+    }),
     update: jest.fn(async ({ where, data }: Prisma.orden_trabajoUpdateArgs) => {
       const row = ordenes.find(o => o.id_ot === where.id_ot)!;
       if (typeof data.estado === 'string') row.estado = data.estado;

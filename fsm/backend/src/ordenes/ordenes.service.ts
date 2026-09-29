@@ -13,6 +13,7 @@ import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
 import { ACCION_A_ESTADO_G1 } from './estado-equipo.constants.js';
 import { FAN_OUT_CIERRE, type FanOutCierre, type EquipoDeclarado } from './fan-out/fan-out-cierre.js';
+import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payload-cierre.js';
 import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
@@ -721,39 +722,8 @@ export class OrdenesService {
     // 8 s de timeout y espera entre medio: con un webhook caido son ~27 s. Con
     // el `await` que habia antes, esos 27 s se los comia el tecnico en terreno,
     // desde el celular, esperando por algo que ya estaba guardado -- y con el
-    // riesgo de que reintentara el cierre creyendo que fallo. El comentario
-    // decia "best-effort" mientras el codigo hacia lo contrario.
-    //
-    // El `.catch` es por prolijidad: la interfaz se compromete a no lanzar,
-    // pero una promesa sin manejar tumbaria el proceso si alguna vez lo hace.
-    const fecha = (otActualizada?.fecha_completada ?? new Date()).toISOString();
-    void this.fanOut
-      .notificar({
-      clave_idempotencia: `${id_ot}:${fecha}`,
-      id_ot,
-      id_empresa: ot.id_empresa,
-      tipo_ot: ot.tipo_ot,
-      fecha_completada: fecha,
-      resultado_llamada: dto.resultado_llamada,
-      potencia_optica_dbm: dto.potencia_optica_dbm,
-      resuelto_remotamente: dto.resuelto_remotamente ?? false,
-      // `asegurarAcceso(..., true)` ya garantizo que ot.id_tecnico === userId.
-      id_tecnico: ot.id_tecnico,
-      cliente: otActualizada?.cliente
-        ? { rut: otActualizada.cliente.rut, nombre: otActualizada.cliente.nombre_completo }
-        : null,
-      direccion: otActualizada?.direccion ?? null,
-      categoria_falla: categoriaFalla
-        ? { id_categoria: categoriaFalla.id_categoria, nombre: categoriaFalla.nombre }
-        : null,
-      categoria_falla_otro: dto.categoria_falla_otro?.trim() || null,
-      materiales: dto.materiales.map((m) => ({ id_tipo_equipo: m.id_tipo_equipo, cantidad: m.cantidad })),
-      equipos_instalados,
-        equipos_retirados,
-      })
-      .catch((e) =>
-        this.logger.error(`fan-out del cierre ${id_ot}: ${(e as Error).message}`),
-      );
+    // riesgo de que reintentara el cierre creyendo que fallo.
+    void this.notificarCierre(id_ot);
 
     const advertencia_potencia =
       dto.potencia_optica_dbm < -24 || dto.potencia_optica_dbm > -19;
@@ -763,6 +733,27 @@ export class OrdenesService {
 
     this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
     return { ...otActualizada, advertencia_potencia, alerta_reparaciones_30_dias };
+  }
+
+  /**
+   * Arma el payload desde la fila GUARDADA, con el mismo constructor que usa el
+   * GET de reconciliacion: asi lo que recibe G1/G8 por webhook es, por
+   * construccion, lo mismo que recuperan por GET si el webhook falla.
+   *
+   * Nunca lanza: el cierre ya esta comprometido y un error aca solo se
+   * registra. La interfaz de fan-out tampoco lanza, pero leer la fila si puede.
+   */
+  private async notificarCierre(id_ot: number): Promise<void> {
+    try {
+      const ot = await this.prisma.orden_trabajo.findUnique({
+        where: { id_ot },
+        include: INCLUDE_PAYLOAD_CIERRE,
+      });
+      if (!ot) throw new Error('la OT cerrada no se encontro al releerla');
+      await this.fanOut.notificar(construirPayloadCierre(ot));
+    } catch (e) {
+      this.logger.error(`fan-out del cierre ${id_ot}: ${(e as Error).message}`);
+    }
   }
 
   async historialFallas(id_cliente: number, id_empresa: number) {
