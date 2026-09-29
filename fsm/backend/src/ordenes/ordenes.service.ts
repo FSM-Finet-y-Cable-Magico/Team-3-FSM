@@ -31,11 +31,20 @@ const PRIORIDAD_ORDEN: Record<string, number> = { CRITICA: 0, ALTA: 1, MEDIA: 2,
 
 const MAX_EVIDENCIAS_DETALLE = 50;
 
+/**
+ * P0-d del acuerdo con G8: la OT de instalacion que pide G8 no tiene cliente,
+ * y la persona a visitar vive en el snapshot de la solicitud. Solo nombre y
+ * telefono --lo que el tecnico necesita para saber a quien visita y llamarlo
+ * antes de marcar cliente ausente--; ni RUT ni email.
+ */
+const CONTACTO_SOLICITUD = { select: { nombre_completo: true, telefono: true } } as const;
+
 const OT_INCLUDE = {
   cliente: { select: { id_cliente: true, nombre_completo: true, rut: true, es_conflictivo: true } },
   tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
   direccion: { select: { direccion_completa: true, comuna: true } },
   categoria_falla: { select: { id_categoria: true, nombre: true, sla_horas: true } },
+  solicitud_integracion: CONTACTO_SOLICITUD,
 } as const;
 
 @Injectable()
@@ -400,6 +409,7 @@ export class OrdenesService {
           take: MAX_EVIDENCIAS_DETALLE,
         },
         llamada: true,
+        solicitud_integracion: CONTACTO_SOLICITUD,
       },
     });
 

@@ -24,8 +24,15 @@ export interface OT {
     nombre_completo: string;
     rut: string;
     es_conflictivo: boolean;
+    /** Solo en el detalle: el tecnico debe poder llamar antes de marcar ausente. */
+    telefono?: string | null;
     direcciones?: { direccion_completa: string; comuna: string }[];
-  };
+  } | null;
+  /**
+   * P0-d del acuerdo con G8: la OT de instalacion que pide G8 no tiene cliente
+   * todavia. La persona a visitar viene de la solicitud. Null en las demas OT.
+   */
+  solicitud_integracion?: { nombre_completo: string; telefono: string } | null;
   tecnico?: {
     id_usuario: number;
     nombre_completo: string;

@@ -246,10 +246,19 @@
             {#if ot.caja_nap.zona}<p class="text-gray-500 text-xs mt-0.5">{ot.caja_nap.zona}</p>{/if}
           </div>
         {:else}
+          {@const persona = !ot.cliente ? ot.solicitud_integracion : null}
+          {@const telefono = ot.cliente?.telefono ?? persona?.telefono}
           <div>
-            <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Cliente</p>
-            <p class="text-gray-900 font-medium">{ot.cliente?.nombre_completo ?? '-'}</p>
+            <!-- La OT de instalacion que pide G8 no tiene cliente todavia: la
+                 persona a visitar viene de la solicitud (P0-d). -->
+            <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">
+              {persona ? 'Solicitud de instalación (CRM)' : 'Cliente'}
+            </p>
+            <p class="text-gray-900 font-medium">{ot.cliente?.nombre_completo ?? persona?.nombre_completo ?? '-'}</p>
             <p class="text-gray-500 font-mono text-xs">{ot.cliente?.rut ?? ''}</p>
+            {#if telefono}
+              <a href={`tel:${telefono}`} class="btn-texto text-xs font-mono">{telefono}</a>
+            {/if}
           </div>
           <div>
             <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Dirección</p>
