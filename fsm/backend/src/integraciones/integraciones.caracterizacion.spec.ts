@@ -42,7 +42,7 @@ describe('IntegracionesController: forma del contrato', () => {
       clientePorRut: jest.fn(async () => ({ rut: '1-9' })),
       buscarClientes: jest.fn(async () => []),
     };
-    const ctrl = new IntegracionesController(svc as unknown as IntegracionesService, {} as never);
+    const ctrl = new IntegracionesController(svc as unknown as IntegracionesService, {} as never, {} as never);
     const req = { apiScope: scopeG1 };
 
     it.each([

@@ -3,7 +3,9 @@ import { IntegracionesService } from './integraciones.service.js';
 import { InstalacionesService } from './instalaciones.service.js';
 import { SolicitudInstalacionDto } from './dto/solicitud-instalacion.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
-import { ApiKeyGuard, type ApiScope } from '../common/guards/api-key.guard.js';
+import { ApiKeyGuard, exigirEmpresaEnScope, type ApiScope } from '../common/guards/api-key.guard.js';
+import { TicketsService } from '../tickets/tickets.service.js';
+import { CrearTicketIntegracionDto } from '../tickets/dto/tickets.dto.js';
 
 interface ConScope {
   apiScope: ApiScope;
@@ -24,6 +26,7 @@ export class IntegracionesController {
   constructor(
     private svc: IntegracionesService,
     private instalaciones: InstalacionesService,
+    private tickets: TicketsService,
   ) {}
 
   private ok(data: unknown) {
@@ -49,6 +52,33 @@ export class IntegracionesController {
     return r.creado
       ? { success: true, data: r.data, message: 'Solicitud de instalación aceptada' }
       : this.ok(r.data);
+  }
+
+  // ---- tickets de soporte (CU-29 desde canales digitales) ----
+
+  /**
+   * CU-29: el cliente reporta desde el portal o el bot de otro grupo. El ticket
+   * queda a nombre del sistema (sin usuario) y responde el codigo de
+   * seguimiento y el vencimiento del SLA, que el canal le muestra al cliente.
+   */
+  @Post('tickets')
+  async crearTicket(@Req() req: ConScope, @Body() dto: CrearTicketIntegracionDto) {
+    const id_empresa = exigirEmpresaEnScope(req.apiScope, dto.id_empresa);
+    const { rut_cliente, id_categoria, descripcion, origen } = dto;
+    return this.ok(
+      await this.tickets.crear({ rut_cliente, id_categoria, descripcion, origen }, { userId: null, id_empresa }),
+    );
+  }
+
+  /** Seguimiento por codigo TK-XXXXXXX, para que el canal le muestre el estado. */
+  @Get('tickets/:codigo')
+  async seguimientoTicket(
+    @Req() req: ConScope,
+    @Param('codigo') codigo: string,
+    @Query('id_empresa') id_empresa: string,
+  ) {
+    const empresa = exigirEmpresaEnScope(req.apiScope, +id_empresa);
+    return this.ok(await this.tickets.porCodigo(codigo, empresa));
   }
 
   // ---- OTs ----

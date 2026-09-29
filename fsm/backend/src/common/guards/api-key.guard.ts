@@ -1,9 +1,32 @@
-import { CanActivate, ExecutionContext, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 export interface ApiScope {
   grupo: string;
   empresas: number[];
+}
+
+/**
+ * 400 sin empresa, 403 si la API key no la cubre. Lo usan todos los endpoints
+ * de integracion: la empresa es parametro obligatorio y se valida contra el
+ * scope de la clave.
+ */
+export function exigirEmpresaEnScope(scope: ApiScope, id_empresa: number): number {
+  if (!Number.isFinite(id_empresa)) {
+    throw new BadRequestException('id_empresa es obligatorio');
+  }
+  if (!scope.empresas.includes(id_empresa)) {
+    throw new ForbiddenException(`La API key de ${scope.grupo} no tiene acceso a la empresa ${id_empresa}`);
+  }
+  return id_empresa;
 }
 
 /**
