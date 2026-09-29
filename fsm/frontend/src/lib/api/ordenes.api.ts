@@ -172,6 +172,25 @@ export async function actualizarEstado(
   });
 }
 
+/**
+ * MOD RF-04: el cierre del tecnico queda PENDIENTE_APROBACION hasta que el
+ * jefe tecnico o el administrador lo aprueba (queda COMPLETADA) o lo rechaza
+ * (vuelve EN_CURSO al tecnico, con el motivo en el historial).
+ */
+export async function aprobarCierre(token: string, id: number, observaciones?: string): Promise<OT> {
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}/aprobar-cierre`, {
+    method: 'PATCH',
+    body: JSON.stringify(observaciones ? { observaciones } : {}),
+  });
+}
+
+export async function rechazarCierre(token: string, id: number, motivo: string): Promise<OT> {
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}/rechazar-cierre`, {
+    method: 'PATCH',
+    body: JSON.stringify({ motivo }),
+  });
+}
+
 export async function listarTecnicos(token: string): Promise<Tecnico[]> {
   return fetchApi(token, `${API_URL}/api/ordenes/tecnicos`);
 }

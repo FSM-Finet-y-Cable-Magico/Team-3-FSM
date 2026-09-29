@@ -188,9 +188,9 @@
         clickable={true}
         href="/admin/ot?estado=EN_CURSO"
       />
-      <!-- Sin enlace a proposito: la tarjeta cuenta solo las de hoy y /ot todavia
-           no lee searchParams, asi que el destino mostraba el listado completo.
-           Cuando /ot filtre por URL, apuntar al dia, no a todas las COMPLETADA. -->
+      <!-- Sin enlace a proposito: la tarjeta cuenta solo las de hoy y /ot lee el
+           estado de la URL pero no filtra por dia, asi que el destino mostraria
+           todas las COMPLETADA. Cuando /ot filtre por dia, enlazar al dia. -->
       <StatCard
         titulo="Completadas Hoy"
         valor={indicadores.ot_completadas_hoy}
@@ -246,6 +246,16 @@
         icono={ICONO_HOURGLASS}
         clickable={true}
         href="/admin/ot?estado=PENDIENTE_CLIENTE_AUSENTE"
+      />
+      <!-- MOD RF-04: lo que el jefe tecnico tiene que revisar. -->
+      <StatCard
+        titulo="Cierres por Aprobar"
+        valor={indicadores.ot_por_estado.PENDIENTE_APROBACION ?? 0}
+        subtitulo="esperan revisión"
+        color={(indicadores.ot_por_estado.PENDIENTE_APROBACION ?? 0) > 0 ? 'orange' : 'gray'}
+        icono={ICONO_CHECK}
+        clickable={true}
+        href="/admin/ot?estado=PENDIENTE_APROBACION"
       />
       <StatCard
         titulo="Tiempo Promedio Cierre"

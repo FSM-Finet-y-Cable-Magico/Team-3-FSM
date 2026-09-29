@@ -7,6 +7,8 @@ export interface IndicadoresDashboard {
     PENDIENTE_CLIENTE_AUSENTE: number;
     ASIGNADA: number;
     EN_CURSO: number;
+    /** MOD RF-04: cierres del tecnico que esperan al jefe tecnico. */
+    PENDIENTE_APROBACION: number;
     COMPLETADA: number;
     CANCELADA: number;
   };

@@ -31,10 +31,14 @@
   // operacion de FiNet. Calcularlo aca ataba la jornada al reloj del telefono
   // y ademas se congelaba al montar, asi que una sesion abierta cruzando la
   // medianoche seguia pidiendo el dia anterior.
+  const TERMINADAS = ['COMPLETADA', 'PENDIENTE_APROBACION'];
+
   const resumen = $derived({
     total: ots.length,
-    completadas: ots.filter((o) => o.estado === 'COMPLETADA').length,
-    pendientes: ots.filter((o) => o.estado !== 'COMPLETADA').length,
+    // MOD RF-04: lo que el tecnico ya cerro cuenta como hecho aunque el jefe
+    // tecnico todavia no lo apruebe. Para el no queda nada pendiente ahi.
+    completadas: ots.filter((o) => TERMINADAS.includes(o.estado)).length,
+    pendientes: ots.filter((o) => !TERMINADAS.includes(o.estado)).length,
   });
 
   const fechaFormateada = $derived(
@@ -347,6 +351,12 @@
                 >
                   {reintentando === ot.id_ot ? 'Reintentando...' : 'Reintentar visita'}
                 </button>
+              </div>
+            {:else if ot.estado === 'PENDIENTE_APROBACION'}
+              <div class="px-4 pb-4">
+                <div class="w-full bg-teal-50 text-teal-700 font-semibold py-3 rounded-xl text-sm text-center border border-teal-200">
+                  Cerrada · espera aprobación
+                </div>
               </div>
             {:else if ot.estado === 'COMPLETADA'}
               <div class="px-4 pb-4">

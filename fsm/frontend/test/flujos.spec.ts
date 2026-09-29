@@ -932,3 +932,71 @@ test('CU-33: el JEFE_TECNICO no tiene selector de empresa', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await expect(page.getByLabel('Empresa activa')).toHaveCount(0);
 });
+
+// MOD RF-04: el cierre del tecnico espera la aprobacion del jefe tecnico.
+test('MOD RF-04: el jefe tecnico aprueba un cierre desde el detalle', async ({ page }) => {
+  await preparar(page);
+  const pedidos: { ruta: string; cuerpo: unknown }[] = [];
+  await page.route('http://127.0.0.1:3000/api/ordenes/1', route => route.fulfill({ json: { ...ot, estado: 'PENDIENTE_APROBACION' } }));
+  await page.route(/\/api\/ordenes\/1\/(aprobar|rechazar)-cierre$/, route => {
+    pedidos.push({ ruta: new URL(route.request().url()).pathname, cuerpo: route.request().postDataJSON() });
+    return route.fulfill({ json: { ...ot, estado: 'COMPLETADA' } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/ot/1');
+
+  await expect(page.getByText('El técnico cerró esta OT y espera tu aprobación')).toBeVisible();
+  await page.getByLabel('Observación de la aprobación (opcional)').fill('Fotos y potencia correctas');
+  await page.getByRole('button', { name: 'Aprobar cierre' }).click();
+
+  await expect.poll(() => pedidos.length).toBe(1);
+  expect(pedidos[0]).toEqual({ ruta: '/api/ordenes/1/aprobar-cierre', cuerpo: { observaciones: 'Fotos y potencia correctas' } });
+  await expect(page.getByText('estado final')).toBeVisible();
+});
+
+test('MOD RF-04: rechazar un cierre pide el motivo antes de enviarlo', async ({ page }) => {
+  await preparar(page);
+  const pedidos: { ruta: string; cuerpo: unknown }[] = [];
+  await page.route('http://127.0.0.1:3000/api/ordenes/1', route => route.fulfill({ json: { ...ot, estado: 'PENDIENTE_APROBACION' } }));
+  await page.route(/\/api\/ordenes\/1\/(aprobar|rechazar)-cierre$/, route => {
+    pedidos.push({ ruta: new URL(route.request().url()).pathname, cuerpo: route.request().postDataJSON() });
+    return route.fulfill({ json: { ...ot, estado: 'EN_CURSO' } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/ot/1');
+
+  await page.getByRole('button', { name: 'Rechazar cierre' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByLabel('Motivo del rechazo').fill('corto');
+  await dialogo.getByRole('button', { name: 'Rechazar y devolver al técnico' }).click();
+  await expect(dialogo.getByText('al menos 10 caracteres')).toBeVisible();
+  expect(pedidos).toEqual([]);
+
+  await dialogo.getByLabel('Motivo del rechazo').fill('Falta la foto de la roseta instalada');
+  await dialogo.getByRole('button', { name: 'Rechazar y devolver al técnico' }).click();
+  await expect.poll(() => pedidos.length).toBe(1);
+  expect(pedidos[0]).toEqual({ ruta: '/api/ordenes/1/rechazar-cierre', cuerpo: { motivo: 'Falta la foto de la roseta instalada' } });
+  await expect(dialogo).toHaveCount(0);
+});
+
+test('MOD RF-04: el tecnico ve su cierre esperando aprobacion y cuenta como hecho', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes?*', route =>
+    route.fulfill({ json: { data: [{ ...ot, estado: 'PENDIENTE_APROBACION' }], page: 1, limit: 20, total: 1 } }));
+  await login(page);
+
+  await expect(page.getByText('Cerrada · espera aprobación')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cerrar OT' })).toHaveCount(0);
+});
+
+test('MOD RF-04: el listado de OT filtra por cierres por aprobar desde la URL', async ({ page }) => {
+  await preparar(page);
+  const estados: (string | null)[] = [];
+  await page.route('http://127.0.0.1:3000/api/ordenes?*', route => {
+    estados.push(new URL(route.request().url()).searchParams.get('estado'));
+    return route.fulfill({ json: { data: [], page: 1, limit: 20, total: 0 } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/ot?estado=PENDIENTE_APROBACION');
+
+  await expect.poll(() => estados.length).toBeGreaterThan(0);
+  expect(estados.at(-1)).toBe('PENDIENTE_APROBACION');
+  await expect(page.getByLabel('Estado')).toHaveValue('PENDIENTE_APROBACION');
+});

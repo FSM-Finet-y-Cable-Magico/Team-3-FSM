@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { authStore } from '$lib/stores/auth.store';
+  import { page as paginaActual } from '$app/stores';
   import * as ordenesApi from '$lib/api/ordenes.api';
   import EstadoBadge from '$lib/components/EstadoBadge.svelte';
 
@@ -38,6 +39,12 @@
 
     token = state.token ?? '';
     rol = state.usuario?.rol ?? '';
+    // El dashboard enlaza aca con el estado ya elegido (p. ej. los cierres por
+    // aprobar de MOD RF-04).
+    const params = get(paginaActual).url.searchParams;
+    filtroEstado = params.get('estado') ?? '';
+    filtroTipo = params.get('tipo_ot') ?? '';
+    filtroPrioridad = params.get('prioridad') ?? '';
     cargarOTs();
   });
 
@@ -104,8 +111,9 @@
     <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Filtros</p>
     <div class="flex flex-wrap gap-3">
       <div class="flex flex-col gap-1">
-        <label class="text-xs font-medium text-slate-600">Estado</label>
+        <label for="filtro-estado" class="text-xs font-medium text-slate-600">Estado</label>
         <select
+          id="filtro-estado"
           bind:value={filtroEstado}
           onchange={aplicarFiltros}
           class="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -115,6 +123,7 @@
           <option>PENDIENTE_CLIENTE_AUSENTE</option>
           <option>ASIGNADA</option>
           <option>EN_CURSO</option>
+          <option>PENDIENTE_APROBACION</option>
           <option>COMPLETADA</option>
           <option>CANCELADA</option>
         </select>

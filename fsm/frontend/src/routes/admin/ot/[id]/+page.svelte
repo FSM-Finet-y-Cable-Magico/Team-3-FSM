@@ -54,6 +54,47 @@
 
   let cambiandoEstado = $state(false);
 
+  // MOD RF-04: aprobacion del cierre del tecnico.
+  let obsAprobacion = $state('');
+  let aprobando = $state(false);
+  let aprobarError = $state('');
+  let mostrarModalRechazo = $state(false);
+  let motivoRechazo = $state('');
+  let rechazando = $state(false);
+  let rechazoError = $state('');
+
+  async function aprobarCierre() {
+    aprobando = true;
+    aprobarError = '';
+    try {
+      ot = await ordenesApi.aprobarCierre(token, idOT, obsAprobacion.trim() || undefined);
+      obsAprobacion = '';
+    } catch (err) {
+      aprobarError = err instanceof Error ? err.message : 'Error al aprobar el cierre';
+    } finally {
+      aprobando = false;
+    }
+  }
+
+  async function confirmarRechazo() {
+    // El tecnico tiene que saber que corregir: mismo minimo que la cancelacion.
+    if (motivoRechazo.trim().length < 10) {
+      rechazoError = 'El motivo debe tener al menos 10 caracteres';
+      return;
+    }
+    rechazando = true;
+    rechazoError = '';
+    try {
+      ot = await ordenesApi.rechazarCierre(token, idOT, motivoRechazo.trim());
+      mostrarModalRechazo = false;
+      motivoRechazo = '';
+    } catch (err) {
+      rechazoError = err instanceof Error ? err.message : 'Error al rechazar el cierre';
+    } finally {
+      rechazando = false;
+    }
+  }
+
   const idOT = $derived(Number($page.params.id ?? 0));
 
   onMount(() => {
@@ -435,6 +476,42 @@
         {:else if ot.estado === 'EN_CURSO' && rol === 'TECNICO'}
           <p class="text-sm text-gray-500">Esta OT está asignada a otro técnico.</p>
 
+        {:else if ot.estado === 'PENDIENTE_APROBACION' && (rol === 'ADMIN' || rol === 'JEFE_TECNICO')}
+          <!-- MOD RF-04: la evidencia, los materiales y la llamada del cierre
+               estan en esta misma pantalla, mas abajo. -->
+          <div class="space-y-3">
+            <p class="text-sm text-gray-700">
+              El técnico cerró esta OT y espera tu aprobación. Revisa la evidencia, los materiales y la llamada antes de decidir.
+            </p>
+            <label for="obs-aprobacion" class="block text-xs font-medium text-gray-600">
+              Observación de la aprobación (opcional)
+            </label>
+            <textarea
+              id="obs-aprobacion"
+              bind:value={obsAprobacion}
+              rows={2}
+              maxlength={500}
+              class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+            ></textarea>
+            {#if aprobarError}
+              <p class="text-red-500 text-sm">{aprobarError}</p>
+            {/if}
+            <div class="flex gap-3 flex-wrap">
+              <button onclick={aprobarCierre} disabled={aprobando} class="btn btn-exito">
+                {aprobando ? 'Aprobando...' : 'Aprobar cierre'}
+              </button>
+              <button
+                onclick={() => (mostrarModalRechazo = true)}
+                class="btn btn-secundario text-red-800 border-red-300 bg-red-50 hover:bg-red-100"
+              >
+                Rechazar cierre
+              </button>
+            </div>
+          </div>
+
+        {:else if ot.estado === 'PENDIENTE_APROBACION'}
+          <p class="text-sm text-gray-500">El cierre de esta OT espera la aprobación del jefe técnico.</p>
+
         {:else if ot.estado === 'EN_CURSO' && (rol === 'ADMIN' || rol === 'JEFE_TECNICO')}
           <div class="flex gap-3 flex-wrap">
             <button
@@ -662,6 +739,50 @@
           class="btn btn-bloque flex-1 bg-amber-500 text-white shadow-sm hover:bg-amber-600 focus-visible:ring-amber-500 text-sm"
         >
           {marcandoAusente ? 'Marcando...' : 'Marcar ausente'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Modal rechazar cierre (MOD RF-04) -->
+{#if mostrarModalRechazo}
+  <div
+    class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="titulo-rechazo"
+  >
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+      <h3 id="titulo-rechazo" class="font-semibold text-gray-800 mb-3">Rechazar el cierre de la OT #{ot?.id_ot}</h3>
+      <p class="text-sm text-gray-600 mb-4">
+        La OT vuelve al técnico en curso. El motivo le queda en el historial para que sepa qué corregir.
+      </p>
+      <label for="motivo-rechazo" class="block text-xs font-medium text-gray-600 mb-1">Motivo del rechazo</label>
+      <textarea
+        id="motivo-rechazo"
+        bind:value={motivoRechazo}
+        rows={4}
+        maxlength={500}
+        class="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
+        placeholder="Qué falta o qué hay que corregir..."
+      ></textarea>
+      {#if rechazoError}
+        <p class="text-red-500 text-sm mt-2">{rechazoError}</p>
+      {/if}
+      <div class="flex gap-3 mt-4">
+        <button
+          onclick={() => { mostrarModalRechazo = false; rechazoError = ''; }}
+          class="flex-1 btn btn-secundario text-sm"
+        >
+          Volver
+        </button>
+        <button
+          onclick={confirmarRechazo}
+          disabled={rechazando}
+          class="btn btn-peligro btn-bloque flex-1 text-sm"
+        >
+          {rechazando ? 'Rechazando...' : 'Rechazar y devolver al técnico'}
         </button>
       </div>
     </div>
