@@ -90,3 +90,45 @@ export function criticosPorCaja(token: string, zona?: string) {
   const qs = zona ? `?zona=${encodeURIComponent(zona)}` : '';
   return pedir<CriticosPorCaja>(token, `${API_URL}/api/monitoreo/criticos-por-caja${qs}`);
 }
+
+/** CU-14: una caida de la ONT, de que paso a caido hasta que volvio a ONLINE. */
+export interface Interrupcion {
+  desde: string;
+  /** Null si sigue caida al final del periodo. */
+  hasta: string | null;
+  estado: string;
+  minutos: number;
+  en_curso: boolean;
+  /** Ya estaba caida al empezar el periodo. */
+  empezo_antes: boolean;
+  /** Orientacion para el diagnostico, no una causa demostrada. */
+  indicio: string;
+}
+
+export interface HistorialInterrupciones {
+  numero_serie: string;
+  nombre_cliente_ext: string | null;
+  periodo: { desde: string; hasta: string };
+  eventos: { evento: string | null; timestamp: string }[];
+  interrupciones: Interrupcion[];
+  indicadores: {
+    total: number;
+    cortas: number;
+    largas: number;
+    minutos_totales: number;
+    dias_con_varias_cortas: { dia: string; cortas: number }[];
+    horario_recurrente: { hora: number; dias: number }[];
+  };
+}
+
+/**
+ * CU-14: historial de interrupciones de una ONT. Sin periodo, el Controlador
+ * devuelve los ultimos 30 dias. `desde`/`hasta` son dias YYYY-MM-DD inclusivos.
+ */
+export function historialInterrupciones(token: string, sn: string, periodo?: { desde: string; hasta: string }) {
+  const qs = periodo ? `?desde=${periodo.desde}&hasta=${periodo.hasta}` : '';
+  return pedir<HistorialInterrupciones>(
+    token,
+    `${API_URL}/api/monitoreo/ont/${encodeURIComponent(sn)}/interrupciones${qs}`,
+  );
+}

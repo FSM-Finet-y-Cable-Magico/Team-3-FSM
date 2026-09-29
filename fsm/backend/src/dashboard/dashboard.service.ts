@@ -218,6 +218,44 @@ export class DashboardService {
     return { empresa, total_clientes: totalClientes, ot_activas: otActivas };
   }
 
+  /**
+   * CU-34: las empresas lado a lado, con los mismos indicadores, para que el
+   * ADMIN las compare en una sola pantalla. Todas las empresas: el ADMIN las
+   * administra a todas, y por eso el endpoint es solo suyo.
+   */
+  async consolidado(ahora = new Date()) {
+    const hace30 = new Date(ahora.getTime() - 30 * 86_400_000);
+    const empresas = await this.listarEmpresas();
+
+    const filas = await Promise.all(
+      empresas.map(async (e) => {
+        const [clientes_activos, ot_activas, ot_por_aprobar, ot_completadas_30_dias] = await Promise.all([
+          this.prisma.cliente.count({ where: { id_empresa: e.id_empresa, estado: 'ACTIVO' } }),
+          this.prisma.orden_trabajo.count({
+            where: { id_empresa: e.id_empresa, estado: { notIn: ['COMPLETADA', 'CANCELADA'] } },
+          }),
+          this.prisma.orden_trabajo.count({ where: { id_empresa: e.id_empresa, estado: 'PENDIENTE_APROBACION' } }),
+          this.prisma.orden_trabajo.count({
+            where: { id_empresa: e.id_empresa, estado: 'COMPLETADA', fecha_completada: { gte: hace30 } },
+          }),
+        ]);
+        return { id_empresa: e.id_empresa, nombre: e.nombre, clientes_activos, ot_activas, ot_por_aprobar, ot_completadas_30_dias };
+      }),
+    );
+
+    const sumar = (k: 'clientes_activos' | 'ot_activas' | 'ot_por_aprobar' | 'ot_completadas_30_dias') =>
+      filas.reduce((a, f) => a + f[k], 0);
+    return {
+      empresas: filas,
+      totales: {
+        clientes_activos: sumar('clientes_activos'),
+        ot_activas: sumar('ot_activas'),
+        ot_por_aprobar: sumar('ot_por_aprobar'),
+        ot_completadas_30_dias: sumar('ot_completadas_30_dias'),
+      },
+    };
+  }
+
   async listarEmpresas() {
     return this.prisma.empresa.findMany({
       select: { id_empresa: true, nombre: true, rut_empresa: true },

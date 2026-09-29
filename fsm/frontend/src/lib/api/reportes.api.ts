@@ -146,3 +146,17 @@ function nombreDe(res: Response): string | null {
   const simple = /filename="([^"]+)"/i.exec(cd);
   return simple ? simple[1] : null;
 }
+
+/** CU-23: materiales usados en un dia de operacion, por material y tecnico. */
+export interface ResumenMateriales {
+  fecha: string;
+  total_ot: number;
+  /** Cierres del dia que el jefe tecnico todavia no aprueba (MOD RF-04). */
+  pendientes_aprobacion: number;
+  materiales: FilaMaterial[];
+}
+
+export function resumenMateriales(token: string, fecha?: string): Promise<ResumenMateriales> {
+  const qs = fecha ? `?fecha=${fecha}` : '';
+  return pedirJson(token, `${API_URL}/api/reportes/materiales${qs}`, undefined, 'Error al cargar el resumen de materiales');
+}

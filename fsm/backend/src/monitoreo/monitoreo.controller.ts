@@ -147,6 +147,20 @@ export class MonitoreoController {
     return this.monitoreo.detalleOnt(sn, id);
   }
 
+  /** CU-14: historial de interrupciones de una ONT en un periodo. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('ont/:sn/interrupciones')
+  interrupciones(
+    @CurrentUser() user: UserPayload,
+    @Param('sn') sn: string,
+    @Query('desde') desde?: string,
+    @Query('hasta') hasta?: string,
+    @Query('empresa') empresa?: string,
+  ) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.monitoreo.interrupcionesOnt(sn, id, { desde, hasta });
+  }
+
   /**
    * Estado de conexión de las ONT de un cliente.
    * Pensado para que G8 lo consuma (CU-49 "estado de conexión del cliente").

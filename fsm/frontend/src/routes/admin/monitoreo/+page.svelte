@@ -450,7 +450,10 @@
               <td class="px-3 py-2 text-right tabular-nums {clasePotencia(o.potencia_actual_dbm)}">
                 {o.potencia_actual_dbm == null ? '--' : `${o.potencia_actual_dbm} dBm`}
               </td>
-              <td class="px-3 py-2 font-mono text-xs text-slate-700">{o.numero_serie}</td>
+              <td class="px-3 py-2 font-mono text-xs">
+                <!-- CU-14: el historial de interrupciones de esta ONT. -->
+                <a href={`/admin/monitoreo/ont/${encodeURIComponent(o.numero_serie)}`} class="btn-texto font-mono text-xs">{o.numero_serie}</a>
+              </td>
               <td class="px-3 py-2 text-slate-900">{o.nombre_cliente_ext ?? '--'}</td>
               <td class="px-3 py-2 text-slate-700">{o.zona ?? '--'}</td>
               <td class="px-3 py-2 text-slate-700">{o.olt_externo ?? '--'}</td>

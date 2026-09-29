@@ -113,6 +113,8 @@
       <p class="text-sm text-slate-600 mt-0.5">
         Trabajo completado, fallas, materiales y rendimiento por técnico.
       </p>
+      <!-- CU-23: el resumen de materiales tiene su propia pantalla. -->
+      <a href="/admin/reportes/materiales" class="btn-texto text-sm mt-1">Resumen diario de materiales →</a>
     </div>
 
     {#if hayAlgo}

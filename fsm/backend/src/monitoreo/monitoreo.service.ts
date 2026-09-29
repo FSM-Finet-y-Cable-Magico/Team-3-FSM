@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RegistroOntService } from './registro-ont.service.js';
 import { MonitoreoGateway } from './monitoreo.gateway.js';
@@ -9,6 +9,15 @@ import {
   type EstadoConexion,
 } from './fuente/fuente-monitoreo.js';
 import { potenciaFueraDeRango } from './monitoreo.constants.js';
+import { analizarInterrupciones } from './interrupciones.js';
+import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
+
+/** CU-14: la vista inicial comprende los ultimos 30 dias. */
+const DIAS_HISTORIAL_POR_DEFECTO = 30;
+/** Tope del periodo personalizado: mas no entra en una tabla que se lea. */
+const DIAS_HISTORIAL_MAXIMO = 90;
+/** Tope de eventos por consulta. Un mes de una ONT normal son decenas. */
+const MAX_EVENTOS_HISTORIAL = 5000;
 
 export interface ResumenIngesta {
   fuente: string;
@@ -189,6 +198,70 @@ export class MonitoreoService {
     }
 
     return { ...this.aVista(registro), historial_conexion: registro.historial };
+  }
+
+  /**
+   * CU-14 / RF-12: historial de conexiones y desconexiones de una ONT en un
+   * periodo, con las interrupciones armadas (inicio, fin, duracion, indicio) y
+   * los indicadores de patron del CU. Ver interrupciones.ts.
+   *
+   * `desde`/`hasta` son dias (YYYY-MM-DD, inclusivos) en la zona de operacion;
+   * sin ellos, los ultimos 30 dias hasta ahora.
+   */
+  async interrupcionesOnt(
+    sn: string,
+    id_empresa: number,
+    periodo: { desde?: string; hasta?: string },
+    ahora = new Date(),
+  ) {
+    const { desde, hasta } = this.periodoHistorial(periodo, ahora);
+
+    const registro = await this.prisma.registro_ont.findUnique({ where: { numero_serie: sn } });
+    if (!registro || registro.id_empresa !== id_empresa) {
+      throw new NotFoundException(`ONT ${sn} no vista por el monitoreo`);
+    }
+
+    const [previo, eventos] = await Promise.all([
+      this.prisma.historial_conexion_ont.findFirst({
+        where: { id_registro_ont: registro.id_registro_ont, timestamp: { lt: desde } },
+        orderBy: { timestamp: 'desc' },
+        select: { evento: true },
+      }),
+      this.prisma.historial_conexion_ont.findMany({
+        where: { id_registro_ont: registro.id_registro_ont, timestamp: { gte: desde, lt: hasta } },
+        orderBy: { timestamp: 'asc' },
+        select: { evento: true, timestamp: true },
+        take: MAX_EVENTOS_HISTORIAL,
+      }),
+    ]);
+
+    return {
+      numero_serie: registro.numero_serie,
+      nombre_cliente_ext: registro.nombre_cliente_ext,
+      periodo: { desde, hasta },
+      eventos,
+      ...analizarInterrupciones({ previo: previo?.evento ?? null, eventos, desde, hasta }),
+    };
+  }
+
+  private periodoHistorial(p: { desde?: string; hasta?: string }, ahora: Date) {
+    if (!p.desde && !p.hasta) {
+      return { desde: new Date(ahora.getTime() - DIAS_HISTORIAL_POR_DEFECTO * 86_400_000), hasta: ahora };
+    }
+    const dia = /^\d{4}-\d{2}-\d{2}$/;
+    if (!p.desde || !dia.test(p.desde) || (p.hasta && !dia.test(p.hasta))) {
+      throw new BadRequestException('Periodo invalido: se espera desde y hasta como YYYY-MM-DD');
+    }
+    // Mediodia UTC cae dentro del dia calendario buscado en cualquier zona.
+    const { desde } = rangoDiaOperacion(new Date(`${p.desde}T12:00:00Z`));
+    const { hasta } = p.hasta ? rangoDiaOperacion(new Date(`${p.hasta}T12:00:00Z`)) : { hasta: ahora };
+    if (isNaN(desde.getTime()) || isNaN(hasta.getTime()) || hasta <= desde) {
+      throw new BadRequestException('Periodo invalido: hasta no puede ser anterior a desde');
+    }
+    if ((hasta.getTime() - desde.getTime()) / 86_400_000 > DIAS_HISTORIAL_MAXIMO + 1) {
+      throw new BadRequestException(`El periodo no puede superar ${DIAS_HISTORIAL_MAXIMO} dias`);
+    }
+    return { desde, hasta };
   }
 
   /** Estado de conexión de las ONT de un cliente. Pensado para G8 (CU-49/51). */

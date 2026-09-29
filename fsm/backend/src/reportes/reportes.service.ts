@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { rangoDiaOperacion, ZONA_OPERACION } from '../common/utils/dia-habil.util.js';
 import {
   DIAS_VENTANA_RECURRENCIA,
   UMBRAL_REPARACIONES_RECURRENTES,
@@ -214,6 +215,46 @@ export class ReportesService {
     }
 
     return reporte;
+  }
+
+  /**
+   * CU-23, resumen diario de materiales: que se uso en terreno en un dia de
+   * operacion (hora de Chile), por material y por tecnico.
+   *
+   * Cuenta tambien los cierres que esperan aprobacion (MOD RF-04): el material
+   * ya se gasto en terreno aunque el jefe tecnico no haya aprobado. Si lo
+   * rechaza, el cierre se deshace y su material sale del resumen solo.
+   *
+   * `fecha` es YYYY-MM-DD; sin ella, hoy.
+   */
+  async resumenMateriales(id_empresa: number, fecha?: string) {
+    if (fecha !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      throw new BadRequestException('Fecha inválida: se espera YYYY-MM-DD');
+    }
+    // Mediodia UTC cae dentro del dia calendario buscado en cualquier zona.
+    const referencia = fecha ? new Date(`${fecha}T12:00:00Z`) : new Date();
+    if (Number.isNaN(referencia.getTime())) throw new BadRequestException('Fecha inválida: se espera YYYY-MM-DD');
+    const { desde, hasta } = rangoDiaOperacion(referencia);
+
+    const ots = await this.prisma.orden_trabajo.findMany({
+      where: {
+        id_empresa,
+        estado: { in: ['COMPLETADA', 'PENDIENTE_APROBACION'] },
+        fecha_completada: { gte: desde, lt: hasta },
+      },
+      select: {
+        estado: true,
+        tecnico: { select: { nombre_completo: true } },
+        materiales: { select: { cantidad: true, tipo_equipo: { select: { nombre: true } } } },
+      },
+    });
+
+    return {
+      fecha: fecha ?? new Intl.DateTimeFormat('en-CA', { timeZone: ZONA_OPERACION }).format(referencia),
+      total_ot: ots.length,
+      pendientes_aprobacion: ots.filter((o) => o.estado === 'PENDIENTE_APROBACION').length,
+      materiales: this.agruparMateriales(ots),
+    };
   }
 
   // ---------------------------------------------------------------------------
