@@ -96,6 +96,20 @@ export class IntegracionesController {
     );
   }
 
+  /**
+   * P0-b del acuerdo con G8: estado de una OT. Va DESPUES de `ordenes/cierres`:
+   * Nest resuelve las rutas en el orden en que se declaran, y antes que ella
+   * este `:id` se tragaria "cierres" como id.
+   */
+  @Get('ordenes/:id')
+  async orden(
+    @Req() req: ConScope,
+    @Param('id') id: string,
+    @Query('id_empresa') id_empresa: string,
+  ) {
+    return this.ok(await this.svc.orden(req.apiScope, +id, +id_empresa));
+  }
+
   /** Reconciliación: payload completo de un cierre (igual que el webhook). */
   @Get('ordenes/:id/cierre')
   async cierre(

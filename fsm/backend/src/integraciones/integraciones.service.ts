@@ -147,6 +147,59 @@ export class IntegracionesService {
   }
 
   /**
+   * P0-b del acuerdo con G8: estado y datos tecnicos de UNA OT, en cualquier
+   * estado. Es la consulta oficial de seguimiento mientras la OT no se cierra;
+   * el GET de `/cierre` solo sirve despues.
+   *
+   * No trae cliente ni persona: G8 ya los tiene, y lo que necesita saber aca es
+   * en que va la OT. `origen_integracion` es null en las OT creadas en G3.
+   */
+  async orden(scope: ApiScope, id_ot: number, id_empresa: number) {
+    if (!Number.isInteger(id_ot) || id_ot <= 0) throw new BadRequestException('id de OT invalido');
+    this.exigirEmpresa(scope, id_empresa);
+
+    const ot = await this.prisma.orden_trabajo.findFirst({
+      where: { id_ot, id_empresa },
+      select: {
+        id_ot: true,
+        id_empresa: true,
+        tipo_ot: true,
+        prioridad: true,
+        estado: true,
+        fecha_creacion: true,
+        fecha_programada: true,
+        fecha_completada: true,
+        tecnico: { select: { id_usuario: true, nombre_completo: true } },
+        solicitud_integracion: {
+          select: {
+            request_id: true,
+            trace_id: true,
+            id_contrato_externo: true,
+            id_prospecto_externo: true,
+            id_plan_externo: true,
+          },
+        },
+      },
+    });
+    if (!ot) throw new NotFoundException(`OT ${id_ot} no encontrada en la empresa ${id_empresa}`);
+
+    const { solicitud_integracion: s, ...resto } = ot;
+    return {
+      ...resto,
+      tecnico: ot.tecnico ?? null,
+      origen_integracion: s
+        ? {
+            request_id: s.request_id,
+            trace_id: s.trace_id,
+            id_contrato: s.id_contrato_externo,
+            id_prospecto: s.id_prospecto_externo,
+            id_plan: s.id_plan_externo,
+          }
+        : null,
+    };
+  }
+
+  /**
    * Payload completo de un cierre — RECONCILIACIÓN. Devuelve exactamente lo
    * mismo que el webhook `fan-out`. G1 lo consume si el webhook falló.
    */
