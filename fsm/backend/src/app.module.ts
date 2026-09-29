@@ -15,6 +15,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 import { ConfiguracionModule } from './configuracion/configuracion.module.js';
 import { TicketsModule } from './tickets/tickets.module.js';
+import { AuditoriaModule } from './auditoria/auditoria.module.js';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { TicketsModule } from './tickets/tickets.module.js';
     NotificacionesModule,
     ConfiguracionModule,
     TicketsModule,
+    AuditoriaModule,
   ],
   providers: [
     // Ambos guards son globales: todo endpoint nace exigiendo token y rol, y

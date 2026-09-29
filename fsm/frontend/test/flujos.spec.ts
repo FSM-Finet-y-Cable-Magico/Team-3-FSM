@@ -1444,3 +1444,50 @@ test('CU-31: el tecnico puede cerrar sin registrar la llamada, que la hace despu
   await expect(page).toHaveURL(/\/terreno$/);
   expect(registro.cierres[0]).not.toHaveProperty('resultado_llamada');
 });
+
+// CU-41: consulta del log de auditoria.
+test('CU-41: el ADMIN filtra el log de auditoria y lo exporta', async ({ page }) => {
+  await preparar(page);
+  const consultas: string[] = [];
+  await page.route('http://127.0.0.1:3000/api/auditoria/acciones', route => route.fulfill({ json: ['CREAR_OT', 'RECLASIFICAR_TICKET'] }));
+  await page.route(/\/api\/auditoria(\?.*)?$/, route => {
+    const url = new URL(route.request().url());
+    consultas.push(url.search);
+    const vacio = url.searchParams.get('entidad') === 'usuario';
+    return route.fulfill({ json: {
+      data: vacio ? [] : [{ id_log: '123456789012345678', id_usuario: 3, usuario: 'Jefe Técnico', accion: 'RECLASIFICAR_TICKET',
+        entidad_afectada: 'ticket', id_entidad_afectada: 7, valor_anterior: { id_categoria: 1 }, valor_nuevo: { id_categoria: 2 },
+        fecha_hora: '2026-09-29T15:00:00.000Z' }],
+      total: vacio ? 0 : 1, page: 1, limit: 50,
+    } });
+  });
+  let exportada = '';
+  await page.route(/\/api\/auditoria\/exportar/, route => {
+    exportada = new URL(route.request().url()).search;
+    return route.fulfill({ body: 'xlsx', headers: {
+      'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'content-disposition': 'attachment; filename="Auditoria_FSM_2026-09-29.xlsx"',
+      // Lo mismo que expone el backend por CORS (main.ts).
+      'access-control-expose-headers': 'Content-Disposition',
+    } });
+  });
+  await login(page, 'admin');
+  await page.getByRole('link', { name: 'Auditoría' }).click();
+
+  const fila = page.getByRole('row', { name: /RECLASIFICAR_TICKET/ });
+  await expect(fila).toContainText('Jefe Técnico');
+  await expect(fila).toContainText('"id_categoria":2');
+
+  await page.getByLabel('Entidad').selectOption('ticket');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  await expect.poll(() => consultas.at(-1)).toContain('entidad=ticket');
+
+  const descarga = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Exportar a Excel' }).click();
+  expect((await descarga).suggestedFilename()).toBe('Auditoria_FSM_2026-09-29.xlsx');
+  expect(exportada).toContain('entidad=ticket');
+
+  await page.getByLabel('Entidad').selectOption('usuario');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  await expect(page.getByText('No se encontraron eventos con los filtros seleccionados.')).toBeVisible();
+});
