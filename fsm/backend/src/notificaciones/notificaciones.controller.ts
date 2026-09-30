@@ -2,6 +2,8 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import { NotificacionesService } from './notificaciones.service.js';
 import { CrearPlantillaDto, EditarPlantillaDto } from './dto/plantilla.dto.js';
 import { NotificarAlertaDto } from './dto/notificar.dto.js';
+import { AvisoMantencionDto } from './dto/aviso-mantencion.dto.js';
+import { AvisosMantencionService } from './avisos-mantencion.service.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import {
@@ -19,7 +21,31 @@ interface UsuarioAutenticado {
 
 @Controller('notificaciones')
 export class NotificacionesController {
-  constructor(private readonly svc: NotificacionesService) {}
+  constructor(
+    private readonly svc: NotificacionesService,
+    private readonly avisos: AvisosMantencionService,
+  ) {}
+
+  /**
+   * CU-50: programa el aviso a los clientes de la caja en intervencion, 24 h
+   * antes de la fecha de la OT. Con menos de 24 h pide `inmediato: true`.
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Post('mantencion/:id_ot')
+  programarAvisoMantencion(
+    @Param('id_ot') id_ot: string,
+    @Body() dto: AvisoMantencionDto,
+    @CurrentUser() user: UsuarioAutenticado,
+  ) {
+    return this.avisos.programar(+id_ot, dto, user.id_empresa, user.userId);
+  }
+
+  /** CU-50: recordatorio del dashboard, avisos de las proximas 24 h. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('mantencion/proximos')
+  avisosProximos(@CurrentUser() user: UsuarioAutenticado) {
+    return this.avisos.proximos(user.id_empresa);
+  }
 
   /** Canales, eventos y variables, para poblar el formulario de plantillas. */
   @Roles('ADMIN', 'JEFE_TECNICO')

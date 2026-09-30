@@ -1665,3 +1665,36 @@ test('RF-54: el listado de clientes filtra por zona', async ({ page }) => {
   await page.getByLabel('Zona').press('Enter');
   await expect.poll(() => consultas.at(-1)).toContain('zona=Norte');
 });
+
+// CU-50: aviso anticipado de mantencion.
+test('CU-50: desde una OT programada se avisa a los clientes 24 h antes, y con menos se pide confirmar', async ({ page }) => {
+  await preparar(page);
+  const pedidos: unknown[] = [];
+  const futura = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  await page.route('http://127.0.0.1:3000/api/ordenes/1', route => route.fulfill({ json: { ...ot, estado: 'ASIGNADA', fecha_programada: futura } }));
+  await page.route('http://127.0.0.1:3000/api/notificaciones/plantillas', route => route.fulfill({ json: [
+    { id_plantilla: 9, id_empresa: 1, tipo_evento: 'MANTENCION_PROGRAMADA', canal: 'SMS', contenido_texto: 'Hola', tiempo_estimado_reparacion: null, activa: true, es_base: false, editable: true, variables_usadas: [] },
+    { id_plantilla: 5, id_empresa: 1, tipo_evento: 'FALLA', canal: 'SMS', contenido_texto: 'Hola', tiempo_estimado_reparacion: null, activa: true, es_base: false, editable: true, variables_usadas: [] },
+  ] }));
+  let primera = true;
+  await page.route(/\/api\/notificaciones\/mantencion\/1$/, route => {
+    const cuerpo = route.request().postDataJSON();
+    pedidos.push(cuerpo);
+    if (primera && !cuerpo.inmediato) {
+      primera = false;
+      return route.fulfill({ status: 400, json: { message: 'El tiempo disponible es menor a 24 horas. La notificación se enviará de inmediato si confirma.' } });
+    }
+    return route.fulfill({ status: 201, json: { id_ot: 1, estado: cuerpo.inmediato ? 'SIMULADO' : 'PROGRAMADO', envio_en: futura, destinatarios: 12, sin_contacto: 1 } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/ot/1');
+
+  await page.getByRole('button', { name: 'Avisar mantención' }).click();
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo.getByLabel('Plantilla')).toHaveValue('9');
+  await dialogo.getByRole('button', { name: 'Programar aviso' }).click();
+
+  await expect(dialogo.getByText('menor a 24 horas')).toBeVisible();
+  await dialogo.getByRole('button', { name: 'Enviar de inmediato' }).click();
+  await expect(page.getByText('Aviso enviado a 12 clientes')).toBeVisible();
+  expect(pedidos).toEqual([{ id_plantilla: 9 }, { id_plantilla: 9, inmediato: true }]);
+});

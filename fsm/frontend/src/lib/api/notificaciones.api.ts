@@ -145,3 +145,26 @@ export const descartarAlertaDetenida = (token: string, id_ot: number) =>
     `${API_URL}/api/notificaciones/ot-detenidas/${id_ot}/descartar`,
     { method: 'POST' },
   );
+
+/** CU-50: resultado de programar el aviso de mantencion de una OT. */
+export interface AvisoMantencion {
+  id_ot: number;
+  estado: 'PROGRAMADO' | 'SIMULADO';
+  envio_en: string;
+  destinatarios: number;
+  sin_contacto: number;
+}
+
+/**
+ * CU-50: avisa a los clientes de la caja 24 h antes de la OT. Con menos de 24 h
+ * el Controlador responde 400 y hay que confirmar con `inmediato`.
+ */
+export const programarAvisoMantencion = (token: string, id_ot: number, id_plantilla: number, inmediato = false) =>
+  pedir<AvisoMantencion>(token, `${API_URL}/api/notificaciones/mantencion/${id_ot}`, {
+    method: 'POST',
+    body: JSON.stringify(inmediato ? { id_plantilla, inmediato: true } : { id_plantilla }),
+  });
+
+/** CU-50: recordatorio del dashboard, avisos que salen en las proximas 24 h. */
+export const avisosProximos = (token: string) =>
+  pedir<{ id_ot: number; envio_en: string; clientes: number }[]>(token, `${API_URL}/api/notificaciones/mantencion/proximos`);
