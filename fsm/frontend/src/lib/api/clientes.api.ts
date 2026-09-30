@@ -12,6 +12,11 @@ export interface ClienteFicha {
   obs_conflictivo?: string;
   /** MOD RF-32: semaforo de riesgo. El motivo es obs_conflictivo. */
   nivel_riesgo?: import('$lib/utils/riesgo').NivelRiesgo;
+  /**
+   * RF-53. El catalogo de zonas es del Grupo 2 (D-02); mientras no lo exponga,
+   * la zona sale de la ONT (MONITOREO) o de la caja del puerto (CAJA_NAP).
+   */
+  zona?: { nombre: string; origen: 'MONITOREO' | 'CAJA_NAP' } | null;
   fecha_creacion: string;
   direccion_principal?: {
     direccion_completa: string;
@@ -170,13 +175,14 @@ export async function listarClientes(
   token: string,
   page: number = 1,
   limit: number = 20,
-  filtros?: { nombre?: string; rut?: string; telefono?: string; direccion?: string },
+  filtros?: { nombre?: string; rut?: string; telefono?: string; direccion?: string; zona?: string },
 ): Promise<ClientesPaginados> {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (filtros?.nombre) params.set('nombre', filtros.nombre);
   if (filtros?.rut) params.set('rut', filtros.rut);
   if (filtros?.telefono) params.set('telefono', filtros.telefono);
   if (filtros?.direccion) params.set('direccion', filtros.direccion);
+  if (filtros?.zona) params.set('zona', filtros.zona);
   return fetchApi(token, `${API_URL}/api/clientes?${params.toString()}`);
 }
 

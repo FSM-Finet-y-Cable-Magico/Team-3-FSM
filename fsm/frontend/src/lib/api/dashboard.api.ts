@@ -13,6 +13,8 @@ export interface IndicadoresDashboard {
     CANCELADA: number;
   };
   ot_criticas_activas: number;
+  /** MOD RF-37: cierres rechazados hoy (MOD RF-04). */
+  ot_rechazadas_hoy?: number;
   clientes_reparacion_recurrente: number;
   tecnicos: {
     id_usuario: number;

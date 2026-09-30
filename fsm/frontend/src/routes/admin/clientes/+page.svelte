@@ -33,12 +33,14 @@
   let rutFiltro = $state('');
   let telefonoFiltro = $state('');
   let direccionFiltro = $state('');
+  // RF-54
+  let zonaFiltro = $state('');
   let buscando = $state(false);
   // RutInput mantiene su propio texto formateado: se remonta para limpiarlo.
   let rutInputKey = $state(0);
 
   const hayFiltros = $derived(
-    Boolean(nombreFiltro || rutFiltro || telefonoFiltro || direccionFiltro),
+    Boolean(nombreFiltro || rutFiltro || telefonoFiltro || direccionFiltro || zonaFiltro),
   );
 
   onMount(() => {
@@ -71,6 +73,7 @@
         rut: rutFiltro || undefined,
         telefono: telefonoFiltro || undefined,
         direccion: direccionFiltro || undefined,
+        zona: zonaFiltro || undefined,
       });
       clientes = result.data;
       total = result.total;
@@ -94,6 +97,7 @@
     rutFiltro = '';
     telefonoFiltro = '';
     direccionFiltro = '';
+    zonaFiltro = '';
     rutInputKey++;
     buscar();
   }
@@ -166,6 +170,10 @@
     <div class="flex-1 min-w-[180px]">
       <label for="filtro-direccion" class="block text-xs font-medium text-gray-500 mb-1">Dirección</label>
       <input id="filtro-direccion" type="text" bind:value={direccionFiltro} onkeydown={alPresionarEnter} placeholder="Dirección parcial..." class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
+    </div>
+    <div class="flex-1 min-w-[140px]">
+      <label for="filtro-zona" class="block text-xs font-medium text-gray-500 mb-1">Zona</label>
+      <input id="filtro-zona" type="text" bind:value={zonaFiltro} onkeydown={alPresionarEnter} placeholder="Zona..." class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm" />
     </div>
     <button
       onclick={buscar}

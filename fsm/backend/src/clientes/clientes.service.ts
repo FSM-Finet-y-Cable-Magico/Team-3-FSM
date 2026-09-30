@@ -32,6 +32,8 @@ export interface FiltrosClientes {
   rut?: string;
   telefono?: string;
   direccion?: string;
+  /** RF-54. */
+  zona?: string;
 }
 const MAX_CONTRATOS_ACTIVOS = 50;
 
@@ -170,6 +172,8 @@ export class ClientesService {
         obs_conflictivo: cliente.obs_conflictivo,
         // MOD RF-32: el semaforo. El motivo es el de obs_conflictivo.
         nivel_riesgo: await this.nivelDe(cliente.id_cliente),
+        // RF-53: zona del servicio, con su origen (ver zonaDe).
+        zona: await this.zonaDe(cliente.id_cliente, id_empresa),
         fecha_creacion: cliente.fecha_creacion,
         direccion_principal: cliente.direcciones[0] ?? null,
         contratos_activos: cliente.contratos.map((contrato) => ({
@@ -448,6 +452,28 @@ export class ClientesService {
     return this.cambiarNivelRiesgo(id_cliente, { nivel: NIVEL_RIESGO.ROJO, motivo: dto.motivo }, userId, id_empresa);
   }
 
+  /**
+   * RF-53: zona del servicio del cliente. El catalogo de zonas es del Grupo 2
+   * (acta, D-02) y todavia no se expone; mientras tanto la zona sale de lo que
+   * G3 ya sabe, y se dice de donde:
+   *  - MONITOREO: la que informa SmartOLT para la ONT del cliente;
+   *  - CAJA_NAP: la de la caja de su puerto.
+   * Cuando G2 exponga su catalogo, esto se mapea a su zona.
+   */
+  async zonaDe(id_cliente: number, id_empresa: number) {
+    const ont = await this.prisma.registro_ont.findFirst({
+      where: { id_cliente, id_empresa, zona: { not: null } },
+      select: { zona: true },
+    });
+    if (ont?.zona) return { nombre: ont.zona, origen: 'MONITOREO' as const };
+    const puerto = await this.prisma.puerto_nap.findFirst({
+      where: { id_cliente_asociado: id_cliente, caja_nap: { id_empresa, zona: { not: null } } },
+      select: { caja_nap: { select: { zona: true } } },
+    });
+    if (puerto?.caja_nap?.zona) return { nombre: puerto.caja_nap.zona, origen: 'CAJA_NAP' as const };
+    return null;
+  }
+
   private async nivelDe(id_cliente: number): Promise<NivelRiesgo> {
     const filas = await this.prisma.lista_negra.findMany({
       where: { id_cliente },
@@ -572,6 +598,19 @@ export class ClientesService {
     const rut = limpiar(filtros.rut);
     const telefono = limpiar(filtros.telefono);
     const direccion = limpiar(filtros.direccion);
+    const zona = limpiar(filtros.zona);
+
+    // RF-54: zona. Sale de la ONT (SmartOLT) o de la caja del puerto; ver zonaDe.
+    // registro_ont no tiene relacion con cliente en el esquema, asi que sus ids
+    // se buscan antes.
+    const porZonaOnt = zona
+      ? (
+          await this.prisma.registro_ont.findMany({
+            where: { id_empresa, id_cliente: { not: null }, zona: { contains: zona, mode: 'insensitive' } },
+            select: { id_cliente: true },
+          })
+        ).map((r) => r.id_cliente as number)
+      : [];
 
     // id_empresa va primero y sin condicion: es lo que impide que un usuario de
     // una empresa vea clientes de la otra, y ningun filtro puede relajarlo.
@@ -589,6 +628,12 @@ export class ClientesService {
         direcciones: {
           some: { direccion_completa: { contains: direccion, mode: 'insensitive' } },
         },
+      }),
+      ...(zona && {
+        OR: [
+          { id_cliente: { in: porZonaOnt } },
+          { puertos_nap: { some: { caja_nap: { zona: { contains: zona, mode: 'insensitive' } } } } },
+        ],
       }),
     };
 

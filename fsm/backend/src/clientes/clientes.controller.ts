@@ -23,6 +23,7 @@ export class ClientesController {
     @Query('rut') rut?: string,
     @Query('telefono') telefono?: string,
     @Query('direccion') direccion?: string,
+    @Query('zona') zona?: string,
   ) {
     // page y limit se pasan crudos: normalizarPaginacion en el servicio ya
     // recorta el rango y descarta lo que no sea un numero utilizable.
@@ -31,6 +32,7 @@ export class ClientesController {
       rut,
       telefono,
       direccion,
+      zona,
     });
   }
 

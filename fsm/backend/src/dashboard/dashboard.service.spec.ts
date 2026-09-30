@@ -39,6 +39,7 @@ describe('dashboard · contador de clientes con reparaciones recurrentes', () =>
             orden_trabajo: { groupBy, count, findMany },
             usuario: { findMany },
             cliente: { count },
+            historial_ot: { count: jest.fn(async () => 0) },
             $queryRaw: jest.fn(async () => [] as unknown[]),
           },
         },
@@ -126,5 +127,45 @@ describe('dashboard · contador de clientes con reparaciones recurrentes', () =>
     );
     const r = await service.indicadoresDelDia(1);
     expect(r.ot_por_estado.PENDIENTE_APROBACION).toBe(4);
+  });
+});
+
+describe('dashboard · cierres rechazados del dia (MOD RF-37)', () => {
+  const count = jest.fn(async (_a: any) => 2);
+  let service: DashboardService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const mod = await Test.createTestingModule({
+      providers: [
+        DashboardService,
+        {
+          provide: PrismaService,
+          useValue: {
+            orden_trabajo: { groupBy: jest.fn(async () => []), count: jest.fn(async () => 0), findMany: jest.fn(async () => []) },
+            usuario: { findMany: jest.fn(async () => []) },
+            cliente: { count: jest.fn(async () => 0) },
+            historial_ot: { count },
+            $queryRaw: jest.fn(async () => [] as unknown[]),
+          },
+        },
+        { provide: SinReagendarService, useValue: { contarVencidas: jest.fn(async () => 0) } },
+      ],
+    }).compile();
+    service = mod.get(DashboardService);
+  });
+
+  it('cuenta los rechazos de hoy: PENDIENTE_APROBACION a EN_CURSO, de la empresa', async () => {
+    // El acta pidio este indicador junto a los pendientes de aprobacion.
+    const r = await service.indicadoresDelDia(1);
+    expect(r.ot_rechazadas_hoy).toBe(2);
+    expect(count.mock.calls[0][0]).toMatchObject({
+      where: {
+        estado_anterior: 'PENDIENTE_APROBACION',
+        estado_nuevo: 'EN_CURSO',
+        orden_trabajo: { id_empresa: 1 },
+        fecha_hora: { gte: expect.any(Date), lt: expect.any(Date) },
+      },
+    });
   });
 });

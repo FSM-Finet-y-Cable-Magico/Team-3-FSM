@@ -255,6 +255,17 @@
                   <p class="text-sm font-mono">{cliente.rut}</p>
                 </div>
                 <div>
+                  <span class="text-xs text-gray-500 uppercase">Zona</span>
+                  {#if cliente.zona}
+                    <p class="text-sm">
+                      {cliente.zona.nombre}
+                      <span class="text-xs text-gray-500">({cliente.zona.origen === 'MONITOREO' ? 'según el monitoreo' : 'según la caja NAP'})</span>
+                    </p>
+                  {:else}
+                    <p class="text-sm text-gray-500">Sin zona registrada</p>
+                  {/if}
+                </div>
+                <div>
                   <span class="text-xs text-gray-500 uppercase">Estado</span>
                   <span class="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {estadoColor(cliente.estado)}">
                     {cliente.estado}

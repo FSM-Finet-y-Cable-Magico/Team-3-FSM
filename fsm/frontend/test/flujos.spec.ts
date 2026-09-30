@@ -1642,3 +1642,26 @@ test('CU-25: la baja muestra lo que se desconecta, pide confirmar la deuda y enl
   await expect(page.getByRole('link', { name: 'OT #501' })).toBeVisible();
   expect(bajas).toEqual([{ motivo: 'MUDANZA_SIN_COBERTURA', confirma_sin_deuda: true }]);
 });
+
+// RF-53 y RF-54: zona del cliente.
+test('RF-53: la ficha muestra la zona y de donde sale', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/clientes/rut/12345678-5', route =>
+    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: 'VERDE', zona: { nombre: 'Norte', origen: 'MONITOREO' }, contratos_activos: [] }, historial_ot: [] } }));
+  await login(page, 'admin'); await page.goto('/admin/clientes/12345678-5');
+  await expect(page.getByText('Norte')).toBeVisible();
+  await expect(page.getByText('según el monitoreo')).toBeVisible();
+});
+
+test('RF-54: el listado de clientes filtra por zona', async ({ page }) => {
+  await preparar(page);
+  const consultas: string[] = [];
+  await page.route(/\/api\/clientes\?/, route => {
+    consultas.push(new URL(route.request().url()).search);
+    return route.fulfill({ json: { data: [], total: 0, page: 1, limit: 20 } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/clientes');
+  await page.getByLabel('Zona').fill('Norte');
+  await page.getByLabel('Zona').press('Enter');
+  await expect.poll(() => consultas.at(-1)).toContain('zona=Norte');
+});

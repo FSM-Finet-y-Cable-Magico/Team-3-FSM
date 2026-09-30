@@ -38,6 +38,7 @@ export class DashboardService {
       completadasHoy,
       tiempoPromedioCierre,
       sinReagendarVencidas,
+      rechazadasHoy,
     ] = await Promise.all([
       this.prisma.orden_trabajo.groupBy({
         by: ['estado'],
@@ -146,6 +147,17 @@ export class DashboardService {
       `,
     
       this.sinReagendar.contarVencidas(id_empresa),
+
+      // MOD RF-37: cierres rechazados hoy. El rechazo (MOD RF-04) deja en el
+      // historial PENDIENTE_APROBACION → EN_CURSO; ninguna otra cosa lo hace.
+      this.prisma.historial_ot.count({
+        where: {
+          estado_anterior: 'PENDIENTE_APROBACION',
+          estado_nuevo: 'EN_CURSO',
+          orden_trabajo: { id_empresa },
+          fecha_hora: { gte: inicio_dia, lt: fin_dia },
+        },
+      }),
 ]);
 
     const ot_por_estado = {
@@ -198,6 +210,7 @@ export class DashboardService {
       // usa el listado, para que no nazca una segunda version del criterio.
       ot_sin_reagendar_30_dias: sinReagendarVencidas,
       ot_completadas_hoy: completadasHoy,
+      ot_rechazadas_hoy: rechazadasHoy,
       tiempo_promedio_cierre: tiempoPromedioCierre[0]?.horas_promedio ?? null,
       fecha_actualizacion: new Date(),
     };

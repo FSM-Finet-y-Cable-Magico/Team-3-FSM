@@ -247,6 +247,14 @@
         clickable={true}
         href="/admin/ot?estado=PENDIENTE_CLIENTE_AUSENTE"
       />
+      <!-- MOD RF-37: cierres rechazados hoy, junto a los que esperan. -->
+      <StatCard
+        titulo="Cierres Rechazados"
+        valor={indicadores.ot_rechazadas_hoy ?? 0}
+        subtitulo="hoy"
+        color={(indicadores.ot_rechazadas_hoy ?? 0) > 0 ? 'red' : 'gray'}
+        icono={ICONO_EXCLAM}
+      />
       <!-- MOD RF-04: lo que el jefe tecnico tiene que revisar. -->
       <StatCard
         titulo="Cierres por Aprobar"
