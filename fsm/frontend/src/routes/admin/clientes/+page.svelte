@@ -129,6 +129,9 @@
     <p class="text-slate-500 text-sm mt-0.5">Gestión de clientes y fichas</p>
   </div>
   {#if rol !== 'TECNICO'}
+    <div class="flex items-center gap-3">
+    <!-- CU-07 -->
+    <a href="/admin/clientes/direccion" class="btn btn-secundario">Buscar por dirección</a>
     <a
       href="/admin/clientes/nuevo"
       class="btn btn-primario"
@@ -138,6 +141,7 @@
       </svg>
       Nuevo Cliente
     </a>
+    </div>
   {/if}
 </div>
 

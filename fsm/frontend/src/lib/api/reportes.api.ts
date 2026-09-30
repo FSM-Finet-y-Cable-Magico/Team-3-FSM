@@ -137,7 +137,7 @@ export async function descargar(
 }
 
 /** Saca el nombre que fija el backend, para no reconstruirlo distinto acá. */
-function nombreDe(res: Response): string | null {
+export function nombreDe(res: Response): string | null {
   const cd = res.headers.get('content-disposition');
   if (!cd) return null;
   // `filename*` va primero: es el que conserva las tildes.
