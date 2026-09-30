@@ -69,6 +69,24 @@ export interface FiltroConsulta {
   zona?: string;
 }
 
+/**
+ * Una caja del catálogo de la fuente (SmartOLT "ODB").
+ *
+ * Es el catálogo, no lo que reportan las ONT: trae las cajas aunque no cuelgue
+ * ningún cliente de ellas, y sobre todo trae `capacidad`, que el censo de ONT
+ * no dice por ningún lado.
+ */
+export interface OdbInfo {
+  /** Id en la fuente. Estable, a diferencia del nombre. */
+  id_externo: string;
+  nombre: string;
+  /** Puertos del splitter. SmartOLT lo llama `nr_of_ports`. */
+  capacidad: number | null;
+  zona: string | null;
+  lat: number | null;
+  lon: number | null;
+}
+
 export interface FuenteMonitoreo {
   /** Nombre legible de la implementación, para los logs. */
   readonly nombre: string;
@@ -81,6 +99,15 @@ export interface FuenteMonitoreo {
 
   /** Mediciones actuales (potencia + estado). Lo que llama el poller. */
   listarLecturas(filtro?: FiltroConsulta): Promise<LecturaOnt[]>;
+
+  /**
+   * Catálogo de cajas. OPCIONAL a propósito: solo SmartOLT lo expone, y el CSV
+   * y el mock no tienen de dónde sacarlo. Quien lo use tiene que tolerar que no
+   * exista, en vez de obligar a las otras dos fuentes a inventar un catálogo
+   * vacío que después nadie sabe si está vacío porque no hay o porque no se
+   * puede consultar.
+   */
+  listarOdbs?(): Promise<OdbInfo[]>;
 }
 
 /** Token de inyección: `@Inject(FUENTE_MONITOREO)`. */
