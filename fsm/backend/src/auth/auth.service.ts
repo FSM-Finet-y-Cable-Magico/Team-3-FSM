@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
   ForbiddenException,
   BadRequestException,
@@ -160,11 +161,17 @@ export class AuthService {
     return result;
   }
 
-  async listarUsuarios(id_empresa: number) {
+  /**
+   * `incluir_inactivos` es para CU-43: una cuenta desactivada desaparecia del
+   * listado, asi que no habia desde donde reactivarla. Va como parametro y no
+   * como cambio del comportamiento por defecto para no alterar a quien ya
+   * consume este endpoint esperando solo los activos.
+   */
+  async listarUsuarios(id_empresa: number, incluir_inactivos = false) {
     const usuarios = await this.prisma.usuario.findMany({
       where: {
         id_empresa,
-        activo: true,
+        ...(incluir_inactivos ? {} : { activo: true }),
       },
       include: {
         roles: {
@@ -182,9 +189,111 @@ export class AuthService {
       nombre_completo: u.nombre_completo,
       nombre_usuario: u.nombre_usuario,
       email: u.email,
+      // Sin esto la Vista no puede dibujar el interruptor en la posicion
+      // correcta, y el listado con inactivos no se distingue del normal.
+      activo: u.activo,
       fecha_creacion: u.fecha_creacion,
       rol: u.roles[0]?.rol?.nombre_rol ?? '',
     }));
+  }
+
+  /**
+   * CU-43 "Desactivando una cuenta de usuario".
+   *
+   * `usuario.activo` ya lo comprueba `login()`, asi que desactivar corta el
+   * acceso en el siguiente intento. Lo que NO hace es invalidar un token ya
+   * emitido: el JWT es autocontenido y sigue sirviendo hasta que expire
+   * (JWT_EXPIRES_IN, 8h). Revocar de verdad necesitaria una lista de tokens
+   * vivos, que no existe y no esta en el alcance del incremento.
+   *
+   * Tres cosas que este metodo no deja hacer, todas por la misma razon --que
+   * el sistema quede sin quien lo administre--:
+   */
+  async cambiarActivo(
+    id_objetivo: number,
+    activo: boolean,
+    admin: { userId: number; id_empresa: number },
+  ) {
+    // 1. Desactivarse a si mismo. El ADMIN perderia su propia sesion en el
+    //    siguiente login y tendria que pedirle a otro que lo reactive.
+    if (id_objetivo === admin.userId) {
+      throw new BadRequestException('No puedes desactivar tu propia cuenta');
+    }
+
+    // 2. Tocar una cuenta de otra empresa. El listado ya filtra por empresa;
+    //    sin esto, el endpoint seria la puerta de atras a ese aislamiento.
+    const usuario = await this.prisma.usuario.findFirst({
+      where: { id_usuario: id_objetivo, id_empresa: admin.id_empresa },
+      include: { roles: { include: { rol: true } } },
+    });
+    if (!usuario) {
+      throw new NotFoundException(`Usuario ${id_objetivo} no encontrado`);
+    }
+
+    if (usuario.activo === activo) {
+      throw new ConflictException(
+        `La cuenta de ${usuario.nombre_completo} ya está ${activo ? 'activa' : 'inactiva'}`,
+      );
+    }
+
+    // 3. Dejar a la empresa sin ningun ADMIN activo. Es el unico rol que puede
+    //    reactivar cuentas, asi que desactivar al ultimo deja a la empresa sin
+    //    forma de volver atras sin tocar la base a mano.
+    const esAdmin = usuario.roles.some((r) => r.rol?.nombre_rol === 'ADMIN');
+    if (!activo && esAdmin) {
+      const otrosAdmins = await this.prisma.usuario.count({
+        where: {
+          id_empresa: admin.id_empresa,
+          activo: true,
+          id_usuario: { not: id_objetivo },
+          roles: { some: { rol: { nombre_rol: 'ADMIN' } } },
+        },
+      });
+      if (otrosAdmins === 0) {
+        throw new ConflictException(
+          'No puedes desactivar al último administrador activo de la empresa',
+        );
+      }
+    }
+
+    // Se guarda ANTES de la transaccion a proposito. Leerlo despues del update
+    // ata el valor auditado al orden de las escrituras, y ese es justo el tipo
+    // de acoplamiento que hace que la auditoria mienta sin que nadie lo note.
+    const activoAnterior = usuario.activo;
+
+    const actualizado = await this.prisma.$transaction(async (tx) => {
+      const fila = await tx.usuario.update({
+        where: { id_usuario: id_objetivo },
+        data: { activo },
+      });
+
+      // `valor_anterior` y `valor_nuevo` son Json? y existen para esto: dejan
+      // reconstruir quien desactivo a quien y cuando, sin releer el historial.
+      await tx.log_auditoria.create({
+        data: {
+          id_usuario: admin.userId,
+          accion: activo ? 'ACTIVAR_USUARIO' : 'DESACTIVAR_USUARIO',
+          entidad_afectada: 'usuario',
+          id_entidad_afectada: id_objetivo,
+          valor_anterior: { activo: activoAnterior },
+          valor_nuevo: { activo },
+          fecha_hora: new Date(),
+        },
+      });
+
+      return fila;
+    });
+
+    this.logger.log(
+      `Usuario ${id_objetivo} ${activo ? 'activado' : 'desactivado'} por ${admin.userId}`,
+    );
+
+    return {
+      id_usuario: actualizado.id_usuario,
+      nombre_completo: actualizado.nombre_completo,
+      nombre_usuario: actualizado.nombre_usuario,
+      activo: actualizado.activo,
+    };
   }
 
   /**
