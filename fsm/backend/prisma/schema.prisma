@@ -536,6 +536,11 @@ model lista_negra {
   rut_vetado          String   @db.VarChar(12)
   direccion_vetada    String?  @db.Text
   motivo              String   @db.Text
+  /// MOD RF-32: semaforo de riesgo VERDE, AMARILLO o ROJO (D3 del plan). Cada
+  /// cambio de nivel es una fila nueva; el nivel vigente del cliente es el de su
+  /// ultima fila. Null en las filas anteriores a la columna: esas marcaban
+  /// "conflictivo", que es ROJO. cliente.es_conflictivo se mantiene = (ROJO).
+  nivel               String?  @db.VarChar(10)
   fecha_registro      DateTime @default(now()) @db.Date
   id_usuario_registro Int?
   cliente             cliente? @relation(fields: [id_cliente], references: [id_cliente])

@@ -56,9 +56,17 @@
 
   // Paso 3 - Cierre
   let potencia = $state<string>('');
-  let resultadoLlamada = $state<'CONFORME' | 'NO_CONFORME'>('CONFORME');
+  // CU-31: la llamada de cortesia la hace el jefe tecnico con la OT completada.
+  // Si el tecnico hablo con el cliente en el domicilio, la puede dejar aca.
+  let resultadoLlamada = $state<'CONFORME' | 'NO_CONFORME' | null>(null);
   let obsLlamada = $state('');
+  // CU-56: modalidad de resolucion. PRESENCIAL exige fotos; REMOTA no, pero
+  // si hay fotos pide confirmar que no hubo visita (excepcion 1 del CU).
   let resueltoRemotamente = $state(false);
+  let confirmaRemota = $state(false);
+  const pasoFotosListo = $derived(
+    resueltoRemotamente ? fotosListas.length === 0 || confirmaRemota : fotosListas.length > 0,
+  );
   let idCategoriaFalla = $state('');
   let categoriaFallaOtro = $state('');
   let alertaReparaciones = $state<{
@@ -114,7 +122,8 @@
    */
   const faltante = $derived.by(() => {
     const falta: string[] = [];
-    if (fotosListas.length === 0) falta.push('al menos una foto');
+    // CU-56: sin visita no hay que fotografiar.
+    if (!resueltoRemotamente && fotosListas.length === 0) falta.push('al menos una foto');
     if (potencia === '' || isNaN(parseFloat(potencia))) falta.push('la potencia optica');
     if (requiereCategoriaFalla && !idCategoriaFalla) falta.push('la categoria de falla');
     if (
@@ -239,8 +248,7 @@
         numero_serie: series[m.id_tipo_equipo] || undefined,
       })),
       potencia_optica_dbm: parseFloat(potencia),
-      resultado_llamada: resultadoLlamada,
-      obs_llamada: obsLlamada || undefined,
+      ...(resultadoLlamada && { resultado_llamada: resultadoLlamada, obs_llamada: obsLlamada || undefined }),
       resuelto_remotamente: resueltoRemotamente,
       id_categoria_falla: idCategoriaFalla ? Number(idCategoriaFalla) : undefined,
       categoria_falla_otro: categoriaFallaOtro.trim() || undefined,
@@ -265,7 +273,8 @@
   }
 
   async function cerrarOT(dto?: terrenoApi.CerrarOTDto) {
-    if (subiendoFoto || fotosListas.length === 0) return;
+    // Las fotos que faltan las reporta `faltante`, que sabe de la modalidad (CU-56).
+    if (subiendoFoto) return;
     const payload = dto ?? buildDto();
     if (faltante.length > 0) {
       errorCierre = `Falta ${faltante.join(', ')}.`;
@@ -347,8 +356,30 @@
       <!-- PASO 1: Fotografias -->
       {#if paso === 1}
         <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+          <h2 class="font-semibold text-slate-800 mb-2">¿Cómo se resolvió?</h2>
+          <div class="grid grid-cols-2 gap-3 mb-4">
+            <button
+              onclick={() => { resueltoRemotamente = false; confirmaRemota = false; }}
+              aria-pressed={!resueltoRemotamente}
+              class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
+                {!resueltoRemotamente ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500'}"
+            >
+              Presencial
+            </button>
+            <button
+              onclick={() => (resueltoRemotamente = true)}
+              aria-pressed={resueltoRemotamente}
+              class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
+                {resueltoRemotamente ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500'}"
+            >
+              A distancia
+            </button>
+          </div>
+
           <h2 class="font-semibold text-slate-800 mb-1">Fotografias de evidencia</h2>
-          <p class="text-xs text-slate-400 mb-4">Minimo 1 foto requerida · {fotosListas.length} cargada{fotosListas.length !== 1 ? 's' : ''}</p>
+          <p class="text-xs text-slate-400 mb-4">
+            {resueltoRemotamente ? 'Opcionales: no hubo visita' : 'Minimo 1 foto requerida'} · {fotosListas.length} cargada{fotosListas.length !== 1 ? 's' : ''}
+          </p>
 
           <label class="block w-full">
             <div class="border-2 border-dashed border-slate-200 rounded-xl p-6 flex flex-col items-center gap-2 active:bg-slate-50 transition-colors cursor-pointer">
@@ -399,6 +430,16 @@
           {/if}
         </div>
 
+        {#if resueltoRemotamente && fotosListas.length > 0}
+          <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 space-y-2">
+            <p>Esta OT tiene fotografías adjuntas, lo que sugiere que hubo visita presencial. ¿Confirmas que la resolución fue remota?</p>
+            <label class="flex items-center gap-2 min-h-11">
+              <input type="checkbox" bind:checked={confirmaRemota} class="h-5 w-5" />
+              Confirmo que la resolución fue remota
+            </label>
+          </div>
+        {/if}
+
         {#if errorCierre}
           <Alert class="rounded-xl text-sm">
             {errorCierre}
@@ -407,7 +448,7 @@
 
         <button
           onclick={() => (paso = 2)}
-          disabled={fotosListas.length === 0 || subiendoFoto}
+          disabled={!pasoFotosListo || subiendoFoto}
           class="btn btn-primario btn-bloque btn-grande"
         >
           Siguiente
@@ -672,17 +713,21 @@
 
           <!-- Resultado llamada -->
           <div>
-            <label class="block text-sm font-medium text-slate-700 mb-2">Resultado llamada de cortesia *</label>
+            <label class="block text-sm font-medium text-slate-700 mb-2">
+              Llamada de cortesia <span class="text-slate-400 text-xs">(opcional: si no, la hace el jefe tecnico)</span>
+            </label>
             <div class="grid grid-cols-2 gap-3">
               <button
-                onclick={() => (resultadoLlamada = 'CONFORME')}
+                onclick={() => (resultadoLlamada = resultadoLlamada === 'CONFORME' ? null : 'CONFORME')}
+                aria-pressed={resultadoLlamada === 'CONFORME'}
                 class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
                   {resultadoLlamada === 'CONFORME' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 text-slate-500'}"
               >
                 Conforme
               </button>
               <button
-                onclick={() => (resultadoLlamada = 'NO_CONFORME')}
+                onclick={() => (resultadoLlamada = resultadoLlamada === 'NO_CONFORME' ? null : 'NO_CONFORME')}
+                aria-pressed={resultadoLlamada === 'NO_CONFORME'}
                 class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
                   {resultadoLlamada === 'NO_CONFORME' ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-200 text-slate-500'}"
               >
@@ -705,20 +750,8 @@
             ></textarea>
           </div>
 
-          <!-- Resuelto remotamente -->
-          <div class="flex items-center justify-between py-2">
-            <span class="text-sm font-medium text-slate-700">Resuelto remotamente</span>
-            <button
-              onclick={() => (resueltoRemotamente = !resueltoRemotamente)}
-              class="relative inline-flex h-7 w-12 items-center rounded-full transition-colors cursor-pointer after:absolute after:-inset-2.5 after:content-['']
-                {resueltoRemotamente ? 'bg-blue-600' : 'bg-slate-200'}"
-            >
-              <span
-                class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform
-                  {resueltoRemotamente ? 'translate-x-6' : 'translate-x-1'}"
-              ></span>
-            </button>
-          </div>
+          <!-- La modalidad (CU-56) se elige en el paso 1: de ella depende si las
+               fotos son obligatorias. -->
         </div>
 
         {#if errorCierre}

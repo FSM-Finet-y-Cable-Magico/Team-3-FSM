@@ -159,4 +159,15 @@ describe('listado de OT para terreno', () => {
       select: { nombre_completo: true, telefono: true },
     });
   });
+
+  it('cada OT trae el nivel de riesgo vigente del cliente (MOD RF-32)', async () => {
+    // El RF pide el semaforo visible en la vista de terreno, y la tarjeta se
+    // arma desde el listado.
+    await service.listarOT(1, {});
+    expect(findMany.mock.calls[0][0].include.cliente.select.lista_negra).toEqual({
+      orderBy: { id_vetado: 'desc' },
+      take: 1,
+      select: { nivel: true },
+    });
+  });
 });

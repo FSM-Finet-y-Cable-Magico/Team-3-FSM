@@ -12,6 +12,17 @@ import { validarRut } from '../common/utils/rut.util.js';
 import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
 import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
+import {
+  ADVERTENCIA_DIRECCION,
+  MENSAJE_JUSTIFICACION_RIESGO,
+  MIN_JUSTIFICACION_RIESGO,
+  NIVEL_RIESGO,
+  direccionConAntecedentes,
+  mensajeVetado,
+  nivelVigente,
+  textoDireccion,
+  type NivelRiesgo,
+} from './lista-roja.js';
 
 /** Criterios de la busqueda de clientes (RF-54). Todos opcionales y combinables. */
 export interface FiltrosClientes {
@@ -151,6 +162,8 @@ export class ClientesService {
         estado: cliente.estado,
         es_conflictivo: cliente.es_conflictivo,
         obs_conflictivo: cliente.obs_conflictivo,
+        // MOD RF-32: el semaforo. El motivo es el de obs_conflictivo.
+        nivel_riesgo: await this.nivelDe(cliente.id_cliente),
         fecha_creacion: cliente.fecha_creacion,
         direccion_principal: cliente.direcciones[0] ?? null,
         contratos_activos: cliente.contratos.map((contrato) => ({
@@ -216,7 +229,6 @@ export class ClientesService {
           ...(dto.email !== undefined && { email: dto.email }),
           ...(dto.telefono !== undefined && { telefono: dto.telefono }),
           ...(dto.estado !== undefined && { estado: dto.estado }),
-          ...(dto.es_conflictivo !== undefined && { es_conflictivo: dto.es_conflictivo }),
         },
       });
 
@@ -257,49 +269,126 @@ export class ClientesService {
     return resultado;
   }
 
+  /**
+   * "Marcar conflictivo" de CU-37 es, con el semaforo, pasar a ROJO. Se deja
+   * el endpoint viejo apuntando aca para no romper a quien lo use.
+   */
   async marcarConflictivo(
     id_cliente: number,
     dto: MarcarConflictivoDto,
     userId: number,
     id_empresa: number,
   ) {
+    return this.cambiarNivelRiesgo(id_cliente, { nivel: NIVEL_RIESGO.ROJO, motivo: dto.motivo }, userId, id_empresa);
+  }
+
+  private async nivelDe(id_cliente: number): Promise<NivelRiesgo> {
+    const filas = await this.prisma.lista_negra.findMany({
+      where: { id_cliente },
+      orderBy: { id_vetado: 'desc' },
+      take: 1,
+      select: { nivel: true },
+    });
+    return nivelVigente(filas);
+  }
+
+  /**
+   * MOD RF-32: semaforo de riesgo. AMARILLO y ROJO exigen justificacion de 20
+   * caracteres; VERDE no. Cada cambio es una fila nueva en lista_negra (D3), y
+   * `es_conflictivo` queda igual a (ROJO) para que lo que ya lo lee --el
+   * bloqueo de instalacion, la tarjeta de terreno-- siga funcionando.
+   *
+   * ROJO guarda la direccion principal del cliente: es lo que usa la lista
+   * roja por direccion de CU-35.
+   */
+  async cambiarNivelRiesgo(
+    id_cliente: number,
+    dto: { nivel: NivelRiesgo; motivo?: string },
+    userId: number,
+    id_empresa: number,
+  ) {
     const cliente = await this.prisma.cliente.findFirst({
       where: { id_cliente, id_empresa },
+      include: { direcciones: { where: { es_principal: true }, take: 1 } },
     });
+    if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
-    if (!cliente) {
-      throw new NotFoundException('Cliente no encontrado');
+    const motivo = dto.motivo?.trim() ?? '';
+    if (dto.nivel !== NIVEL_RIESGO.VERDE && motivo.length < MIN_JUSTIFICACION_RIESGO) {
+      throw new BadRequestException(MENSAJE_JUSTIFICACION_RIESGO);
+    }
+    const anterior = await this.nivelDe(id_cliente);
+    if (anterior === dto.nivel) {
+      throw new BadRequestException(`El cliente ya está en nivel ${dto.nivel}`);
     }
 
+    const direccion = cliente.direcciones[0];
     await this.prisma.$transaction(async (tx) => {
-      await tx.cliente.update({
-        where: { id_cliente },
-        data: {
-          es_conflictivo: true,
-          obs_conflictivo: dto.motivo,
-        },
-      });
-
       await tx.lista_negra.create({
         data: {
           id_cliente,
           rut_vetado: cliente.rut ?? '',
-          motivo: dto.motivo,
+          nivel: dto.nivel,
+          motivo: motivo || 'Vuelve a VERDE',
+          direccion_vetada: dto.nivel === NIVEL_RIESGO.ROJO && direccion ? textoDireccion(direccion) : null,
           fecha_registro: new Date(),
           id_usuario_registro: userId,
         },
       });
-
+      await tx.cliente.update({
+        where: { id_cliente },
+        data: {
+          es_conflictivo: dto.nivel === NIVEL_RIESGO.ROJO,
+          obs_conflictivo: dto.nivel === NIVEL_RIESGO.VERDE ? null : motivo,
+        },
+      });
       await tx.log_auditoria.create({
         data: {
           id_usuario: userId,
-          accion: 'MARCAR_CONFLICTIVO',
+          accion: 'CAMBIAR_NIVEL_RIESGO',
           entidad_afectada: 'cliente',
           id_entidad_afectada: id_cliente,
-          fecha_hora: new Date(),
+          valor_anterior: { nivel: anterior },
+          valor_nuevo: { nivel: dto.nivel, ...(motivo && { motivo }) },
         },
       });
     });
+
+    return { id_cliente, nivel_riesgo: dto.nivel, motivo: dto.nivel === NIVEL_RIESGO.VERDE ? null : motivo };
+  }
+
+  /**
+   * CU-35: lo que ve quien va a crear una OT, antes de crearla. Por RUT, un
+   * cliente en ROJO esta vetado; por direccion, una que pertenece a un cliente
+   * en ROJO da una advertencia, no un bloqueo (excepcion 2).
+   */
+  async verificarListaRoja(
+    id_empresa: number,
+    q: { rut?: string; direccion_completa?: string; comuna?: string },
+  ) {
+    const cliente = q.rut
+      ? await this.prisma.cliente.findFirst({
+          where: { rut: q.rut.trim().toUpperCase(), id_empresa },
+          select: { id_cliente: true, es_conflictivo: true, obs_conflictivo: true },
+        })
+      : null;
+    const vetado = cliente?.es_conflictivo ? { motivo: cliente.obs_conflictivo ?? 'CONFLICTIVO' } : null;
+
+    const conAntecedentes =
+      !vetado && q.direccion_completa && q.comuna
+        ? await direccionConAntecedentes(
+            this.prisma,
+            id_empresa,
+            { direccion_completa: q.direccion_completa, comuna: q.comuna },
+            cliente?.id_cliente,
+          )
+        : false;
+
+    return {
+      vetado,
+      mensaje: vetado ? mensajeVetado(vetado.motivo) : null,
+      advertencia: conAntecedentes ? ADVERTENCIA_DIRECCION : null,
+    };
   }
 
   async listarClientes(

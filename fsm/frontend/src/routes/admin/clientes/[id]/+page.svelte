@@ -1,4 +1,6 @@
 <script lang="ts">
+  import SemaforoRiesgo from '$lib/components/SemaforoRiesgo.svelte';
+  import { NIVELES_RIESGO, MIN_JUSTIFICACION_RIESGO, type NivelRiesgo } from '$lib/utils/riesgo';
   import Alert from '$lib/components/Alert.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
@@ -29,10 +31,45 @@
   let editLoading = $state(false);
   let editError = $state('');
 
-  let showConflictivoModal = $state(false);
-  let motivoConflictivo = $state('');
-  let conflictivoLoading = $state(false);
-  let conflictivoError = $state('');
+  // MOD RF-32: semaforo de riesgo.
+  let showRiesgoModal = $state(false);
+  let nivelNuevo = $state<NivelRiesgo>('VERDE');
+  let motivoRiesgo = $state('');
+  let riesgoLoading = $state(false);
+  let riesgoError = $state('');
+
+  function abrirRiesgo() {
+    nivelNuevo = cliente?.nivel_riesgo ?? 'VERDE';
+    motivoRiesgo = '';
+    riesgoError = '';
+    showRiesgoModal = true;
+  }
+
+  async function guardarRiesgo() {
+    if (!cliente) return;
+    const motivo = motivoRiesgo.trim();
+    // Mismo minimo y mismo texto que el Controlador (CU-37, MOD RF-32).
+    if (nivelNuevo !== 'VERDE' && motivo.length < MIN_JUSTIFICACION_RIESGO) {
+      riesgoError = 'Debe ingresar una descripción con al menos 20 caracteres para justificar el marcado.';
+      return;
+    }
+    riesgoLoading = true;
+    riesgoError = '';
+    try {
+      const r = await clientesApi.cambiarNivelRiesgo(token, cliente.id_cliente, nivelNuevo, motivo || undefined);
+      cliente = {
+        ...cliente,
+        nivel_riesgo: r.nivel_riesgo as NivelRiesgo,
+        es_conflictivo: r.nivel_riesgo === 'ROJO',
+        obs_conflictivo: r.motivo ?? undefined,
+      };
+      showRiesgoModal = false;
+    } catch (err) {
+      riesgoError = err instanceof Error ? err.message : 'Error al cambiar el nivel';
+    } finally {
+      riesgoLoading = false;
+    }
+  }
 
   onMount(() => {
     authStore.checkAuth();
@@ -111,21 +148,6 @@
     }
   }
 
-  async function confirmarConflictivo() {
-    if (!cliente || motivoConflictivo.length < 10) return;
-    conflictivoLoading = true;
-    conflictivoError = '';
-    try {
-      await clientesApi.marcarConflictivo(token, cliente.id_cliente, motivoConflictivo);
-      showConflictivoModal = false;
-      motivoConflictivo = '';
-      await cargarCliente(cliente.rut);
-    } catch (err) {
-      conflictivoError = err instanceof Error ? err.message : 'Error al marcar';
-    } finally {
-      conflictivoLoading = false;
-    }
-  }
 
   function estadoColor(estado: string): string {
     const map: Record<string, string> = {
@@ -169,11 +191,7 @@
               <div class="flex gap-2">
                 {#if rol !== 'TECNICO' && !editMode}
                   <button onclick={iniciarEdicion} class="btn-texto">Editar ficha</button>
-                  {#if !cliente.es_conflictivo}
-                    <button onclick={() => showConflictivoModal = true} class="btn-texto-peligro">
-                      Marcar conflictivo
-                    </button>
-                  {/if}
+                  <button onclick={abrirRiesgo} class="btn-texto">Cambiar nivel de riesgo</button>
                 {/if}
               </div>
             </div>
@@ -190,14 +208,12 @@
                     {cliente.estado}
                   </span>
                 </div>
-              {#if cliente.es_conflictivo}
                 <div>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">CONFLICTIVO</span>
-                    {#if cliente.obs_conflictivo}
-                      <p class="text-sm text-red-600 mt-1">{cliente.obs_conflictivo}</p>
-                    {/if}
-                  </div>
-                {/if}
+                  <SemaforoRiesgo nivel={cliente.nivel_riesgo ?? (cliente.es_conflictivo ? 'ROJO' : 'VERDE')} />
+                  {#if cliente.obs_conflictivo}
+                    <p class="text-sm text-slate-600 mt-1">{cliente.obs_conflictivo}</p>
+                  {/if}
+                </div>
                 {#if alertaReparaciones?.activa}
                   <div class="bg-orange-50 border border-orange-200 text-orange-800 px-4 py-3 rounded-lg">
                     <p class="text-sm font-semibold">Alerta por reparaciones recurrentes</p>
@@ -386,48 +402,29 @@
       </div>
     {/if}
 
-<!-- Modal Marcar conflictivo -->
-{#if showConflictivoModal}
-  <div
-    class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
-    onclick={(e: MouseEvent) => { if (e.target === e.currentTarget) showConflictivoModal = false; }}
-    onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') showConflictivoModal = false; }}
-  >
-    <div class="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
-      <h3 class="text-lg font-semibold text-gray-800 mb-4">Marcar como conflictivo</h3>
-      <div class="mb-4">
-        <label for="motivo" class="block text-sm font-medium text-gray-700 mb-1">Motivo</label>
-        <textarea
-          id="motivo"
-          bind:value={motivoConflictivo}
-          rows="4"
-          maxlength="500"
-          class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          placeholder="Describa el motivo (mín. 10 caracteres)"
-        ></textarea>
-        <p class="text-xs text-gray-400 mt-1">{motivoConflictivo.length}/500</p>
-      </div>
-
-      {#if conflictivoError}
-        <Alert class="rounded-lg mb-4 text-sm">{conflictivoError}</Alert>
+<!-- MOD RF-32: cambiar el nivel del semaforo -->
+{#if showRiesgoModal && cliente}
+  <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="titulo-riesgo">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4 space-y-3">
+      <h3 id="titulo-riesgo" class="text-lg font-semibold text-gray-800">Nivel de riesgo de {cliente.nombre_completo}</h3>
+      <p class="text-sm text-gray-600">
+        AMARILLO y ROJO piden una justificación y el técnico los ve antes de la visita. ROJO además bloquea nuevas instalaciones.
+      </p>
+      <label class="block text-xs font-medium text-gray-600">Nivel
+        <select bind:value={nivelNuevo} class="mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-white">
+          {#each NIVELES_RIESGO as n (n)}<option value={n}>{n}</option>{/each}
+        </select>
+      </label>
+      <label class="block text-xs font-medium text-gray-600">Justificación
+        <textarea bind:value={motivoRiesgo} rows={3} maxlength={500} class="mt-1 w-full border rounded-lg px-3 py-2 text-sm resize-none"></textarea>
+      </label>
+      {#if riesgoError}
+        <Alert class="rounded-lg text-sm">{riesgoError}</Alert>
       {/if}
-
       <div class="flex gap-3">
-        <button
-          onclick={confirmarConflictivo}
-          disabled={conflictivoLoading || motivoConflictivo.length < 10}
-          class="btn btn-peligro btn-bloque flex-1"
-        >
-          {conflictivoLoading ? 'Confirmando...' : 'Confirmar'}
-        </button>
-        <button
-          onclick={() => showConflictivoModal = false}
-          class="flex-1 btn btn-secundario"
-        >
-          Cancelar
+        <button onclick={() => (showRiesgoModal = false)} class="flex-1 btn btn-secundario text-sm">Volver</button>
+        <button onclick={guardarRiesgo} disabled={riesgoLoading} class="flex-1 btn btn-primario text-sm">
+          {riesgoLoading ? 'Guardando...' : 'Guardar nivel'}
         </button>
       </div>
     </div>

@@ -8,7 +8,6 @@ import {
   IsString,
   MaxLength,
   IsBoolean,
-  ArrayMinSize,
   IsInt,
   IsPositive,
   Matches,
@@ -95,8 +94,12 @@ export class EquipoOtDto {
 }
 
 export class CerrarOtDto {
+  /**
+   * CU-56: obligatorias si la resolucion es PRESENCIAL, opcionales si es
+   * REMOTA (`resuelto_remotamente`). Lo decide el servicio, porque depende de
+   * otro campo.
+   */
   @IsArray()
-  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => FotoDto)
   fotos: FotoDto[];
@@ -130,8 +133,13 @@ export class CerrarOtDto {
   @IsNotEmpty()
   potencia_optica_dbm: number;
 
+  /**
+   * Opcional desde CU-31: la llamada de cortesia la hace el jefe tecnico con la
+   * OT ya completada. Si el tecnico la hizo en el domicilio, la registra aca.
+   */
+  @IsOptional()
   @IsIn(['CONFORME', 'NO_CONFORME'])
-  resultado_llamada: string;
+  resultado_llamada?: string;
 
   @IsOptional()
   @IsString()

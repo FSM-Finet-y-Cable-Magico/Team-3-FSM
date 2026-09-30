@@ -17,7 +17,30 @@ import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payloa
 import { MOMENTO_FAN_OUT, type MomentoFanOut } from './fan-out/momento-fan-out.js';
 import { AprobarCierreDto } from './dto/aprobar-cierre.dto.js';
 import { RechazarCierreDto } from './dto/rechazar-cierre.dto.js';
+import { ResolverRemotoDto } from './dto/resolver-remoto.dto.js';
+import { RegistrarLlamadaDto } from './dto/registrar-llamada.dto.js';
+
+/**
+ * CU-31: resultados de la llamada de cortesia. Entran en
+ * llamada_cortes.resultado (VARCHAR(15)). SIN_CONTACTO es el cierre despues del
+ * tercer SIN_RESPUESTA.
+ */
+const RESULTADO_LLAMADA = {
+  CONFORME: 'CONFORME',
+  NO_CONFORME: 'NO_CONFORME',
+  SIN_RESPUESTA: 'SIN_RESPUESTA',
+  SIN_CONTACTO: 'SIN_CONTACTO',
+} as const;
+const MAX_INTENTOS_LLAMADA = 3;
+const HORAS_ENTRE_INTENTOS = 2;
 import { ESTADO_TICKET } from '../tickets/tickets.constants.js';
+import {
+  ADVERTENCIA_DIRECCION,
+  MENSAJE_SOLO_ADMIN,
+  MIN_JUSTIFICACION_RIESGO,
+  direccionConAntecedentes,
+  mensajeVetado,
+} from '../clientes/lista-roja.js';
 import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
@@ -56,8 +79,16 @@ const MAX_EVIDENCIAS_DETALLE = 50;
  */
 const CONTACTO_SOLICITUD = { select: { nombre_completo: true, telefono: true } } as const;
 
+/**
+ * MOD RF-32: el nivel vigente del semaforo es la ultima fila del cliente en
+ * lista_negra (ver clientes/lista-roja.ts). La Vista lo lee de aca.
+ */
+const NIVEL_RIESGO_VIGENTE = { orderBy: { id_vetado: 'desc' }, take: 1, select: { nivel: true } } as const;
+
 const OT_INCLUDE = {
-  cliente: { select: { id_cliente: true, nombre_completo: true, rut: true, es_conflictivo: true } },
+  cliente: {
+    select: { id_cliente: true, nombre_completo: true, rut: true, es_conflictivo: true, lista_negra: NIVEL_RIESGO_VIGENTE },
+  },
   tecnico: { select: { id_usuario: true, nombre_completo: true, nombre_usuario: true } },
   direccion: { select: { direccion_completa: true, comuna: true } },
   categoria_falla: { select: { id_categoria: true, nombre: true, sla_horas: true } },
@@ -82,7 +113,12 @@ export class OrdenesService {
    * `opciones.id_ticket`: la OT nace de un ticket (CU-30) y queda vinculada.
    * No viene del DTO: solo lo pasa TicketsService.escalar.
    */
-  async crearOT(dto: CrearOtDto, userId: number, id_empresa: number, opciones: { id_ticket?: number } = {}) {
+  async crearOT(
+    dto: CrearOtDto,
+    userId: number,
+    id_empresa: number,
+    opciones: { id_ticket?: number; rol?: string } = {},
+  ) {
     if (!validarRut(dto.rut_cliente)) {
       throw new BadRequestException('RUT inválido');
     }
@@ -94,8 +130,21 @@ export class OrdenesService {
 
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
-    if (cliente.es_conflictivo && dto.tipo_ot === 'INSTALACION') {
-      throw new BadRequestException('Cliente en lista negra. No se puede crear OT de instalación');
+    // CU-35: un cliente en ROJO (es_conflictivo, ver lista-roja.ts) no recibe
+    // instalacion. El administrador puede anular el bloqueo con una
+    // justificacion escrita; queda en la auditoria con la OT creada.
+    const justificacion = dto.justificacion_lista_roja?.trim() ?? '';
+    const anulaBloqueo = cliente.es_conflictivo && dto.tipo_ot === 'INSTALACION';
+    if (anulaBloqueo) {
+      if (!justificacion) {
+        throw new BadRequestException(mensajeVetado(cliente.obs_conflictivo ?? 'CONFLICTIVO'));
+      }
+      if (opciones.rol !== 'ADMIN') throw new ForbiddenException(MENSAJE_SOLO_ADMIN);
+      if (justificacion.length < MIN_JUSTIFICACION_RIESGO) {
+        throw new BadRequestException(
+          `La justificación para anular el bloqueo debe tener al menos ${MIN_JUSTIFICACION_RIESGO} caracteres`,
+        );
+      }
     }
 
     let estado = 'PENDIENTE';
@@ -107,7 +156,25 @@ export class OrdenesService {
       estado = 'ASIGNADA';
     }
 
-    const id_direccion = dto.id_direccion ?? cliente.direcciones[0]?.id_direccion ?? null;
+    // La direccion tiene que ser del cliente: antes se aceptaba cualquier id, y
+    // la OT podia terminar apuntando a la casa de otro cliente o de otra empresa.
+    let direccion: { id_direccion: number; direccion_completa: string; comuna: string } | null =
+      cliente.direcciones[0] ?? null;
+    if (dto.id_direccion !== undefined && dto.id_direccion !== direccion?.id_direccion) {
+      direccion = await this.prisma.direccion_servicio.findFirst({
+        where: { id_direccion: dto.id_direccion, id_cliente: cliente.id_cliente },
+        select: { id_direccion: true, direccion_completa: true, comuna: true },
+      });
+      if (!direccion) throw new BadRequestException('La dirección no pertenece al cliente');
+    }
+    const id_direccion = direccion?.id_direccion ?? null;
+
+    // CU-35, excepcion 2: la direccion es de un cliente en ROJO. No bloquea:
+    // la OT se crea y vuelve con la advertencia para verificar la identidad.
+    const advertencia_lista_roja =
+      !cliente.es_conflictivo && direccion && (await direccionConAntecedentes(this.prisma, id_empresa, direccion, cliente.id_cliente))
+        ? ADVERTENCIA_DIRECCION
+        : null;
 
     const nueva = await this.prisma.$transaction(async (tx) => {
       const ot = await tx.orden_trabajo.create({
@@ -146,13 +213,27 @@ export class OrdenesService {
         },
       });
 
+      if (anulaBloqueo) {
+        await tx.log_auditoria.create({
+          data: {
+            id_usuario: userId,
+            accion: 'ANULAR_BLOQUEO_LISTA_ROJA',
+            entidad_afectada: 'orden_trabajo',
+            id_entidad_afectada: ot.id_ot,
+            valor_nuevo: { justificacion, motivo_bloqueo: cliente.obs_conflictivo ?? 'CONFLICTIVO' },
+          },
+        });
+      }
+
       return ot;
     });
 
-    return this.prisma.orden_trabajo.findUnique({
+    const creada = await this.prisma.orden_trabajo.findUnique({
       where: { id_ot: nueva.id_ot },
       include: OT_INCLUDE,
     });
+    // Recien creada en la transaccion de arriba: la relectura siempre la encuentra.
+    return { ...creada!, advertencia_lista_roja };
   }
 
   async listarOT(
@@ -397,6 +478,7 @@ export class OrdenesService {
             nombre_completo: true,
             rut: true,
             es_conflictivo: true,
+            lista_negra: NIVEL_RIESGO_VIGENTE,
             // El tecnico debe poder llamar al cliente antes de marcar PENDIENTE_CLIENTE_AUSENTE; el email no hace falta para eso y se deja fuera por minima exposicion.
             telefono: true,
             direcciones: { where: { es_principal: true }, take: 1 },
@@ -623,6 +705,13 @@ export class OrdenesService {
       throw new BadRequestException('Solo se pueden cerrar OT en estado EN_CURSO');
     }
 
+    // CU-56: sin visita no hay que fotografiar; con visita, la evidencia es
+    // obligatoria (CU-17).
+    const remota = dto.resuelto_remotamente ?? false;
+    if (!remota && dto.fotos.length === 0) {
+      throw new BadRequestException('Una resolución presencial requiere al menos una foto de evidencia');
+    }
+
     let categoriaFalla: { id_categoria: number; nombre: string; sla_horas: number | null } | null = null;
     if (ot.tipo_ot === 'REPARACION') {
       if (!dto.id_categoria_falla) {
@@ -697,13 +786,17 @@ export class OrdenesService {
         });
       }
 
-      await tx.llamada_cortes.create({
-        data: {
-          id_ot,
-          resultado: dto.resultado_llamada,
-          observaciones: dto.obs_llamada ?? null,
-        },
-      });
+      // CU-31: si el tecnico no llamo desde el domicilio, lo hace despues el
+      // jefe tecnico desde el panel de llamadas de cortesia.
+      if (dto.resultado_llamada) {
+        await tx.llamada_cortes.create({
+          data: {
+            id_ot,
+            resultado: dto.resultado_llamada,
+            observaciones: dto.obs_llamada ?? null,
+          },
+        });
+      }
 
       await tx.orden_trabajo.update({
         where: { id_ot },
@@ -731,6 +824,8 @@ export class OrdenesService {
           id_usuario: userId,
           estado_anterior: 'EN_CURSO',
           estado_nuevo: ESTADO_PENDIENTE_APROBACION,
+          // CU-56: la modalidad queda en el historial de la OT.
+          observaciones: `Modalidad de resolución: ${remota ? 'REMOTA' : 'PRESENCIAL'}`,
         },
       });
 
@@ -789,10 +884,11 @@ export class OrdenesService {
     id_ot: number,
     userId: number,
     como: 'completada' | 'cancelada',
+    remoto = false,
   ) {
     const data =
       como === 'completada'
-        ? { estado: ESTADO_TICKET.RESUELTO, fecha_cierre: new Date(), resuelto_remotamente: false }
+        ? { estado: ESTADO_TICKET.RESUELTO, fecha_cierre: new Date(), resuelto_remotamente: remoto }
         : { estado: ESTADO_TICKET.ABIERTO };
     const r = await tx.ticket.updateMany({ where: { id_ticket, estado: ESTADO_TICKET.DERIVADO_OT }, data });
     if (r.count === 0) return;
@@ -806,6 +902,230 @@ export class OrdenesService {
         valor_nuevo: { estado: data.estado, id_ot },
       },
     });
+  }
+
+  /**
+   * CU-56: el jefe tecnico resuelve la OT a distancia (por telefono o
+   * reconfigurando la ONT), sin que nadie vaya. No hay fotos, materiales ni
+   * potencia medida en terreno. Queda COMPLETADA sin pasar por aprobacion: la
+   * resolvio quien aprueba. Por eso el aviso a G1 y G8 sale aca en los dos
+   * modos de CIERRE_FAN_OUT_MOMENTO.
+   */
+  async resolverRemoto(id_ot: number, dto: ResolverRemotoDto, user: UsuarioAutenticado) {
+    const { userId, id_empresa } = user;
+    const observaciones = dto.observaciones?.trim();
+    if (!observaciones) throw new BadRequestException('Anota qué se hizo para resolverla');
+
+    const ot = await this.prisma.orden_trabajo.findFirst({ where: { id_ot, id_empresa } });
+    if (!ot) throw new NotFoundException('OT no encontrada');
+    if (!['PENDIENTE', 'ASIGNADA', 'EN_CURSO', 'PENDIENTE_CLIENTE_AUSENTE'].includes(ot.estado)) {
+      throw new BadRequestException(`Una OT ${ot.estado} no se puede resolver a distancia`);
+    }
+    if (dto.id_categoria_falla) {
+      const cat = await this.prisma.categoria_falla.findUnique({ where: { id_categoria: dto.id_categoria_falla } });
+      if (!cat) throw new NotFoundException('Categoria de falla no encontrada');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.orden_trabajo.update({
+        where: { id_ot },
+        data: {
+          estado: 'COMPLETADA',
+          fecha_completada: new Date(),
+          resuelto_remotamente: true,
+          ...(dto.id_categoria_falla && { id_categoria_falla: dto.id_categoria_falla }),
+        },
+      });
+      await tx.historial_ot.create({
+        data: {
+          id_ot,
+          id_usuario: userId,
+          estado_anterior: ot.estado,
+          estado_nuevo: 'COMPLETADA',
+          observaciones: `Modalidad de resolución: REMOTA. ${observaciones}`,
+        },
+      });
+      await tx.log_auditoria.create({
+        data: {
+          id_usuario: userId,
+          accion: 'RESOLVER_REMOTO_OT',
+          entidad_afectada: 'orden_trabajo',
+          id_entidad_afectada: id_ot,
+          valor_anterior: { estado: ot.estado },
+          valor_nuevo: { estado: 'COMPLETADA', resuelto_remotamente: true, observaciones },
+        },
+      });
+      if (ot.id_ticket) await this.moverTicket(tx, ot.id_ticket, id_ot, userId, 'completada', true);
+    });
+
+    void this.notificarCierre(id_ot);
+    this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
+    return this.obtenerDetalle(id_ot, id_empresa);
+  }
+
+  /**
+   * CU-31: OT completadas que esperan la llamada de cortesia, con a quien
+   * llamar. Las de G8 no tienen cliente todavia: se llama a la persona de la
+   * solicitud. Las OT de una caja (monitoreo) no tienen a quien llamar.
+   */
+  async llamadasPendientes(id_empresa: number, ahora = new Date()) {
+    const ots = await this.prisma.orden_trabajo.findMany({
+      where: {
+        id_empresa,
+        estado: 'COMPLETADA',
+        OR: [{ llamada: { is: null } }, { llamada: { resultado: RESULTADO_LLAMADA.SIN_RESPUESTA } }],
+        AND: [{ OR: [{ id_cliente: { not: null } }, { solicitud_integracion: { isNot: null } }] }],
+      },
+      orderBy: { fecha_completada: 'asc' },
+      take: 100,
+      select: {
+        id_ot: true,
+        tipo_ot: true,
+        fecha_completada: true,
+        cliente: { select: { nombre_completo: true, telefono: true } },
+        solicitud_integracion: { select: { nombre_completo: true, telefono: true } },
+        tecnico: { select: { nombre_completo: true } },
+        llamada: { select: { resultado: true, fecha_llamada: true, observaciones: true } },
+      },
+    });
+
+    return ots.map((o) => {
+      const persona = o.cliente ?? o.solicitud_integracion;
+      // El numero de intento lo escribe registrarLlamadaCortesia en la observacion.
+      const intentos = o.llamada ? Number(/intento (\d+)/.exec(o.llamada.observaciones ?? '')?.[1] ?? 1) : 0;
+      const proximo = o.llamada ? new Date(o.llamada.fecha_llamada.getTime() + HORAS_ENTRE_INTENTOS * 3_600_000) : null;
+      return {
+        id_ot: o.id_ot,
+        tipo_ot: o.tipo_ot,
+        fecha_completada: o.fecha_completada,
+        tecnico: o.tecnico?.nombre_completo ?? null,
+        contacto: persona ? { nombre: persona.nombre_completo, telefono: persona.telefono } : null,
+        intentos,
+        proximo_intento: proximo?.toISOString() ?? null,
+        toca_llamar: !proximo || ahora >= proximo,
+      };
+    });
+  }
+
+  /**
+   * CU-31: registra el resultado de la llamada de cortesia.
+   *  - CONFORME: cierra el ciclo de la OT.
+   *  - NO_CONFORME: nueva OT de REPARACION, prioridad ALTA, para el mismo
+   *    cliente y direccion, con el reclamo en las observaciones. Si la OT
+   *    venia de un ticket, el ticket se reactiva y pasa a la OT nueva.
+   *  - SIN_RESPUESTA: otro intento a las 2 horas; al tercero queda
+   *    SIN_CONTACTO, "Conformidad no confirmada por falta de contacto".
+   */
+  async registrarLlamadaCortesia(id_ot: number, dto: RegistrarLlamadaDto, user: UsuarioAutenticado) {
+    const { userId, id_empresa } = user;
+    const ot = await this.prisma.orden_trabajo.findFirst({ where: { id_ot, id_empresa }, include: { llamada: true } });
+    if (!ot) throw new NotFoundException('OT no encontrada');
+    if (ot.estado !== 'COMPLETADA') {
+      throw new BadRequestException('La llamada de cortesía se registra con la OT completada');
+    }
+    if (ot.llamada && ot.llamada.resultado !== RESULTADO_LLAMADA.SIN_RESPUESTA) {
+      throw new BadRequestException('La llamada de cortesía de esta OT ya está registrada');
+    }
+    const obs = dto.observaciones?.trim() || null;
+    if (dto.resultado === RESULTADO_LLAMADA.NO_CONFORME && !obs) {
+      throw new BadRequestException('Describe el problema que reporta el cliente');
+    }
+
+    let resultado: string = dto.resultado;
+    let observaciones = obs;
+    let intento: number | null = null;
+    if (dto.resultado === RESULTADO_LLAMADA.SIN_RESPUESTA) {
+      const previos = await this.prisma.log_auditoria.count({
+        where: { accion: 'LLAMADA_CORTESIA', entidad_afectada: 'orden_trabajo', id_entidad_afectada: id_ot },
+      });
+      intento = previos + 1;
+      if (intento >= MAX_INTENTOS_LLAMADA) {
+        resultado = RESULTADO_LLAMADA.SIN_CONTACTO;
+        observaciones = 'Conformidad no confirmada por falta de contacto.';
+      } else {
+        observaciones = `Sin respuesta (intento ${intento} de ${MAX_INTENTOS_LLAMADA})`;
+      }
+    }
+
+    const id_ot_reparacion = await this.prisma.$transaction(async (tx) => {
+      const ahora = new Date();
+      await tx.llamada_cortes.upsert({
+        where: { id_ot },
+        create: { id_ot, resultado, observaciones, fecha_llamada: ahora },
+        update: { resultado, observaciones, fecha_llamada: ahora },
+      });
+
+      let nueva: number | null = null;
+      if (resultado === RESULTADO_LLAMADA.NO_CONFORME) {
+        // id_ticket es UNIQUE en la OT: se suelta de la original antes.
+        if (ot.id_ticket) await tx.orden_trabajo.update({ where: { id_ot }, data: { id_ticket: null } });
+        const reparacion = await tx.orden_trabajo.create({
+          data: {
+            id_empresa,
+            id_cliente: ot.id_cliente,
+            id_direccion: ot.id_direccion,
+            id_ticket: ot.id_ticket,
+            tipo_ot: 'REPARACION',
+            prioridad: 'ALTA',
+            estado: 'PENDIENTE',
+            fecha_creacion: ahora,
+            observaciones: `Reclamo en la llamada de cortesía de la OT #${id_ot}: ${obs}`,
+          },
+        });
+        nueva = reparacion.id_ot;
+        await tx.historial_ot.create({
+          data: { id_ot: nueva, id_usuario: userId, estado_anterior: null, estado_nuevo: 'PENDIENTE', observaciones: `Nace de la OT #${id_ot}` },
+        });
+        await tx.log_auditoria.create({
+          data: {
+            id_usuario: userId,
+            accion: 'CREAR_OT',
+            entidad_afectada: 'orden_trabajo',
+            id_entidad_afectada: nueva,
+            valor_nuevo: { origen: 'LLAMADA_CORTESIA', id_ot_original: id_ot },
+          },
+        });
+        if (ot.id_ticket) {
+          await tx.ticket.update({
+            where: { id_ticket: ot.id_ticket },
+            data: { estado: ESTADO_TICKET.DERIVADO_OT, fecha_cierre: null, resuelto_remotamente: false },
+          });
+          await tx.log_auditoria.create({
+            data: {
+              id_usuario: userId,
+              accion: 'CAMBIAR_ESTADO_TICKET',
+              entidad_afectada: 'ticket',
+              id_entidad_afectada: ot.id_ticket,
+              valor_anterior: { estado: ESTADO_TICKET.RESUELTO },
+              valor_nuevo: { estado: ESTADO_TICKET.DERIVADO_OT, id_ot: nueva, motivo: 'Cliente no conforme en la llamada de cortesía' },
+            },
+          });
+        }
+      }
+
+      await tx.historial_ot.create({
+        data: {
+          id_ot,
+          id_usuario: userId,
+          estado_anterior: 'COMPLETADA',
+          estado_nuevo: 'COMPLETADA',
+          observaciones: `Llamada de cortesía: ${resultado}${nueva ? ` → OT #${nueva}` : ''}`,
+        },
+      });
+      await tx.log_auditoria.create({
+        data: {
+          id_usuario: userId,
+          accion: 'LLAMADA_CORTESIA',
+          entidad_afectada: 'orden_trabajo',
+          id_entidad_afectada: id_ot,
+          valor_nuevo: { resultado, intento, observaciones, id_ot_reparacion: nueva },
+        },
+      });
+      return nueva;
+    });
+
+    this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
+    return { id_ot, resultado, intento, id_ot_reparacion };
   }
 
   private async otPendienteDeAprobacion(id_ot: number, id_empresa: number) {
@@ -849,7 +1169,7 @@ export class OrdenesService {
         },
       });
       // CU-30: el ticket derivado se resuelve cuando su OT se completa.
-      if (ot.id_ticket) await this.moverTicket(tx, ot.id_ticket, id_ot, userId, 'completada');
+      if (ot.id_ticket) await this.moverTicket(tx, ot.id_ticket, id_ot, userId, 'completada', ot.resuelto_remotamente);
     });
 
     if (this.momentoFanOut === 'APROBACION') void this.notificarCierre(id_ot);

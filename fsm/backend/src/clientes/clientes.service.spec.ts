@@ -48,7 +48,8 @@ describe('servicios activos de la ficha de cliente', () => {
         ClientesService,
         {
           provide: PrismaService,
-          useValue: { cliente: { findFirst }, orden_trabajo: { findMany, count } },
+          // lista_negra: el nivel del semaforo (MOD RF-32) que trae la ficha.
+          useValue: { cliente: { findFirst }, orden_trabajo: { findMany, count }, lista_negra: { findMany: jest.fn(async () => []) } },
         },
       ],
     }).compile();

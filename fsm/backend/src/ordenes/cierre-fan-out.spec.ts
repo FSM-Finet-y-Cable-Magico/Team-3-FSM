@@ -85,7 +85,7 @@ describe('fan-out del cierre', () => {
   const cerrar = () =>
     service.cerrarOT(
       781,
-      { fotos: [], materiales: [], potencia_optica_dbm: -21, resultado_llamada: 'CONFORME' },
+      { fotos: [{ url_cloudinary: 'https://res.cloudinary.com/demo/image/upload/v1/e.jpg', formato: 'jpg', tamano_kb: 10 }], materiales: [], potencia_optica_dbm: -21, resultado_llamada: 'CONFORME' },
       { userId: 7, id_empresa: 1, rol: 'TECNICO' },
     );
 

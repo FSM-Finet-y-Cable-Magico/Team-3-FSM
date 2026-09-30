@@ -1220,3 +1220,227 @@ test('CU-30: un ticket se deriva a una OT y queda el enlace a la OT', async ({ p
   await expect(page.getByRole('link', { name: 'OT #500' })).toHaveAttribute('href', '/admin/ot/500');
   expect(registro.acciones.at(-1)).toEqual({ ruta: '/api/tickets/7/escalar', cuerpo: { tipo_ot: 'REPARACION', observaciones: 'Revisar roseta' } });
 });
+
+// MOD RF-32: semaforo de riesgo del cliente, en la ficha y en terreno.
+test('MOD RF-32: la ficha muestra el semaforo y pide justificacion para subir el nivel', async ({ page }) => {
+  await preparar(page);
+  const cambios: unknown[] = [];
+  let nivel = 'VERDE';
+  await page.route('http://127.0.0.1:3000/api/clientes/rut/12345678-5', route =>
+    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: nivel, contratos_activos: [] }, historial_ot: [] } }));
+  await page.route(/\/api\/clientes\/1\/riesgo$/, route => {
+    const cuerpo = route.request().postDataJSON();
+    cambios.push(cuerpo);
+    nivel = cuerpo.nivel;
+    return route.fulfill({ json: { id_cliente: 1, nivel_riesgo: cuerpo.nivel, motivo: cuerpo.motivo ?? null } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/clientes/12345678-5');
+
+  await expect(page.getByText('Riesgo VERDE')).toBeVisible();
+  await page.getByRole('button', { name: 'Cambiar nivel de riesgo' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByLabel('Nivel').selectOption('AMARILLO');
+  await dialogo.getByLabel('Justificación').fill('Muy corto');
+  await dialogo.getByRole('button', { name: 'Guardar nivel' }).click();
+  await expect(dialogo.getByText('al menos 20 caracteres')).toBeVisible();
+  expect(cambios).toEqual([]);
+
+  await dialogo.getByLabel('Justificación').fill('Discusión fuerte con el técnico en la última visita');
+  await dialogo.getByRole('button', { name: 'Guardar nivel' }).click();
+  await expect(page.getByText('Riesgo AMARILLO')).toBeVisible();
+  expect(cambios).toEqual([{ nivel: 'AMARILLO', motivo: 'Discusión fuerte con el técnico en la última visita' }]);
+});
+
+test('MOD RF-32: la tarjeta de terreno muestra el nivel del cliente', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes?*', route =>
+    route.fulfill({ json: { data: [{ ...ot, estado: 'ASIGNADA', cliente: { ...cliente, lista_negra: [{ nivel: 'AMARILLO' }] } }], page: 1, limit: 20, total: 1 } }));
+  await login(page);
+  await expect(page.getByText('Riesgo AMARILLO')).toBeVisible();
+});
+
+// CU-35: lista roja al crear la OT.
+async function prepararNuevaOt(page: Page, verificacion: unknown) {
+  const creadas: any[] = [];
+  await page.route(/\/api\/clientes\/rut\//, route =>
+    route.fulfill({ json: { cliente: { ...cliente, es_conflictivo: true, nivel_riesgo: 'ROJO', contratos_activos: [] }, historial_ot: [] } }));
+  await page.route('http://127.0.0.1:3000/api/clientes/lista-roja/verificar*', route => route.fulfill({ json: verificacion }));
+  await page.route('http://127.0.0.1:3000/api/ordenes', route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    creadas.push(route.request().postDataJSON());
+    return route.fulfill({ status: 201, json: { ...ot, id_ot: 901, advertencia_lista_roja: null } });
+  });
+  return creadas;
+}
+const vetado = {
+  vetado: { motivo: 'Deuda impaga de tres meses' },
+  mensaje: 'CLIENTE VETADO — Motivo: Deuda impaga de tres meses. No es posible crear la instalación hasta regularizar la situación.',
+  advertencia: null,
+};
+
+test('CU-35: un cliente vetado bloquea la instalacion y solo el ADMIN la anula con justificacion', async ({ page }) => {
+  await preparar(page);
+  const creadas = await prepararNuevaOt(page, vetado);
+  await login(page, 'admin'); await page.goto('/admin/ot/nueva');
+  await page.getByLabel('RUT del cliente').fill('12345678-5');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+
+  await expect(page.getByText('CLIENTE VETADO — Motivo: Deuda impaga de tres meses')).toBeVisible();
+  await page.getByLabel('Tipo de OT *').selectOption('INSTALACION');
+  const crear = page.getByRole('button', { name: 'Crear OT' });
+  await expect(crear).toBeDisabled();
+
+  await page.getByLabel('Justificación para anular el bloqueo').fill('Pagó la deuda completa ayer, comprobante 4471');
+  await expect(crear).toBeEnabled();
+  await crear.click();
+  await expect.poll(() => creadas.length).toBe(1);
+  expect(creadas[0]).toMatchObject({ tipo_ot: 'INSTALACION', justificacion_lista_roja: 'Pagó la deuda completa ayer, comprobante 4471' });
+});
+
+test('CU-35: el jefe tecnico no puede anular el bloqueo y se le dice por que', async ({ page }) => {
+  await preparar(page);
+  await prepararNuevaOt(page, vetado);
+  await page.route('http://127.0.0.1:3000/api/auth/login', route => {
+    const payload = { rol: 'JEFE_TECNICO', id_empresa: 1, userId: 3, nombre_usuario: 'jefe.prueba', exp: Math.floor(Date.now() / 1000) + 3600 };
+    const token = ['e30', Buffer.from(JSON.stringify(payload)).toString('base64'), 'prueba'].join('.');
+    return route.fulfill({ json: { token, rol: 'JEFE_TECNICO', id_empresa: 1, cambiar_password: false } });
+  });
+  await login(page, 'jefe'); await page.goto('/admin/ot/nueva');
+  await page.getByLabel('RUT del cliente').fill('12345678-5');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  await page.getByLabel('Tipo de OT *').selectOption('INSTALACION');
+
+  await expect(page.getByText('Solo el administrador puede anular un bloqueo por lista roja.')).toBeVisible();
+  await expect(page.getByLabel('Justificación para anular el bloqueo')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Crear OT' })).toBeDisabled();
+});
+
+test('CU-35: una direccion con antecedentes muestra la advertencia sin bloquear', async ({ page }) => {
+  await preparar(page);
+  await prepararNuevaOt(page, {
+    vetado: null, mensaje: null,
+    advertencia: 'Esta dirección tiene antecedentes de clientes vetados. Verifique la identidad del solicitante antes de continuar.',
+  });
+  await page.route(/\/api\/clientes\/rut\//, route =>
+    route.fulfill({ json: { cliente: { ...cliente, contratos_activos: [] }, historial_ot: [] } }));
+  await login(page, 'admin'); await page.goto('/admin/ot/nueva');
+  await page.getByLabel('RUT del cliente').fill('12345678-5');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  await page.getByLabel('Tipo de OT *').selectOption('INSTALACION');
+
+  await expect(page.getByText('Esta dirección tiene antecedentes de clientes vetados')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Crear OT' })).toBeEnabled();
+});
+
+// CU-56: modalidad de resolucion.
+test('CU-56: resuelta a distancia, el tecnico cierra sin fotos', async ({ page }) => {
+  const registro = await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  const siguiente = page.getByRole('button', { name: 'Siguiente', exact: true });
+  await expect(siguiente).toBeDisabled();
+
+  await page.getByRole('button', { name: 'A distancia' }).click();
+  await expect(siguiente).toBeEnabled();
+  await siguiente.click();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.locator('input[type=number]').fill('-21');
+  await page.getByRole('button', { name: 'Cerrar OT', exact: true }).click();
+
+  await expect(page).toHaveURL(/\/terreno$/);
+  expect(registro.cierres[0]).toMatchObject({ fotos: [], resuelto_remotamente: true });
+});
+
+test('CU-56: a distancia con fotos pide confirmar que no hubo visita', async ({ page }) => {
+  await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  await page.getByRole('button', { name: 'A distancia' }).click();
+
+  await expect(page.getByText('Esta OT tiene fotografías adjuntas, lo que sugiere que hubo visita presencial.')).toBeVisible();
+  const siguiente = page.getByRole('button', { name: 'Siguiente', exact: true });
+  await expect(siguiente).toBeDisabled();
+  await page.getByLabel('Confirmo que la resolución fue remota').check();
+  await expect(siguiente).toBeEnabled();
+});
+
+test('CU-56: el jefe tecnico resuelve una OT a distancia desde el detalle', async ({ page }) => {
+  await preparar(page);
+  const pedidos: unknown[] = [];
+  await page.route('http://127.0.0.1:3000/api/ordenes/1', route => route.fulfill({ json: { ...ot, estado: 'ASIGNADA', fotos: [] } }));
+  await page.route(/\/api\/ordenes\/1\/resolver-remoto$/, route => {
+    pedidos.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ...ot, estado: 'COMPLETADA', resuelto_remotamente: true } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/ot/1');
+
+  await page.getByRole('button', { name: 'Resolver a distancia' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByLabel('Qué se hizo').fill('Se reconfiguró la ONT desde SmartOLT');
+  await dialogo.getByRole('button', { name: 'Marcar resuelta' }).click();
+
+  await expect.poll(() => pedidos.length).toBe(1);
+  expect(pedidos[0]).toEqual({ observaciones: 'Se reconfiguró la ONT desde SmartOLT' });
+  await expect(page.getByText('estado final')).toBeVisible();
+});
+
+// CU-31: llamada de cortesia post-OT.
+async function prepararLlamadas(page: Page) {
+  const registro = { pedidos: [] as { id: number; cuerpo: any }[] };
+  let pendientes = [
+    { id_ot: 40, tipo_ot: 'INSTALACION', fecha_completada: '2026-09-29T10:00:00.000Z', tecnico: 'Pedro Rojas',
+      contacto: { nombre: 'Ana Soto', telefono: '+56911111111' }, intentos: 0, proximo_intento: null, toca_llamar: true },
+    { id_ot: 41, tipo_ot: 'REPARACION', fecha_completada: '2026-09-29T09:00:00.000Z', tecnico: null,
+      contacto: { nombre: 'Juan Pérez', telefono: '+56922222222' }, intentos: 1, proximo_intento: '2026-09-29T16:00:00.000Z', toca_llamar: false },
+  ];
+  await page.route('http://127.0.0.1:3000/api/ordenes/llamadas-cortesia', route => route.fulfill({ json: pendientes }));
+  await page.route(/\/api\/ordenes\/\d+\/llamada-cortesia$/, route => {
+    const id = Number(new URL(route.request().url()).pathname.split('/').at(-2));
+    const cuerpo = route.request().postDataJSON();
+    registro.pedidos.push({ id, cuerpo });
+    pendientes = pendientes.filter((p) => p.id_ot !== id);
+    return route.fulfill({ status: 201, json: { id_ot: id, resultado: cuerpo.resultado, intento: null, id_ot_reparacion: cuerpo.resultado === 'NO_CONFORME' ? 777 : null } });
+  });
+  return registro;
+}
+
+test('CU-31: el panel lista a quien llamar y registra una llamada conforme', async ({ page }) => {
+  await preparar(page);
+  const registro = await prepararLlamadas(page);
+  await login(page, 'admin');
+  await page.getByRole('link', { name: 'Llamadas de cortesía' }).click();
+
+  const fila = page.getByRole('row', { name: /Ana Soto/ });
+  await expect(fila.getByRole('link', { name: '+56911111111' })).toHaveAttribute('href', 'tel:+56911111111');
+  await expect(page.getByRole('row', { name: /Juan Pérez/ })).toContainText('Próximo intento');
+
+  await fila.getByRole('button', { name: 'Conforme', exact: true }).click();
+  await expect(page.getByRole('row', { name: /Ana Soto/ })).toHaveCount(0);
+  expect(registro.pedidos).toEqual([{ id: 40, cuerpo: { resultado: 'CONFORME' } }]);
+});
+
+test('CU-31: no conforme pide el reclamo y enlaza la reparacion creada', async ({ page }) => {
+  await preparar(page);
+  const registro = await prepararLlamadas(page);
+  await login(page, 'admin'); await page.goto('/admin/llamadas');
+
+  await page.getByRole('row', { name: /Ana Soto/ }).getByRole('button', { name: 'No conforme' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByRole('button', { name: 'Registrar y crear reparación' }).click();
+  await expect(dialogo.getByText('Describe el problema')).toBeVisible();
+  expect(registro.pedidos).toEqual([]);
+
+  await dialogo.getByLabel('Qué reporta el cliente').fill('Se corta el internet cada tarde');
+  await dialogo.getByRole('button', { name: 'Registrar y crear reparación' }).click();
+  await expect(page.getByRole('link', { name: 'OT #777' })).toHaveAttribute('href', '/admin/ot/777');
+  expect(registro.pedidos).toEqual([{ id: 40, cuerpo: { resultado: 'NO_CONFORME', observaciones: 'Se corta el internet cada tarde' } }]);
+});
+
+test('CU-31: el tecnico puede cerrar sin registrar la llamada, que la hace despues el jefe tecnico', async ({ page }) => {
+  const registro = await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.locator('input[type=number]').fill('-21');
+  await page.getByRole('button', { name: 'Cerrar OT', exact: true }).click();
+
+  await expect(page).toHaveURL(/\/terreno$/);
+  expect(registro.cierres[0]).not.toHaveProperty('resultado_llamada');
+});

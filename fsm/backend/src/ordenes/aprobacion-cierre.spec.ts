@@ -76,7 +76,8 @@ describe('aprobacion del cierre de OT', () => {
     }).compile();
     return moduleRef.get(OrdenesService);
   };
-  const cierre = { fotos: [], materiales: [], potencia_optica_dbm: -21, resultado_llamada: 'CONFORME' };
+  // Presencial: la evidencia es obligatoria (CU-56).
+  const cierre = { fotos: [{ url_cloudinary: 'https://res.cloudinary.com/demo/image/upload/v1/e.jpg', formato: 'jpg', tamano_kb: 10 }], materiales: [], potencia_optica_dbm: -21, resultado_llamada: 'CONFORME' };
   const esperarFanOut = () => new Promise((r) => setImmediate(r));
 
   beforeEach(() => {

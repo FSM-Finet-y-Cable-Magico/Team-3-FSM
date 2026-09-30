@@ -26,6 +26,8 @@ export interface OT {
     es_conflictivo: boolean;
     /** Solo en el detalle: el tecnico debe poder llamar antes de marcar ausente. */
     telefono?: string | null;
+    /** MOD RF-32: la ultima fila del semaforo; ver utils/riesgo. */
+    lista_negra?: { nivel: string | null }[];
     direcciones?: { direccion_completa: string; comuna: string }[];
   } | null;
   /**
@@ -188,6 +190,43 @@ export async function rechazarCierre(token: string, id: number, motivo: string):
   return fetchApi(token, `${API_URL}/api/ordenes/${id}/rechazar-cierre`, {
     method: 'PATCH',
     body: JSON.stringify({ motivo }),
+  });
+}
+
+/** CU-31: una OT completada que espera la llamada de cortesia. */
+export interface LlamadaPendiente {
+  id_ot: number;
+  tipo_ot: string;
+  fecha_completada: string | null;
+  tecnico: string | null;
+  contacto: { nombre: string; telefono: string | null } | null;
+  intentos: number;
+  proximo_intento: string | null;
+  /** Nunca se llamo, o ya pasaron las 2 horas desde el ultimo intento. */
+  toca_llamar: boolean;
+}
+
+export async function llamadasPendientes(token: string): Promise<LlamadaPendiente[]> {
+  return fetchApi(token, `${API_URL}/api/ordenes/llamadas-cortesia`);
+}
+
+export async function registrarLlamada(
+  token: string,
+  id: number,
+  resultado: 'CONFORME' | 'NO_CONFORME' | 'SIN_RESPUESTA',
+  observaciones?: string,
+): Promise<{ id_ot: number; resultado: string; intento: number | null; id_ot_reparacion: number | null }> {
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}/llamada-cortesia`, {
+    method: 'POST',
+    body: JSON.stringify(observaciones ? { resultado, observaciones } : { resultado }),
+  });
+}
+
+/** CU-56: el jefe tecnico resuelve la OT a distancia, sin visita. */
+export async function resolverRemoto(token: string, id: number, observaciones: string): Promise<OT> {
+  return fetchApi(token, `${API_URL}/api/ordenes/${id}/resolver-remoto`, {
+    method: 'PATCH',
+    body: JSON.stringify({ observaciones }),
   });
 }
 

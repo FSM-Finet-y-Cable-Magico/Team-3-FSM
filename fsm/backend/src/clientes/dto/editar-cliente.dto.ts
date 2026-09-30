@@ -1,4 +1,4 @@
-import { IsString, MaxLength, IsOptional, IsEmail, IsIn, IsBoolean } from 'class-validator';
+import { IsString, MaxLength, IsOptional, IsEmail, IsIn } from 'class-validator';
 
 export class EditarClienteDto {
   @IsOptional()
@@ -19,14 +19,9 @@ export class EditarClienteDto {
   @IsIn(['ACTIVO', 'SUSPENDIDO', 'CORTADO', 'BAJA', 'PENDIENTE'])
   estado?: string;
 
-  @IsOptional()
-  @IsBoolean()
-  es_conflictivo?: boolean;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  obs_conflictivo?: string;
+  // es_conflictivo y obs_conflictivo ya no se editan aca: solo el semaforo de
+  // riesgo (PATCH /clientes/:id/riesgo) los cambia, con justificacion y
+  // auditoria (MOD RF-32).
 
   @IsOptional()
   @IsString()

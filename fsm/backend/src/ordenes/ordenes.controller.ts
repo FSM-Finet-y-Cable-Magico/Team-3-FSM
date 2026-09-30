@@ -20,6 +20,8 @@ import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
 import { AprobarCierreDto } from './dto/aprobar-cierre.dto.js';
 import { RechazarCierreDto } from './dto/rechazar-cierre.dto.js';
+import { ResolverRemotoDto } from './dto/resolver-remoto.dto.js';
+import { RegistrarLlamadaDto } from './dto/registrar-llamada.dto.js';
 import {
   ACCION_EQUIPO,
   ACCIONES_EQUIPO_RETIRO,
@@ -124,6 +126,13 @@ export class OrdenesController {
     };
   }
 
+  /** CU-31: OT completadas que esperan la llamada de cortesia. Antes de :id. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('llamadas-cortesia')
+  llamadasPendientes(@CurrentUser() user: UsuarioAutenticado) {
+    return this.ordenesService.llamadasPendientes(user.id_empresa);
+  }
+
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
   @Get(':id')
   obtenerOT(@Param('id') id: string, @CurrentUser() user: UsuarioAutenticado) {
@@ -133,7 +142,7 @@ export class OrdenesController {
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Post()
   crearOT(@Body() dto: CrearOtDto, @CurrentUser() user: UsuarioAutenticado) {
-    return this.ordenesService.crearOT(dto, user.userId, user.id_empresa);
+    return this.ordenesService.crearOT(dto, user.userId, user.id_empresa, { rol: user.rol });
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO')
@@ -210,6 +219,28 @@ export class OrdenesController {
     @CurrentUser() user: UsuarioAutenticado,
   ) {
     return this.ordenesService.rechazarCierre(+id, dto, user);
+  }
+
+  /** CU-31: resultado de la llamada de cortesia. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Post(':id/llamada-cortesia')
+  registrarLlamadaCortesia(
+    @Param('id') id: string,
+    @Body() dto: RegistrarLlamadaDto,
+    @CurrentUser() user: UsuarioAutenticado,
+  ) {
+    return this.ordenesService.registrarLlamadaCortesia(+id, dto, user);
+  }
+
+  /** CU-56: el jefe tecnico resuelve la OT a distancia, sin visita. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Patch(':id/resolver-remoto')
+  resolverRemoto(
+    @Param('id') id: string,
+    @Body() dto: ResolverRemotoDto,
+    @CurrentUser() user: UsuarioAutenticado,
+  ) {
+    return this.ordenesService.resolverRemoto(+id, dto, user);
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
