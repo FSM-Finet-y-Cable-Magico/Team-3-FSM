@@ -1,35 +1,40 @@
 # Arquitectura actual y evolución por incremento
 
-Estado contrastado con main en 29e0526e6c4c5c97e516cd1c589a8af231d489e6 (5 de septiembre de 2026) y con los cambios de este PR. La existencia de una tabla en Prisma no implica que su módulo funcional esté implementado.
+Estado contrastado con la rama del Incremento 3 (29 de septiembre de 2026). La existencia de una tabla en Prisma no implica que su módulo funcional esté implementado.
 
 ## Módulos que funcionan hoy
 
 | Módulo | Responsabilidad y ubicación |
 | --- | --- |
-| AuthModule | Login JWT, cambio de contraseña y gestión de usuarios; src/auth. Los guards globales ejecutan autenticación antes de roles. |
-| ClientesModule | Registro, ficha, consulta por RUT, conflictividad, planes e historial de OT; src/clientes. El listado y la gestión están reservados a ADMIN/JEFE_TECNICO. |
-| OrdenesModule | Crear, asignar, consultar, cambiar estado, subir evidencia y cerrar OT; src/ordenes. Centraliza permisos por asignación y empresa. |
-| DashboardModule | Indicadores de gestión de OT y técnicos; src/dashboard. El WebSocket notifica cambios a la sala de cada empresa. **No equivale a monitorear ONT.** |
-| CloudinaryModule | Infraestructura de subida de evidencias extraída en este PR; src/cloudinary. No es un nuevo módulo funcional de negocio. |
+| AuthModule | Login JWT, cambio de contraseña, alta, listado y desactivación de cuentas (CU-43); src/auth. La estrategia JWT rechaza el token de una cuenta desactivada y resuelve la empresa activa del ADMIN (CU-33, header X-Empresa-Activa). Los guards globales ejecutan autenticación antes de roles. |
+| ClientesModule | Registro, ficha, búsqueda (incluida por zona), historial por dirección (CU-07), semáforo de riesgo (MOD RF-32), lista roja por RUT y dirección (CU-35), baja de servicio (CU-25) y catálogo de planes en solo lectura; src/clientes. |
+| OrdenesModule | Crear, asignar, consultar, cambiar estado, subir evidencia y cerrar OT; aprobación del cierre (MOD RF-04), resolución remota (CU-56), llamadas de cortesía (CU-31) y reserva de puerto NAP (CU-20); src/ordenes. Arma el payload de cierre para G1 y G8 y decide cuándo avisarlo (CIERRE_FAN_OUT_MOMENTO). |
+| TicketsModule | Tickets de soporte: alta, gestión, reclasificación y derivación a OT (CU-29, CU-30, CU-32); src/tickets. Sin migración: model ticket ya existía. |
+| IntegracionesModule | API servidor a servidor para G1 y G8 con X-API-KEY: órdenes, cierres y reconciliación, solicitudes de instalación sin cliente (P0 de G8), estado de una OT y tickets desde canales digitales; src/integraciones. |
+| DashboardModule | Indicadores de OT y técnicos, cierres por aprobar y rechazados del día, y consolidado de empresas (CU-34); src/dashboard. El WebSocket notifica cambios a la sala de cada empresa. **No equivale a monitorear ONT.** |
+| MonitoreoModule | Lecturas de ONT, alertas de red e historial de interrupciones por ONT (CU-14); src/monitoreo. El poller consulta la fuente (SmartOLT o mock). |
+| PlantaExternaModule | Topología, cajas y puertos NAP, importación KML y reconciliación de puertos con las ONT ligadas (CU-20); src/planta-externa. |
+| ReportesModule | Reportes diario, periódicos, a pedido y comparativo, con exportación, y resumen diario de materiales (CU-23); src/reportes. |
+| NotificacionesModule | Plantillas, avisos masivos por alerta y avisos anticipados de mantención con su poller (CU-50); src/notificaciones. Todo envío se registra SIMULADO: no hay proveedor contratado. |
+| AuditoriaModule | Consulta y exportación del log de auditoría (CU-41), solo ADMIN; src/auditoria. |
+| ConfiguracionModule | Umbral de desconexión por empresa (RF-46); src/configuracion. |
+| CloudinaryModule | Infraestructura de subida de evidencias; src/cloudinary. No es un módulo funcional de negocio. |
 | PrismaModule / ConfigModule | Persistencia y configuración. Prisma y sus migraciones son la fuente del esquema. |
 
-Técnicos permanece dentro de OrdenesModule: consulta de técnicos y carga de OT activas, además de la asignación; las cuentas se administran en AuthModule. Inventario todavía no tiene módulo propio: el catálogo de materiales y el descuento de stock con movimiento/auditoría viven en OrdenesService.cerrarOT. Mantener esas ubicaciones evita una extracción sin necesidad funcional en este incremento.
+Técnicos permanece dentro de OrdenesModule: consulta de técnicos y carga de OT activas, además de la asignación; las cuentas se administran en AuthModule. Inventario no es de G3: desde el acuerdo con G1 (Opción A), el cierre solo **declara** los materiales y equipos usados y G1 valida saldo y descuenta. G3 no escribe movimiento_inventario.
 
-El frontend SvelteKit separa escritorio (rutas del grupo app) y terreno. Las APIs de lib/api consumen la API Nest; los stores mantienen la sesión y el estado del dashboard. Alert, Spinner, Cargando y Paginacion concentran patrones comunes. La sesión se guarda en sessionStorage por decisión explícita: ver ADR-001 más abajo.
+El frontend SvelteKit separa escritorio (/admin) y terreno (/terreno). Las APIs de lib/api consumen la API Nest a través de http.ts, que agrega el token y la empresa activa del ADMIN a toda petición; los stores mantienen la sesión, la empresa activa y el estado del dashboard. La sesión se guarda en sessionStorage por decisión explícita: ver ADR-001 más abajo.
 
 ## Arquitectura objetivo y alcance por incremento
 
-| Etapa | Estado / objetivo respaldado por los documentos disponibles |
+| Etapa | Estado |
 | --- | --- |
-| Incremento 1, integrado en main | Auth, Clientes, OT, técnicos dentro de OT y dashboard de indicadores. El cierre ya registra evidencias, materiales, potencia y llamada. |
-| Incremento 2, planificación | Planta externa y topología; monitoreo de ONT/alertas; ampliación de operaciones de OT y reportería/notificaciones. Estas capacidades requieren servicios y pantallas propios y coordinación sobre DTO, esquema y transacción de cierre. No se incorporan en este PR. |
-| Incrementos posteriores / decisiones pendientes | Inventario como módulo propio y consolidación de Notificaciones/Monitoreo según alcance aprobado. La extracción de Técnicos puede evaluarse si crecen sus responsabilidades. No se fija una fecha ni un compromiso de entrega nuevo. |
+| Incremento 1 | Auth, Clientes, OT, técnicos dentro de OT y dashboard de indicadores. |
+| Incremento 2 | Planta externa y topología, monitoreo de ONT y alertas, reportería, notificaciones, integración con G1. |
+| Incremento 3 | Tickets, aprobación del cierre, integración con G8 (P0), auditoría, empresa activa, semáforo y lista roja, baja de servicio, puertos NAP, avisos de mantención y las pantallas sobre backend existente (CU-14, CU-23, CU-34). |
+| Fuera de alcance declarado | CU-36 (deuda: dominio comercial), personalización del plan por contrato (RF-53, B-01), CU-24 en escritura (inventario es de G1), el envío real de notificaciones y el catálogo administrable de zonas (del Grupo 2, D-02). |
 
-La arquitectura declarada originalmente (OT, Monitoreo, Técnicos, Inventario y Notificaciones) representa un objetivo, no la lista de módulos hoy montados. Debe incorporar también Auth y Clientes, y separar indicadores del dashboard de telemetría de ONT.
-
-Fuentes consultadas: issues #38 y #24; contexto-proyecto.md (25/08/2026); plan-incremento-2-programacion.md y auditoria-plan-incremento-2-2026-09-04.md, disponibles durante la revisión en C:/dev/auditorias. La auditoría del plan advierte que parte de la infraestructura de SmartOLT/Tomodat se describía desde una rama aún no integrada. Este documento describe **main**, sin asumir que esa rama se haya entregado ni que su despliegue funcione.
-
-El documento académico externo no estuvo disponible y **no fue actualizado**. #38 queda parcialmente atendido: resta trasladar/referenciar esta arquitectura en el entregable del curso. Cuando se agregue un módulo, actualizar esta tabla junto al cambio de app.module.ts.
+Migraciones del Incremento 3, todas aditivas: solicitud_instalacion_integracion (ventana 1, P0 de G8); lista_negra.nivel y log_notificacion.id_ot (ventana 2). Se aplican solo con `prisma migrate deploy` en la ventana anunciada a G1 y G8.
 
 ## Registro de decisiones de arquitectura
 
