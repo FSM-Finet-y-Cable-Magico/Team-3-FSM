@@ -147,6 +147,65 @@ export class IntegracionesService {
   }
 
   /**
+   * Detalle de una OT para un sistema externo — P0-b del acuerdo con G8 (§7).
+   *
+   * `GET ordenes/{id}/cierre` solo sirve DESPUES de completar la OT. El CRM
+   * necesita mostrar el estado mientras tanto: PENDIENTE, ASIGNADA, EN_CURSO,
+   * PENDIENTE_CLIENTE_AUSENTE, COMPLETADA o CANCELADA. En el Incremento 3 se
+   * suman PENDIENTE_APROBACION y RECHAZADA, ya declarados en la respuesta al
+   * acuerdo para no tener que avisarlos despues.
+   *
+   * A diferencia del listado, este no filtra por estado: devuelve la OT esté
+   * donde esté, que es justo para lo que G8 lo pidio.
+   */
+  async orden(scope: ApiScope, id_ot: number, id_empresa: number) {
+    this.exigirEmpresa(scope, id_empresa);
+    // `+id` de un segmento no numerico da NaN, y un NaN en el `where` de Prisma
+    // explota con un 500. El ruteo ya evita el caso de `ordenes/cierres`
+    // --la ruta literal se declara antes-- pero esto cubre cualquier otro.
+    if (!Number.isInteger(id_ot) || id_ot <= 0) {
+      throw new BadRequestException('id_ot debe ser un entero positivo');
+    }
+
+    const ot = await this.prisma.orden_trabajo.findFirst({
+      where: { id_ot, id_empresa },
+      select: {
+        id_ot: true,
+        id_empresa: true,
+        tipo_ot: true,
+        prioridad: true,
+        estado: true,
+        fecha_creacion: true,
+        fecha_programada: true,
+        fecha_completada: true,
+        tecnico: { select: { id_usuario: true, nombre_completo: true } },
+      },
+    });
+    if (!ot) {
+      throw new NotFoundException(`OT ${id_ot} no encontrada en la empresa ${id_empresa}`);
+    }
+
+    return {
+      ...ot,
+      /**
+       * La correlacion de G8 sale de `solicitud_instalacion_integracion`, que
+       * la crea el P0-a. Hasta que esa tabla exista va en null, y la llave se
+       * manda igual: asi G8 programa contra la forma definitiva desde ahora y
+       * cuando el P0-a aterrice solo se llena, sin cambiarle el contrato.
+       *
+       * Una OT creada a mano, fuera del CRM, lo va a tener en null para
+       * siempre. No es un error: no vino de una solicitud de G8.
+       */
+      origen_integracion: null as {
+        request_id: string;
+        trace_id: string | null;
+        id_contrato: number | null;
+        id_prospecto: number | null;
+      } | null,
+    };
+  }
+
+  /**
    * Payload completo de un cierre — RECONCILIACIÓN. Devuelve exactamente lo
    * mismo que el webhook `fan-out`. G1 lo consume si el webhook falló.
    */

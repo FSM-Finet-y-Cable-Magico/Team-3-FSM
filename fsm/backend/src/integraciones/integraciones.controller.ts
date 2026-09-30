@@ -70,6 +70,24 @@ export class IntegracionesController {
     );
   }
 
+  /**
+   * P0-b del acuerdo con G8 (§7): detalle de una OT en cualquier estado, para
+   * que el CRM muestre el avance antes de que la OT se complete.
+   *
+   * VA DESPUES de `ordenes/cierres`. Nest resuelve por orden de declaración: si
+   * esta ruta subiera, `GET ordenes/cierres` entraría acá con `id = "cierres"`
+   * y ese endpoint dejaría de existir sin que nada avise. Hay una prueba que lo
+   * sujeta en `test/integraciones.e2e-spec.ts`.
+   */
+  @Get('ordenes/:id')
+  async orden(
+    @Req() req: ConScope,
+    @Param('id') id: string,
+    @Query('id_empresa') id_empresa: string,
+  ) {
+    return this.ok(await this.svc.orden(req.apiScope, +id, +id_empresa));
+  }
+
   /** Reconciliación: payload completo de un cierre (igual que el webhook). */
   @Get('ordenes/:id/cierre')
   async cierre(

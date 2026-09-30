@@ -58,6 +58,35 @@ const OT_CERRADA = {
   llamada: { resultado: 'CONFORME' },
 };
 
+/**
+ * OT en estados distintos de COMPLETADA. El P0-b existe justamente para esto:
+ * el CRM tiene que poder mostrar el avance antes de que la OT termine.
+ */
+const OT_EN_CURSO = {
+  id_ot: 60,
+  id_empresa: 1,
+  tipo_ot: 'INSTALACION',
+  prioridad: 'MEDIA',
+  estado: 'EN_CURSO',
+  fecha_creacion: new Date('2026-09-25T10:00:00.000Z'),
+  fecha_programada: new Date('2026-09-26T14:00:00.000Z'),
+  fecha_completada: null,
+  tecnico: { id_usuario: 14, nombre_completo: 'Pedro Soto' },
+};
+
+const OT_SIN_TECNICO = {
+  ...OT_EN_CURSO,
+  id_ot: 61,
+  estado: 'PENDIENTE',
+  fecha_programada: null,
+  tecnico: null,
+};
+
+/** OT de otra empresa, para comprobar que el filtro por empresa aisla de verdad. */
+const OT_OTRA_EMPRESA = { ...OT_EN_CURSO, id_ot: 70, id_empresa: 2 };
+
+const TODAS = [OT_CERRADA, OT_EN_CURSO, OT_SIN_TECNICO, OT_OTRA_EMPRESA];
+
 /** Ultimo `where` que recibio cada consulta, para mirar como se arma el filtro. */
 let ultimoWhereOrdenes: Record<string, unknown> | undefined;
 let ultimosArgsFindMany: Record<string, unknown> | undefined;
@@ -72,10 +101,15 @@ const prisma = {
       return [{ id_ot: 41, tipo_ot: 'REPARACION', estado: 'COMPLETADA' }];
     }),
     count: jest.fn(async () => 1),
+    // Honra `estado` cuando viene: `cierre` exige COMPLETADA y `orden` no.
+    // Un doble que lo ignorara dejaria pasar el 404 del cierre sin probarlo.
     findFirst: jest.fn(async ({ where }: Prisma.orden_trabajoFindFirstArgs = {}) =>
-      where?.id_ot === OT_CERRADA.id_ot && where?.id_empresa === OT_CERRADA.id_empresa
-        ? OT_CERRADA
-        : null,
+      TODAS.find(
+        (o) =>
+          o.id_ot === where?.id_ot &&
+          o.id_empresa === where?.id_empresa &&
+          (where?.estado === undefined || o.estado === where.estado),
+      ) ?? null,
     ),
   },
   cliente: {
@@ -344,6 +378,122 @@ describe('API de integraciones: contrato con G1 y G8', () => {
     it('acepta exactamente 90 dias', async () => {
       await get('/ordenes/cierres?id_empresa=1&desde=2026-06-04&hasta=2026-09-01', CLAVE_G1)
         .expect(200);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /ordenes/:id — P0-b del acuerdo con G8 (§7)
+  // -------------------------------------------------------------------------
+  describe('GET /ordenes/:id — detalle para el CRM', () => {
+    it('devuelve exactamente los campos del §7 del acuerdo', async () => {
+      const res = await get('/ordenes/60?id_empresa=1', CLAVE_G8).expect(200);
+
+      expect(Object.keys(res.body.data).sort()).toEqual([
+        'estado',
+        'fecha_completada',
+        'fecha_creacion',
+        'fecha_programada',
+        'id_empresa',
+        'id_ot',
+        'origen_integracion',
+        'prioridad',
+        'tecnico',
+        'tipo_ot',
+      ]);
+      expect(res.body.data).toMatchObject({
+        id_ot: 60,
+        id_empresa: 1,
+        tipo_ot: 'INSTALACION',
+        prioridad: 'MEDIA',
+        estado: 'EN_CURSO',
+        fecha_completada: null,
+        tecnico: { id_usuario: 14, nombre_completo: 'Pedro Soto' },
+      });
+    });
+
+    it('sirve la OT aunque NO este completada: para eso lo pidio G8', async () => {
+      // `ordenes/:id/cierre` solo responde con la OT cerrada. Este endpoint
+      // existe porque el CRM necesita mostrar el avance mientras tanto.
+      const res = await get('/ordenes/60?id_empresa=1', CLAVE_G8).expect(200);
+
+      expect(res.body.data.estado).toBe('EN_CURSO');
+    });
+
+    it('no consulta filtrando por estado', async () => {
+      await get('/ordenes/60?id_empresa=1', CLAVE_G8).expect(200);
+
+      const where = prisma.orden_trabajo.findFirst.mock.calls[0]?.[0]?.where;
+      expect(where).toEqual({ id_ot: 60, id_empresa: 1 });
+    });
+
+    it('una OT sin tecnico asignado devuelve tecnico en null', async () => {
+      const res = await get('/ordenes/61?id_empresa=1', CLAVE_G8).expect(200);
+
+      expect(res.body.data).toMatchObject({ estado: 'PENDIENTE', tecnico: null, fecha_programada: null });
+    });
+
+    it('origen_integracion viaja en null hasta que exista el P0-a', async () => {
+      // La llave va igual para que G8 programe contra la forma definitiva y el
+      // P0-a solo tenga que llenarla, sin cambiarle el contrato.
+      const res = await get('/ordenes/60?id_empresa=1', CLAVE_G8).expect(200);
+
+      expect(res.body.data).toHaveProperty('origen_integracion', null);
+    });
+
+    it('no expone datos que el acuerdo no pidio', async () => {
+      const res = await get('/ordenes/60?id_empresa=1', CLAVE_G8).expect(200);
+      const texto = JSON.stringify(res.body.data);
+
+      for (const filtrado of ['id_cliente', 'id_tecnico_externo', 'observaciones', 'cierre_equipos']) {
+        expect(texto).not.toContain(filtrado);
+      }
+    });
+
+    it('una OT de otra empresa responde 404, no 200', async () => {
+      // G8 tiene la empresa 2 en su scope, asi que el 403 no aplica: lo que
+      // aisla aca es el filtro por empresa de la consulta.
+      await get('/ordenes/70?id_empresa=1', CLAVE_G8).expect(404);
+    });
+
+    it('una OT inexistente responde 404', async () => {
+      await get('/ordenes/9999?id_empresa=1', CLAVE_G8).expect(404);
+    });
+
+    it('valida el scope antes de buscar', async () => {
+      await get('/ordenes/60?id_empresa=2', CLAVE_G1).expect(403);
+
+      expect(prisma.orden_trabajo.findFirst).not.toHaveBeenCalled();
+    });
+
+    it.each(['0', '-3', 'abc', '1.5'])('id %p responde 400 y no consulta', async (id) => {
+      await get(`/ordenes/${id}?id_empresa=1`, CLAVE_G8).expect(400);
+
+      expect(prisma.orden_trabajo.findFirst).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Orden de las rutas
+  // -------------------------------------------------------------------------
+  describe('orden de declaracion de las rutas', () => {
+    // Nest resuelve por orden de declaracion. Si `ordenes/:id` subiera por
+    // encima de `ordenes/cierres`, ese endpoint dejaria de existir: la peticion
+    // entraria al detalle con id = "cierres". Ninguna prueba del resto del
+    // archivo lo notaria, porque cada una mira su propia respuesta.
+    it('ordenes/cierres NO es capturada por ordenes/:id', async () => {
+      const res = await get('/ordenes/cierres?id_empresa=1&desde=2026-09-01&hasta=2026-09-02', CLAVE_G1)
+        .expect(200);
+
+      // El listado de cierres pagina; el detalle devuelve una OT suelta.
+      expect(res.body.data).toMatchObject({ total: 1, page: 1, limit: 100 });
+      expect(res.body.data).not.toHaveProperty('origen_integracion');
+    });
+
+    it('ordenes/:id/cierre sigue llegando a la reconciliacion', async () => {
+      const res = await get('/ordenes/41/cierre?id_empresa=1', CLAVE_G1).expect(200);
+
+      expect(res.body.data).toHaveProperty('clave_idempotencia');
+      expect(res.body.data).not.toHaveProperty('origen_integracion');
     });
   });
 
