@@ -274,6 +274,13 @@
                 </a>
               {/if}
 
+              <!-- MOD RF-04: si el jefe tecnico rechazo el cierre, el motivo. -->
+              {#if ot.estado === 'EN_CURSO' && ot.historial?.[0]?.observaciones}
+                <p class="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                  {ot.historial[0].observaciones}
+                </p>
+              {/if}
+
               <!-- Bloque horario -->
               {#if ot.fecha_programada}
                 <p class="text-xs text-slate-400 mt-1">

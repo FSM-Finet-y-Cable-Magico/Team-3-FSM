@@ -1713,3 +1713,13 @@ test('el catalogo de planes se consulta y dice que el alta depende de B-01', asy
   await expect(page.getByText('solo lectura')).toBeVisible();
   await expect(page.getByRole('button', { name: /Nuevo plan|Editar/ })).toHaveCount(0);
 });
+
+test('MOD RF-04: el tecnico ve en su tarjeta por que le rechazaron el cierre', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes?*', route => route.fulfill({ json: { data: [{
+    ...ot, estado: 'EN_CURSO',
+    historial: [{ observaciones: 'Cierre rechazado: Falta la foto de la roseta', fecha_hora: '2026-09-29T15:00:00.000Z' }],
+  }], page: 1, limit: 20, total: 1 } }));
+  await login(page);
+  await expect(page.getByText('Cierre rechazado: Falta la foto de la roseta')).toBeVisible();
+});
