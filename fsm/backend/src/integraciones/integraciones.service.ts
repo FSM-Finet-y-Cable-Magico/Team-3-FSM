@@ -1,6 +1,6 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import type { ApiScope } from '../common/guards/api-key.guard.js';
+import { exigirEmpresaEnScope, type ApiScope } from '../common/guards/api-key.guard.js';
 import {
   ACCION_A_ESTADO_G1,
   DIAGNOSTICO_POR_DEFECTO,
@@ -35,15 +35,7 @@ export class IntegracionesService {
   // ---- helpers ----
 
   private exigirEmpresa(scope: ApiScope, id_empresa: number): number {
-    if (!Number.isFinite(id_empresa)) {
-      throw new BadRequestException('id_empresa es obligatorio');
-    }
-    if (!scope.empresas.includes(id_empresa)) {
-      throw new ForbiddenException(
-        `La API key de ${scope.grupo} no tiene acceso a la empresa ${id_empresa}`,
-      );
-    }
-    return id_empresa;
+    return exigirEmpresaEnScope(scope, id_empresa);
   }
 
   /**

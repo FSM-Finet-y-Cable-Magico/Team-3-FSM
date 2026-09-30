@@ -232,3 +232,82 @@ describe('aprobacion del cierre de OT', () => {
     expect(roles('rechazarCierre')).toEqual(['ADMIN', 'JEFE_TECNICO']);
   });
 });
+
+/**
+ * CU-30: el ticket derivado a una OT se resuelve solo cuando la OT se completa
+ * (al aprobarse el cierre) y vuelve a ABIERTO si la OT se cancela, para que el
+ * jefe tecnico decida de nuevo. Al cancelar se desvincula: `id_ticket` es
+ * UNIQUE en la OT y, vinculado, el ticket no se podria volver a derivar.
+ */
+describe('el ticket sigue a su OT', () => {
+  const jefe = { userId: 3, id_empresa: 1, rol: 'JEFE_TECNICO' };
+  let fila: Record<string, any>;
+  const ticketUpdateMany = jest.fn(async (_a: any) => ({ count: 1 }));
+  const auditar = jest.fn(async (_a: any) => ({}));
+  const otUpdate = jest.fn(async (a: any) => Object.assign(fila, a.data));
+  const tx = {
+    orden_trabajo: { update: otUpdate },
+    historial_ot: { create: jest.fn(async () => ({})) },
+    log_auditoria: { create: auditar },
+    ticket: { updateMany: ticketUpdateMany },
+  };
+  const prisma = {
+    orden_trabajo: {
+      findFirst: jest.fn(async (a: any) => (a.include ? { ...fila, materiales: [], fotos: [], historial: [] } : { ...fila })),
+    },
+    $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+  };
+  let service: OrdenesService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    fila = { id_ot: 500, id_empresa: 1, id_tecnico: 14, estado: 'PENDIENTE_APROBACION', tipo_ot: 'REPARACION', id_ticket: 7 };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        OrdenesService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: ReparacionesRecurrentesService, useValue: {} },
+        { provide: SinReagendarService, useValue: {} },
+        { provide: CloudinaryService, useValue: {} },
+        { provide: DashboardGateway, useValue: { emitirActualizacion: jest.fn() } },
+        { provide: FAN_OUT_CIERRE, useValue: { nombre: 'doble', notificar: jest.fn() } },
+        { provide: MOMENTO_FAN_OUT, useValue: 'CIERRE' },
+      ],
+    }).compile();
+    service = moduleRef.get(OrdenesService);
+  });
+
+  it('aprobar el cierre resuelve el ticket derivado, sin marcarlo remoto', async () => {
+    await service.aprobarCierre(500, {}, jefe);
+
+    expect(ticketUpdateMany).toHaveBeenCalledWith({
+      where: { id_ticket: 7, estado: 'DERIVADO_OT' },
+      data: { estado: 'RESUELTO', fecha_cierre: expect.any(Date), resuelto_remotamente: false },
+    });
+    expect(auditar).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        accion: 'CAMBIAR_ESTADO_TICKET',
+        entidad_afectada: 'ticket',
+        id_entidad_afectada: 7,
+        valor_nuevo: { estado: 'RESUELTO', id_ot: 500 },
+      }),
+    });
+  });
+
+  it('cancelar la OT reabre el ticket y lo desvincula', async () => {
+    fila.estado = 'ASIGNADA';
+    await service.actualizarEstado(500, { estado: 'CANCELADA', obs_cancelacion: 'El cliente ya no la necesita' }, jefe);
+
+    expect(otUpdate.mock.calls[0][0].data).toMatchObject({ estado: 'CANCELADA', id_ticket: null });
+    expect(ticketUpdateMany).toHaveBeenCalledWith({
+      where: { id_ticket: 7, estado: 'DERIVADO_OT' },
+      data: { estado: 'ABIERTO' },
+    });
+  });
+
+  it('una OT sin ticket no toca tickets', async () => {
+    fila.id_ticket = null;
+    await service.aprobarCierre(500, {}, jefe);
+    expect(ticketUpdateMany).not.toHaveBeenCalled();
+  });
+});

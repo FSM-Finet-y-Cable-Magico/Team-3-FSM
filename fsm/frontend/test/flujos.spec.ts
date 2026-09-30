@@ -1122,3 +1122,101 @@ test('CU-34: el ADMIN compara las empresas en una sola pantalla', async ({ page 
   await expect(page.getByRole('row', { name: /Cable Mágico/ })).toContainText('40');
   await expect(page.getByRole('row', { name: /Total/ })).toContainText('160');
 });
+
+// CU-29, CU-30 y CU-32: panel de tickets del jefe tecnico.
+const categoriasTicket = [
+  { id_categoria: 1, nombre: 'Sin internet', sla_horas: 4 },
+  { id_categoria: 2, nombre: 'Internet lento', sla_horas: 24 },
+];
+const ticketBase = {
+  id_ticket: 7, id_empresa: 1, id_cliente: 10, id_categoria: 1, codigo_seguimiento: 'TK-ABCDEFG', prioridad: 'CRITICA',
+  estado: 'ABIERTO', descripcion: 'Sin internet desde ayer', fecha_creacion: '2026-09-29T12:00:00.000Z', fecha_cierre: null,
+  origen: 'TELEFONO', resuelto_remotamente: false, id_usuario_asignado: null,
+  categoria: categoriasTicket[0], cliente: { id_cliente: 10, rut: '12345678-5', nombre_completo: 'Ana Soto', telefono: '+56911111111' },
+  usuario_asignado: null, orden_trabajo: null, sla_horas: 4, vence_en: '2026-09-29T16:00:00.000Z', sla_vencido: false,
+  horas_transcurridas: 1, historial: [],
+};
+
+async function prepararTickets(page: Page) {
+  const registro = { creados: [] as unknown[], acciones: [] as { ruta: string; cuerpo: unknown }[], ticket: { ...ticketBase } as any };
+  await page.route('http://127.0.0.1:3000/api/ordenes/categorias-falla', route => route.fulfill({ json: categoriasTicket }));
+  await page.route(/\/api\/tickets(\?.*)?$/, route => {
+    if (route.request().method() === 'POST') {
+      registro.creados.push(route.request().postDataJSON());
+      return route.fulfill({ status: 201, json: { ...ticketBase, codigo_seguimiento: 'TK-NUEVO23' } });
+    }
+    return route.fulfill({ json: { data: [ticketBase, { ...ticketBase, id_ticket: 8, codigo_seguimiento: 'TK-VENCIDO', sla_vencido: true }], total: 2, page: 1, limit: 20 } });
+  });
+  await page.route(/\/api\/tickets\/7(\/\w+)?$/, route => {
+    const ruta = new URL(route.request().url()).pathname;
+    if (route.request().method() !== 'GET') {
+      const cuerpo = route.request().postData() ? route.request().postDataJSON() : null;
+      registro.acciones.push({ ruta, cuerpo });
+      if (ruta.endsWith('/tomar')) registro.ticket.estado = 'EN_PROGRESO';
+      if (ruta.endsWith('/resolver')) registro.ticket.estado = 'RESUELTO';
+      if (ruta.endsWith('/reclasificar')) Object.assign(registro.ticket, { id_categoria: 2, categoria: categoriasTicket[1], prioridad: 'MEDIA', sla_horas: 24 });
+      if (ruta.endsWith('/escalar')) Object.assign(registro.ticket, { estado: 'DERIVADO_OT', orden_trabajo: { id_ot: 500, estado: 'PENDIENTE' } });
+    }
+    return route.fulfill({ json: registro.ticket });
+  });
+  return registro;
+}
+
+test('CU-29/30: el panel lista los tickets, marca el SLA vencido y registra uno nuevo', async ({ page }) => {
+  await preparar(page);
+  const registro = await prepararTickets(page);
+  await login(page, 'admin');
+  await page.getByRole('link', { name: 'Tickets' }).click();
+
+  await expect(page.getByRole('row', { name: /TK-VENCIDO/ })).toContainText('SLA vencido');
+  await expect(page.getByRole('row', { name: /TK-ABCDEFG/ })).not.toContainText('SLA vencido');
+
+  await page.getByRole('button', { name: 'Nuevo ticket' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByLabel('RUT del cliente').fill('12345678-5');
+  await dialogo.getByLabel('Problema').selectOption({ label: 'Sin internet (SLA 4 h)' });
+  await dialogo.getByLabel('Canal').selectOption('TELEFONO');
+  await dialogo.getByLabel('Descripción').fill('Sin internet desde ayer');
+  await dialogo.getByRole('button', { name: 'Crear ticket' }).click();
+
+  await expect(page.getByText('Ticket TK-NUEVO23 creado')).toBeVisible();
+  expect(registro.creados).toEqual([{ rut_cliente: '12345678-5', id_categoria: 1, origen: 'TELEFONO', descripcion: 'Sin internet desde ayer' }]);
+});
+
+test('CU-30/32: desde el detalle se toma, se reclasifica y se resuelve un ticket', async ({ page }) => {
+  await preparar(page);
+  const registro = await prepararTickets(page);
+  await login(page, 'admin'); await page.goto('/admin/tickets/7');
+
+  await expect(page.getByRole('heading', { name: /TK-ABCDEFG/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Tomar para resolver a distancia' }).click();
+  await expect(page.getByText('EN_PROGRESO').first()).toBeVisible();
+
+  await page.getByLabel('Nueva categoría').selectOption({ label: 'Internet lento (SLA 24 h)' });
+  await page.getByRole('button', { name: 'Reclasificar' }).click();
+  await expect(page.getByText('Internet lento').first()).toBeVisible();
+
+  await page.getByLabel('Qué se hizo para resolverlo').fill('Se reinició la ONT a distancia');
+  await page.getByRole('button', { name: 'Marcar resuelto' }).click();
+
+  await expect.poll(() => registro.acciones.map((a) => a.ruta)).toEqual([
+    '/api/tickets/7/tomar', '/api/tickets/7/reclasificar', '/api/tickets/7/resolver',
+  ]);
+  expect(registro.acciones[1].cuerpo).toEqual({ id_categoria: 2 });
+  expect(registro.acciones[2].cuerpo).toEqual({ observacion: 'Se reinició la ONT a distancia' });
+});
+
+test('CU-30: un ticket se deriva a una OT y queda el enlace a la OT', async ({ page }) => {
+  await preparar(page);
+  const registro = await prepararTickets(page);
+  await login(page, 'admin'); await page.goto('/admin/tickets/7');
+
+  await page.getByRole('button', { name: 'Derivar a OT de terreno' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByLabel('Tipo de OT').selectOption('REPARACION');
+  await dialogo.getByLabel('Indicaciones para el técnico').fill('Revisar roseta');
+  await dialogo.getByRole('button', { name: 'Crear OT' }).click();
+
+  await expect(page.getByRole('link', { name: 'OT #500' })).toHaveAttribute('href', '/admin/ot/500');
+  expect(registro.acciones.at(-1)).toEqual({ ruta: '/api/tickets/7/escalar', cuerpo: { tipo_ot: 'REPARACION', observaciones: 'Revisar roseta' } });
+});

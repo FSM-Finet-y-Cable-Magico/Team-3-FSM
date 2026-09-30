@@ -259,6 +259,7 @@ describe('POST /integraciones/instalaciones', () => {
   const ctrl = new IntegracionesController(
     {} as IntegracionesService,
     { crear } as unknown as InstalacionesService,
+    {} as never,
   );
   const req = { apiScope: { grupo: 'G8', empresas: [1] } };
 
