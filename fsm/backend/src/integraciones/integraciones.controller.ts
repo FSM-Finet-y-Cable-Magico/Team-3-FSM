@@ -6,6 +6,8 @@ import { Public } from '../common/decorators/public.decorator.js';
 import { ApiKeyGuard, exigirEmpresaEnScope, type ApiScope } from '../common/guards/api-key.guard.js';
 import { TicketsService } from '../tickets/tickets.service.js';
 import { CrearTicketIntegracionDto } from '../tickets/dto/tickets.dto.js';
+import { ClaveWifiService } from './clave-wifi.service.js';
+import { SolicitudClaveWifiDto } from './dto/solicitud-clave-wifi.dto.js';
 
 interface ConScope {
   apiScope: ApiScope;
@@ -27,6 +29,7 @@ export class IntegracionesController {
     private svc: IntegracionesService,
     private instalaciones: InstalacionesService,
     private tickets: TicketsService,
+    private claveWifi: ClaveWifiService,
   ) {}
 
   private ok(data: unknown) {
@@ -179,4 +182,26 @@ export class IntegracionesController {
   ) {
     return this.ok(await this.svc.buscarClientes(req.apiScope, +id_empresa, busqueda));
   }
+  // ---- clave WiFi desde el portal de G2 (acuerdo §6.4) ----
+
+  /**
+   * G2 manda la clave WiFi que el cliente eligio, cifrada con nuestra llave
+   * publica. Va por endpoint y no por la base compartida porque el §6.5
+   * prohibe que G8 pueda leerla.
+   *
+   * 201 si es nueva; 200 con `duplicado: true` si es un reintento del mismo
+   * `request_id` con el mismo contenido (§3.6 de nuestra respuesta a G2), que
+   * es lo que les deja reintentar sin aplicar el cambio dos veces.
+   */
+  @Post('contrasena-wifi')
+  async contrasenaWifi(
+    @Req() req: ConScope,
+    @Body() dto: SolicitudClaveWifiDto,
+    @Res({ passthrough: true }) res: { status(code: number): unknown },
+  ) {
+    const r = await this.claveWifi.recibir(dto, req.apiScope);
+    res.status(r.duplicado ? 200 : 201);
+    return this.ok(r);
+  }
 }
+

@@ -367,13 +367,13 @@ model caja_nap {
 }
 
 model orden_trabajo {
-  id_ot                          Int                 @id @default(autoincrement())
+  id_ot                          Int                                @id @default(autoincrement())
   id_empresa                     Int?
   id_cliente                     Int?
   id_tecnico                     Int?
   id_tecnico_externo             Int?
   id_direccion                   Int?
-  id_ticket                      Int?                @unique
+  id_ticket                      Int?                               @unique
   id_categoria_falla             Int?
   /**
    * Caja NAP sobre la que se trabaja. Las OT generadas desde el monitoreo por
@@ -382,17 +382,17 @@ model orden_trabajo {
    * al crear la OT).
    */
   id_caja_nap                    Int?
-  tipo_ot                        String              @db.VarChar(20)
-  prioridad                      String              @db.VarChar(10)
-  estado                         String              @db.VarChar(25)
-  fecha_creacion                 DateTime            @default(now())
-  fecha_programada               DateTime?           @db.Timestamptz()
+  tipo_ot                        String                             @db.VarChar(20)
+  prioridad                      String                             @db.VarChar(10)
+  estado                         String                             @db.VarChar(25)
+  fecha_creacion                 DateTime                           @default(now())
+  fecha_programada               DateTime?                          @db.Timestamptz()
   fecha_completada               DateTime?
-  potencia_optica_dbm            Decimal?            @db.Decimal(5, 2)
-  categoria_falla_otro           String?             @db.VarChar(120)
-  observaciones                  String?             @db.Text
-  obs_cliente_ausente            String?             @db.VarChar(500)
-  resuelto_remotamente           Boolean             @default(false)
+  potencia_optica_dbm            Decimal?                           @db.Decimal(5, 2)
+  categoria_falla_otro           String?                            @db.VarChar(120)
+  observaciones                  String?                            @db.Text
+  obs_cliente_ausente            String?                            @db.VarChar(500)
+  resuelto_remotamente           Boolean                            @default(false)
   /**
    * RF-45: la alerta de OT detenida se puede descartar, y reaparece a las 48 h.
    * La alerta no es una fila: se recalcula en cada carga. Lo unico que hay que
@@ -404,14 +404,14 @@ model orden_trabajo {
   // guarda el snapshot { instalados:[], retirados:[] } que le pasó a G1, para
   // que el GET de reconciliación devuelva exactamente lo mismo que el webhook.
   cierre_equipos                 Json?
-  empresa                        empresa?            @relation(fields: [id_empresa], references: [id_empresa])
-  cliente                        cliente?            @relation(fields: [id_cliente], references: [id_cliente])
-  tecnico                        usuario?            @relation("ot_tecnico", fields: [id_tecnico], references: [id_usuario])
-  tecnico_externo                tecnico_externo?    @relation(fields: [id_tecnico_externo], references: [id_tecnico_ext])
-  direccion                      direccion_servicio? @relation(fields: [id_direccion], references: [id_direccion])
-  ticket                         ticket?             @relation(fields: [id_ticket], references: [id_ticket])
-  categoria_falla                categoria_falla?    @relation(fields: [id_categoria_falla], references: [id_categoria])
-  caja_nap                       caja_nap?           @relation(fields: [id_caja_nap], references: [id_caja_nap])
+  empresa                        empresa?                           @relation(fields: [id_empresa], references: [id_empresa])
+  cliente                        cliente?                           @relation(fields: [id_cliente], references: [id_cliente])
+  tecnico                        usuario?                           @relation("ot_tecnico", fields: [id_tecnico], references: [id_usuario])
+  tecnico_externo                tecnico_externo?                   @relation(fields: [id_tecnico_externo], references: [id_tecnico_ext])
+  direccion                      direccion_servicio?                @relation(fields: [id_direccion], references: [id_direccion])
+  ticket                         ticket?                            @relation(fields: [id_ticket], references: [id_ticket])
+  categoria_falla                categoria_falla?                   @relation(fields: [id_categoria_falla], references: [id_categoria])
+  caja_nap                       caja_nap?                          @relation(fields: [id_caja_nap], references: [id_caja_nap])
   historial                      historial_ot[]
   materiales                     uso_material_ot[]
   fotos                          evidencia_foto[]
@@ -1044,4 +1044,33 @@ model transferencia_equipo {
   empresa_origen      empresa?  @relation("empresa_origen", fields: [id_empresa_origen], references: [id_empresa])
   empresa_destino     empresa?  @relation("empresa_destino", fields: [id_empresa_destino], references: [id_empresa])
   usuario_registro    usuario?  @relation(fields: [id_usuario_registro], references: [id_usuario])
+}
+
+/// Solicitudes de cambio de clave WiFi que llegan del portal de G2 (acuerdo
+/// §6.4). Tabla NUESTRA: G2 la escribe solo a traves de nuestro endpoint.
+model solicitud_clave_wifi {
+  id_solicitud   Int       @id @default(autoincrement())
+  /// UUID v4 que manda G2. Es la llave de idempotencia: un reintento con el
+  /// mismo request_id devuelve la solicitud original sin reaplicar nada.
+  request_id     String    @unique @db.VarChar(64)
+  /// SHA-256 del contenido. Con el mismo request_id y otra huella se responde
+  /// 409: si cambio el contenido, ese request_id ya no identifica el mismo
+  /// hecho y adivinar cual vale es peor que fallar.
+  huella         String    @db.VarChar(64)
+  id_empresa     Int
+  id_contrato    Int
+  /// El ticket del CRM de G8, para correlacionar. No lo creamos nosotros.
+  id_ticket      String    @db.VarChar(64)
+  trace_id       String    @db.VarChar(64)
+  /// La clave TAL COMO LLEGA: cifrada con nuestra llave publica. No se
+  /// descifra para guardarla ni se recifra, porque ya esta cifrada con una
+  /// llave que solo tenemos nosotros. G8 puede leer la fila y no puede
+  /// descifrarla, que es lo que exige el §6.5.
+  clave_cifrada  String    @db.Text
+  /// Cuando un tecnico la descifro. Lectura unica: la segunda vez se niega.
+  leida_en       DateTime?
+  estado         String    @default("PENDIENTE") @db.VarChar(20)
+  fecha_creacion DateTime  @default(now())
+
+  @@index([id_empresa, estado])
 }
