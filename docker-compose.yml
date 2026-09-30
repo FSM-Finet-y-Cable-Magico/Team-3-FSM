@@ -37,6 +37,10 @@ services:
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      # Llave privada del canal de clave WiFi de G2. Sin esto el endpoint
+      # responde 503 aunque este en el .env: el contenedor no la ve si no se
+      # la pasamos. La clave de API del grupo llega aparte, con la #108.
+      WIFI_LLAVE_PRIVADA_PEM: ${WIFI_LLAVE_PRIVADA_PEM:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?Definí SEED_ADMIN_PASSWORD en tu .env (ver .env.example) — sin default a propósito, ver README}
       PORT: 3000
     ports:
