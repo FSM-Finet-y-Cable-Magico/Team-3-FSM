@@ -737,6 +737,8 @@ export class OrdenesService {
       resultado_llamada: dto.resultado_llamada,
       potencia_optica_dbm: dto.potencia_optica_dbm,
       resuelto_remotamente: dto.resuelto_remotamente ?? false,
+      // `asegurarAcceso(..., true)` ya garantizo que ot.id_tecnico === userId.
+      id_tecnico: ot.id_tecnico,
       cliente: otActualizada?.cliente
         ? { rut: otActualizada.cliente.rut, nombre: otActualizada.cliente.nombre_completo }
         : null,
