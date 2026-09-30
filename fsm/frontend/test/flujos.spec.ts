@@ -1491,3 +1491,39 @@ test('CU-41: el ADMIN filtra el log de auditoria y lo exporta', async ({ page })
   await page.getByRole('button', { name: 'Buscar' }).click();
   await expect(page.getByText('No se encontraron eventos con los filtros seleccionados.')).toBeVisible();
 });
+
+// CU-07: historial de cliente por direccion.
+test('CU-07: busca los clientes de una direccion y abre la ficha del elegido', async ({ page }) => {
+  await preparar(page);
+  const consultas: string[] = [];
+  await page.route(/\/api\/clientes\/por-direccion/, route => {
+    const url = new URL(route.request().url());
+    consultas.push(url.search);
+    if (url.searchParams.get('numero') === '1') return route.fulfill({ json: [] });
+    return route.fulfill({ json: [
+      { id_cliente: 1, rut: '12345678-5', nombre_completo: 'Cliente de prueba', estado: 'ACTIVO', direccion: 'Av. Ejemplo 1234, La Pintana', actual: true },
+      { id_cliente: 11, rut: '11111111-1', nombre_completo: 'Luis Paz', estado: 'BAJA', direccion: 'Av. Ejemplo 1234, La Pintana', actual: false },
+    ] });
+  });
+  await login(page, 'admin'); await page.goto('/admin/clientes');
+  await page.getByRole('link', { name: 'Buscar por dirección' }).click();
+
+  const buscar = page.getByRole('button', { name: 'Buscar' });
+  await expect(buscar).toBeDisabled();
+  await page.getByLabel('Calle').fill('Ejemplo');
+  await page.getByLabel('Número').fill('1234');
+  await page.getByLabel('Comuna').fill('La Pintana');
+  await buscar.click();
+
+  await expect(page.getByRole('row', { name: /Luis Paz/ })).toContainText('Anterior');
+  expect(consultas.at(-1)).toBe('?calle=Ejemplo&numero=1234&comuna=La+Pintana');
+  await page.getByRole('link', { name: 'Cliente de prueba' }).click();
+  await expect(page).toHaveURL(/\/admin\/clientes\/12345678-5$/);
+
+  await page.goBack();
+  await page.getByLabel('Calle').fill('Ejemplo');
+  await page.getByLabel('Número').fill('1');
+  await page.getByLabel('Comuna').fill('La Pintana');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  await expect(page.getByText('No se encontraron clientes en esa dirección. Verifique la información ingresada.')).toBeVisible();
+});

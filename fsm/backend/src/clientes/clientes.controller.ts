@@ -39,6 +39,18 @@ export class ClientesController {
     return this.clientesService.listarPlanes(user.id_empresa);
   }
 
+  /** CU-07: clientes actuales y anteriores de una direccion. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('por-direccion')
+  buscarPorDireccion(
+    @CurrentUser() user: { id_empresa: number },
+    @Query('calle') calle?: string,
+    @Query('numero') numero?: string,
+    @Query('comuna') comuna?: string,
+  ) {
+    return this.clientesService.buscarPorDireccion(user.id_empresa, { calle, numero, comuna });
+  }
+
   /** CU-35: lista roja por RUT y por direccion, antes de crear una OT. */
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Get('lista-roja/verificar')

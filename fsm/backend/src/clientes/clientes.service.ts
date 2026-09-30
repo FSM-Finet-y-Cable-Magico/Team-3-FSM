@@ -20,6 +20,7 @@ import {
   direccionConAntecedentes,
   mensajeVetado,
   nivelVigente,
+  normalizarDireccion,
   textoDireccion,
   type NivelRiesgo,
 } from './lista-roja.js';
@@ -32,6 +33,10 @@ export interface FiltrosClientes {
   direccion?: string;
 }
 const MAX_CONTRATOS_ACTIVOS = 50;
+
+/** Texto de la excepcion 2 de CU-07. */
+export const MENSAJE_SIN_CLIENTES_EN_DIRECCION =
+  'No se encontraron clientes en esa dirección. Verifique la información ingresada.';
 
 @Injectable()
 export class ClientesService {
@@ -267,6 +272,58 @@ export class ClientesService {
     });
 
     return resultado;
+  }
+
+  /**
+   * CU-07: todos los clientes asociados a una direccion, actuales y anteriores
+   * (una direccion que no es la principal es una anterior). Se elige uno y se
+   * abre su ficha (CU-06).
+   *
+   * `orden_trabajo` no tiene indice por `id_direccion`: buscar por las OT
+   * recorreria la tabla entera. Se traen las direcciones con cliente de la
+   * comuna y se filtra en memoria, con la normalizacion de la lista roja, para
+   * que "Av. Ejemplo" y "AVENIDA EJEMPLO" coincidan. El numero se compara
+   * entero: 99 no encuentra el 999.
+   */
+  async buscarPorDireccion(id_empresa: number, q: { calle?: string; numero?: string; comuna?: string }) {
+    const calle = normalizarDireccion(q.calle ?? '');
+    const numero = normalizarDireccion(q.numero ?? '');
+    const comuna = (q.comuna ?? '').trim();
+    // Excepcion 1 del CU: con los campos vacios no se busca.
+    if (!calle || !numero || !comuna) {
+      throw new BadRequestException('Ingresa calle, número y comuna');
+    }
+
+    const direcciones = await this.prisma.direccion_servicio.findMany({
+      where: {
+        id_cliente: { not: null },
+        cliente: { id_empresa },
+        comuna: { equals: comuna, mode: 'insensitive' },
+      },
+      select: {
+        direccion_completa: true,
+        comuna: true,
+        es_principal: true,
+        cliente: { select: { id_cliente: true, rut: true, nombre_completo: true, estado: true } },
+      },
+      take: 5000,
+    });
+
+    return direcciones
+      .filter((d) => {
+        const texto = normalizarDireccion(d.direccion_completa);
+        return texto.includes(calle) && texto.split(' ').includes(numero);
+      })
+      .filter((d) => d.cliente !== null)
+      .map((d) => ({
+        id_cliente: d.cliente!.id_cliente,
+        rut: d.cliente!.rut,
+        nombre_completo: d.cliente!.nombre_completo,
+        estado: d.cliente!.estado,
+        direccion: textoDireccion(d),
+        actual: d.es_principal,
+      }))
+      .sort((a, b) => Number(b.actual) - Number(a.actual) || a.nombre_completo.localeCompare(b.nombre_completo));
   }
 
   /**

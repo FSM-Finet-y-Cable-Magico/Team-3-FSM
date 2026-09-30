@@ -106,6 +106,25 @@ export async function cambiarNivelRiesgo(
   });
 }
 
+/** CU-07: un cliente asociado a la direccion buscada. */
+export interface ClienteEnDireccion {
+  id_cliente: number;
+  rut: string | null;
+  nombre_completo: string;
+  estado: string;
+  direccion: string;
+  /** false: es una direccion anterior del cliente. */
+  actual: boolean;
+}
+
+export async function buscarPorDireccion(
+  token: string,
+  q: { calle: string; numero: string; comuna: string },
+): Promise<ClienteEnDireccion[]> {
+  const p = new URLSearchParams(q);
+  return fetchApi(token, `${API_URL}/api/clientes/por-direccion?${p.toString()}`);
+}
+
 /** CU-35: lista roja por RUT (bloquea) y por direccion (advierte). */
 export async function verificarListaRoja(
   token: string,
