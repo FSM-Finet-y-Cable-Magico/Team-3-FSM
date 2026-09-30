@@ -856,3 +856,33 @@ test('ninguna navegacion interna apunta fuera de su area', async () => {
 
   expect(malas, 'navegaciones que no caen en un area valida').toEqual([]);
 });
+
+// P0-d del acuerdo con G8: la OT de instalacion que pide G8 no tiene cliente.
+// La persona a visitar viene en el snapshot de la solicitud, y sin su nombre y
+// su telefono el tecnico no sabe a quien visita ni puede llamarlo antes de
+// marcar cliente ausente (caso 7 de las pruebas de aceptacion).
+const otDeG8 = {
+  ...ot, id_ot: 781, id_cliente: null, cliente: null, estado: 'ASIGNADA',
+  direccion: { direccion_completa: 'Av. Ejemplo 1234', comuna: 'La Pintana' },
+  solicitud_integracion: { nombre_completo: 'Juan Pérez Soto', telefono: '+56912345678' },
+};
+
+test('P0-d: en terreno la OT de G8 muestra a quien se visita y deja llamarlo', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes?*', route =>
+    route.fulfill({ json: { data: [otDeG8], page: 1, limit: 20, total: 1 } }));
+  await login(page);
+
+  await expect(page.getByText('Juan Pérez Soto')).toBeVisible();
+  await expect(page.getByRole('link', { name: /Llamar/ })).toHaveAttribute('href', 'tel:+56912345678');
+});
+
+test('P0-d: el detalle de la OT de G8 muestra nombre y telefono de la persona', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes/781', route => route.fulfill({ json: otDeG8 }));
+  await login(page, 'admin'); await page.goto('/admin/ot/781');
+
+  await expect(page.getByText('Juan Pérez Soto')).toBeVisible();
+  await expect(page.getByText('Solicitud de instalación (CRM)')).toBeVisible();
+  await expect(page.getByRole('link', { name: '+56912345678' })).toHaveAttribute('href', 'tel:+56912345678');
+});

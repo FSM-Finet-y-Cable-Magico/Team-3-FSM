@@ -10,7 +10,8 @@ import {
   type AccionEquipo,
 } from '../ordenes/estado-equipo.constants.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
-import type { PayloadCierre, EquipoDeclarado } from '../ordenes/fan-out/fan-out-cierre.js';
+import type { PayloadCierre } from '../ordenes/fan-out/fan-out-cierre.js';
+import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from '../ordenes/fan-out/payload-cierre.js';
 
 const MAX_RANGO_DIAS = 90;
 
@@ -147,6 +148,59 @@ export class IntegracionesService {
   }
 
   /**
+   * P0-b del acuerdo con G8: estado y datos tecnicos de UNA OT, en cualquier
+   * estado. Es la consulta oficial de seguimiento mientras la OT no se cierra;
+   * el GET de `/cierre` solo sirve despues.
+   *
+   * No trae cliente ni persona: G8 ya los tiene, y lo que necesita saber aca es
+   * en que va la OT. `origen_integracion` es null en las OT creadas en G3.
+   */
+  async orden(scope: ApiScope, id_ot: number, id_empresa: number) {
+    if (!Number.isInteger(id_ot) || id_ot <= 0) throw new BadRequestException('id de OT invalido');
+    this.exigirEmpresa(scope, id_empresa);
+
+    const ot = await this.prisma.orden_trabajo.findFirst({
+      where: { id_ot, id_empresa },
+      select: {
+        id_ot: true,
+        id_empresa: true,
+        tipo_ot: true,
+        prioridad: true,
+        estado: true,
+        fecha_creacion: true,
+        fecha_programada: true,
+        fecha_completada: true,
+        tecnico: { select: { id_usuario: true, nombre_completo: true } },
+        solicitud_integracion: {
+          select: {
+            request_id: true,
+            trace_id: true,
+            id_contrato_externo: true,
+            id_prospecto_externo: true,
+            id_plan_externo: true,
+          },
+        },
+      },
+    });
+    if (!ot) throw new NotFoundException(`OT ${id_ot} no encontrada en la empresa ${id_empresa}`);
+
+    const { solicitud_integracion: s, ...resto } = ot;
+    return {
+      ...resto,
+      tecnico: ot.tecnico ?? null,
+      origen_integracion: s
+        ? {
+            request_id: s.request_id,
+            trace_id: s.trace_id,
+            id_contrato: s.id_contrato_externo,
+            id_prospecto: s.id_prospecto_externo,
+            id_plan: s.id_plan_externo,
+          }
+        : null,
+    };
+  }
+
+  /**
    * Payload completo de un cierre — RECONCILIACIÓN. Devuelve exactamente lo
    * mismo que el webhook `fan-out`. G1 lo consume si el webhook falló.
    */
@@ -155,41 +209,11 @@ export class IntegracionesService {
 
     const ot = await this.prisma.orden_trabajo.findFirst({
       where: { id_ot, id_empresa, estado: 'COMPLETADA' },
-      include: {
-        cliente: { select: { rut: true, nombre_completo: true } },
-        direccion: { select: { direccion_completa: true, comuna: true } },
-        categoria_falla: { select: { id_categoria: true, nombre: true } },
-        materiales: { select: { id_tipo_equipo: true, cantidad: true } },
-        llamada: { select: { resultado: true } },
-      },
+      include: INCLUDE_PAYLOAD_CIERRE,
     });
     if (!ot) throw new NotFoundException(`OT ${id_ot} cerrada no encontrada en la empresa ${id_empresa}`);
 
-    const equipos = (ot.cierre_equipos as { instalados?: EquipoDeclarado[]; retirados?: EquipoDeclarado[] } | null) ?? {};
-    const fecha = (ot.fecha_completada ?? ot.fecha_creacion).toISOString();
-
-    return {
-      clave_idempotencia: `${id_ot}:${fecha}`,
-      id_ot,
-      id_empresa: ot.id_empresa,
-      tipo_ot: ot.tipo_ot,
-      fecha_completada: fecha,
-      resultado_llamada: ot.llamada?.resultado ?? '',
-      potencia_optica_dbm: ot.potencia_optica_dbm == null ? 0 : Number(ot.potencia_optica_dbm),
-      resuelto_remotamente: ot.resuelto_remotamente,
-      id_tecnico: ot.id_tecnico,
-      cliente: ot.cliente ? { rut: ot.cliente.rut, nombre: ot.cliente.nombre_completo } : null,
-      direccion: ot.direccion ?? null,
-      categoria_falla: ot.categoria_falla
-        ? { id_categoria: ot.categoria_falla.id_categoria, nombre: ot.categoria_falla.nombre }
-        : null,
-      categoria_falla_otro: ot.categoria_falla_otro,
-      materiales: ot.materiales
-        .filter((m): m is typeof m & { id_tipo_equipo: number } => m.id_tipo_equipo != null)
-        .map((m) => ({ id_tipo_equipo: m.id_tipo_equipo, cantidad: Number(m.cantidad) })),
-      equipos_instalados: equipos.instalados ?? [],
-      equipos_retirados: equipos.retirados ?? [],
-    };
+    return construirPayloadCierre(ot);
   }
 
   // ---- catálogo / clientes ----

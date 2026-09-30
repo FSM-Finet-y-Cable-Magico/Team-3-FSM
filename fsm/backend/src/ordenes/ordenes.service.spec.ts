@@ -108,11 +108,51 @@ describe('detalle de OT para la vista', () => {
     expect(ot.potencia_optica_dbm).toBeNull();
   });
 
+  it('trae nombre y telefono de la persona cuando la OT la pidio G8 (P0-d)', async () => {
+    // La OT de instalacion de G8 no tiene cliente: sin esto el tecnico no sabe
+    // a quien visita ni puede llamarlo antes de marcar cliente ausente. Solo
+    // nombre y telefono: ni RUT ni email, por minima exposicion.
+    await service.obtenerOT(1, { userId: 1, id_empresa: 1, rol: 'ADMIN' });
+    const { solicitud_integracion } = findFirst.mock.calls[1][0].include;
+
+    expect(solicitud_integracion).toEqual({ select: { nombre_completo: true, telefono: true } });
+  });
+
   it('acota las evidencias y los materiales que lee del detalle', async () => {
     await service.obtenerOT(1, { userId: 1, id_empresa: 1, rol: 'ADMIN' });
     const { fotos, materiales } = findFirst.mock.calls[1][0].include;
 
     expect(fotos.take).toBeGreaterThan(0);
     expect(materiales.take).toBeGreaterThan(0);
+  });
+});
+
+describe('listado de OT para terreno', () => {
+  const findMany = jest.fn(async (_a: any) => [{ id_ot: 1, estado: 'ASIGNADA', fecha_creacion: new Date() }]);
+  const $queryRaw = jest.fn(async (sql: any) => (sql.sql.includes('COUNT(*)') ? [{ total: 1 }] : [{ id_ot: 1 }]));
+  let service: OrdenesService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        { provide: ReparacionesRecurrentesService, useValue: {} },
+        { provide: SinReagendarService, useValue: { marcasDeEntrada: jest.fn(async () => new Map()), dias: () => 0 } },
+        OrdenesService,
+        { provide: PrismaService, useValue: { orden_trabajo: { findMany }, $queryRaw } },
+        { provide: CloudinaryService, useValue: {} },
+        { provide: DashboardGateway, useValue: {} },
+        { provide: FAN_OUT_CIERRE, useValue: { nombre: 'doble', notificar: async () => {} } },
+      ],
+    }).compile();
+    service = moduleRef.get(OrdenesService);
+  });
+
+  it('cada OT trae nombre y telefono de la persona que pidio G8 (P0-d)', async () => {
+    // La tarjeta de terreno se arma desde el listado, no desde el detalle.
+    await service.listarOT(1, {});
+    expect(findMany.mock.calls[0][0].include.solicitud_integracion).toEqual({
+      select: { nombre_completo: true, telefono: true },
+    });
   });
 });

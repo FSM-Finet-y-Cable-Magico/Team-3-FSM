@@ -1,5 +1,7 @@
-import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { IntegracionesService } from './integraciones.service.js';
+import { InstalacionesService } from './instalaciones.service.js';
+import { SolicitudInstalacionDto } from './dto/solicitud-instalacion.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { ApiKeyGuard, type ApiScope } from '../common/guards/api-key.guard.js';
 
@@ -19,10 +21,34 @@ interface ConScope {
 @UseGuards(ApiKeyGuard)
 @Controller('integraciones')
 export class IntegracionesController {
-  constructor(private svc: IntegracionesService) {}
+  constructor(
+    private svc: IntegracionesService,
+    private instalaciones: InstalacionesService,
+  ) {}
 
   private ok(data: unknown) {
     return { success: true, data };
+  }
+
+  // ---- instalaciones (P0-a del acuerdo con G8) ----
+
+  /**
+   * G8 pide la instalacion de una persona que todavia no es cliente. 201 si es
+   * una solicitud nueva; 200 con `duplicado: true` si es un reintento del mismo
+   * comando (Respuesta de G8, §4.4). `passthrough` deja a Nest serializar la
+   * respuesta: solo se cambia el codigo.
+   */
+  @Post('instalaciones')
+  async instalacion(
+    @Req() req: ConScope,
+    @Body() dto: SolicitudInstalacionDto,
+    @Res({ passthrough: true }) res: { status(code: number): unknown },
+  ) {
+    const r = await this.instalaciones.crear(req.apiScope, dto);
+    res.status(r.creado ? 201 : 200);
+    return r.creado
+      ? { success: true, data: r.data, message: 'Solicitud de instalación aceptada' }
+      : this.ok(r.data);
   }
 
   // ---- OTs ----
@@ -68,6 +94,20 @@ export class IntegracionesController {
         page: page ? +page : undefined,
       }),
     );
+  }
+
+  /**
+   * P0-b del acuerdo con G8: estado de una OT. Va DESPUES de `ordenes/cierres`:
+   * Nest resuelve las rutas en el orden en que se declaran, y antes que ella
+   * este `:id` se tragaria "cierres" como id.
+   */
+  @Get('ordenes/:id')
+  async orden(
+    @Req() req: ConScope,
+    @Param('id') id: string,
+    @Query('id_empresa') id_empresa: string,
+  ) {
+    return this.ok(await this.svc.orden(req.apiScope, +id, +id_empresa));
   }
 
   /** Reconciliación: payload completo de un cierre (igual que el webhook). */
