@@ -170,4 +170,15 @@ describe('listado de OT para terreno', () => {
       select: { nivel: true },
     });
   });
+
+  it('cada OT trae el ultimo motivo de rechazo del cierre, para que el tecnico sepa que corregir', async () => {
+    // El tecnico trabaja en /terreno y no ve el historial del detalle de /admin.
+    await service.listarOT(1, {});
+    expect(findMany.mock.calls[0][0].include.historial).toEqual({
+      where: { estado_anterior: 'PENDIENTE_APROBACION', estado_nuevo: 'EN_CURSO' },
+      orderBy: { fecha_hora: 'desc' },
+      take: 1,
+      select: { observaciones: true, fecha_hora: true },
+    });
+  });
 });

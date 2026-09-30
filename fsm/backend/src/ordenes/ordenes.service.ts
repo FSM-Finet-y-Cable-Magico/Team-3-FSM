@@ -86,6 +86,18 @@ const CONTACTO_SOLICITUD = { select: { nombre_completo: true, telefono: true } }
  */
 const NIVEL_RIESGO_VIGENTE = { orderBy: { id_vetado: 'desc' }, take: 1, select: { nivel: true } } as const;
 
+/**
+ * MOD RF-04: el ultimo rechazo del cierre (su motivo va en observaciones). El
+ * tecnico trabaja en /terreno y no ve el historial del detalle: sin esto no
+ * sabria que corregir.
+ */
+const ULTIMO_RECHAZO = {
+  where: { estado_anterior: 'PENDIENTE_APROBACION', estado_nuevo: 'EN_CURSO' },
+  orderBy: { fecha_hora: 'desc' },
+  take: 1,
+  select: { observaciones: true, fecha_hora: true },
+} as const;
+
 const OT_INCLUDE = {
   cliente: {
     select: { id_cliente: true, nombre_completo: true, rut: true, es_conflictivo: true, lista_negra: NIVEL_RIESGO_VIGENTE },
@@ -94,6 +106,7 @@ const OT_INCLUDE = {
   direccion: { select: { direccion_completa: true, comuna: true } },
   categoria_falla: { select: { id_categoria: true, nombre: true, sla_horas: true } },
   solicitud_integracion: CONTACTO_SOLICITUD,
+  historial: ULTIMO_RECHAZO,
 } as const;
 
 @Injectable()
