@@ -13,6 +13,7 @@ import { ReportesModule } from './reportes/reportes.module.js';
 import { NotificacionesModule } from './notificaciones/notificaciones.module.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
+import { TicketsModule } from './tickets/tickets.module.js';
 import { ConfiguracionModule } from './configuracion/configuracion.module.js';
 
 @Module({
@@ -28,6 +29,7 @@ import { ConfiguracionModule } from './configuracion/configuracion.module.js';
     IntegracionesModule,
     ReportesModule,
     NotificacionesModule,
+    TicketsModule,
     ConfiguracionModule,
   ],
   providers: [
