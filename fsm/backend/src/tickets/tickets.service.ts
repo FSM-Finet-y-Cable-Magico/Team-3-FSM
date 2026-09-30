@@ -126,8 +126,14 @@ export class TicketsService {
   ) {
     const { page, limit, skip } = normalizarPaginacion(filtros.page, filtros.limit);
     const where: Prisma.ticketWhereInput = { id_empresa };
-    if (filtros.estado) where.estado = filtros.estado;
-    if (filtros.prioridad) where.prioridad = filtros.prioridad;
+    // `insensitive` es red de seguridad, no el arreglo. Los tickets escritos
+    // antes de este modulo tenian la caja mezclada --"Abierto", "cerrado"-- y
+    // con la comparacion exacta no aparecian en ningun filtro: se veian en el
+    // listado completo y desaparecian al filtrar, que es la peor forma de
+    // fallar. La migracion `normalizar_tickets_legado` los deja canonicos; esto
+    // cubre un ambiente donde todavia no haya corrido.
+    if (filtros.estado) where.estado = { equals: filtros.estado, mode: 'insensitive' };
+    if (filtros.prioridad) where.prioridad = { equals: filtros.prioridad, mode: 'insensitive' };
 
     const [filas, total] = await Promise.all([
       this.prisma.ticket.findMany({

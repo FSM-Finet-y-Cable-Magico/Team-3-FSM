@@ -68,11 +68,22 @@ export const ORIGEN_TICKET = {
   PORTAL: 'PORTAL',
   BOT: 'BOT',
   WHATSAPP: 'WHATSAPP',
+  /**
+   * El CRM de G8. Se agrega porque seis de los tickets que ya existian vinieron
+   * de ahi, y no habia a que mapearlos: PORTAL o BOT dirian un canal que no es.
+   * Vale mas conservar de donde vino de verdad que forzarlo a la lista.
+   */
+  CRM: 'CRM',
 } as const;
 export type OrigenTicket = (typeof ORIGEN_TICKET)[keyof typeof ORIGEN_TICKET];
 
 export const ORIGENES_INTERNOS: OrigenTicket[] = [ORIGEN_TICKET.TELEFONO, ORIGEN_TICKET.PRESENCIAL, ORIGEN_TICKET.CORREO];
-export const ORIGENES_DIGITALES: OrigenTicket[] = [ORIGEN_TICKET.PORTAL, ORIGEN_TICKET.BOT, ORIGEN_TICKET.WHATSAPP];
+export const ORIGENES_DIGITALES: OrigenTicket[] = [
+  ORIGEN_TICKET.PORTAL,
+  ORIGEN_TICKET.BOT,
+  ORIGEN_TICKET.WHATSAPP,
+  ORIGEN_TICKET.CRM,
+];
 
 /**
  * Sin 0/O ni 1/I/L: el cliente lo dicta por telefono o lo copia a mano. 32
