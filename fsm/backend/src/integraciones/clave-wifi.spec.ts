@@ -226,4 +226,21 @@ describe('ClaveWifiService', () => {
       'Solicitud no encontrada',
     );
   });
+  it('lee la llave con los saltos como \\n, que es como vive en el .env', async () => {
+    // El .env no admite saltos de linea, asi que la llave se guarda en una sola
+    // linea con los saltos como la secuencia de dos caracteres \\n. Si el
+    // servicio no los devuelve a saltos reales, openssl no parsea el PEM y toda
+    // solicitud termina en 503 -- con la llave bien configurada.
+    //
+    // Las demas pruebas inyectan el PEM con saltos reales, asi que esta rama no
+    // se ejercitaba y el defecto pasaba entero.
+    const comoEnEnv = privada.replace(/\n/g, '\\n');
+    expect(comoEnEnv).not.toContain('\n');
+
+    await montar(comoEnEnv);
+    const r = await service.recibir(dto(), scope);
+    const entregada = await service.entregar(r.id_solicitud, 1);
+
+    expect(entregada.clave).toBe('clave-del-cliente-123');
+  });
 });

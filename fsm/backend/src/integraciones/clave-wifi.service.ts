@@ -45,7 +45,7 @@ export class ClaveWifiService {
     if (!pem) return null;
     // El .env no admite saltos de linea, asi que la llave se guarda con `\n`
     // literales y hay que devolverlos antes de que node la lea.
-    return pem.includes('\n') ? pem.replace(/\n/g, '\n') : pem;
+    return pem.includes('\\n') ? pem.replace(/\\n/g, '\n') : pem;
   }
 
   async recibir(
