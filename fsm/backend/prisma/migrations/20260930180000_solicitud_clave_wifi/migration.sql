@@ -8,7 +8,9 @@
 -- llave publica. No se descifra para guardarlo: G8 puede leer la fila y no
 -- puede descifrarla, que es justo lo que pide el §6.5.
 --
--- Se aplica SOLO con `prisma migrate deploy`, en la ventana anunciada a G1 y G8.
+-- Se aplica sola al desplegar: el CMD del Dockerfile corre `prisma migrate
+-- deploy` antes de arrancar (ver #47, resuelto). Es CREATE TABLE, aditivo, asi
+-- que no necesita ventana: no toca nada que G1 ni G8 esten leyendo.
 
 -- CreateTable
 CREATE TABLE "solicitud_clave_wifi" (
