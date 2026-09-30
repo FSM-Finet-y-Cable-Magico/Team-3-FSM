@@ -74,7 +74,26 @@ export async function listarUsuarios(token: string): Promise<
     email: string | null;
     fecha_creacion: string;
     rol: string;
+    /** CU-43: el listado trae tambien las cuentas desactivadas. */
+    activo: boolean;
   }>
 > {
   return pedirJson(token, `${API_URL}/api/auth/usuarios`, undefined, 'Error al listar usuarios');
+}
+
+/**
+ * CU-43: desactivar o reactivar una cuenta. Devuelve cuantas OT activas le
+ * quedan al usuario, para avisar que hay que reasignarlas.
+ */
+export async function cambiarActivo(
+  token: string,
+  id_usuario: number,
+  activo: boolean,
+): Promise<{ id_usuario: number; activo: boolean; ot_activas: number }> {
+  return pedirJson(
+    token,
+    `${API_URL}/api/auth/usuarios/${id_usuario}/activo`,
+    { method: 'PATCH', body: JSON.stringify({ activo }) },
+    'Error al cambiar el estado de la cuenta',
+  );
 }

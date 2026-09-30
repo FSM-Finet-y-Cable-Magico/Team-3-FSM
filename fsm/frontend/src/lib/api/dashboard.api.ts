@@ -54,3 +54,19 @@ export async function listarEmpresas(token: string): Promise<Empresa[]> {
 export async function obtenerDatosEmpresa(token: string, id_empresa: number): Promise<{ empresa: unknown; total_clientes: number; ot_activas: number }> {
   return pedirJson(token, `${API_URL}/api/dashboard/empresa/${id_empresa}`, undefined, 'Error al obtener datos de empresa');
 }
+
+/** CU-34: una empresa en el consolidado. */
+export interface FilaConsolidado {
+  id_empresa: number;
+  nombre: string;
+  clientes_activos: number;
+  ot_activas: number;
+  ot_por_aprobar: number;
+  ot_completadas_30_dias: number;
+}
+
+export async function obtenerConsolidado(
+  token: string,
+): Promise<{ empresas: FilaConsolidado[]; totales: Omit<FilaConsolidado, 'id_empresa' | 'nombre'> }> {
+  return pedirJson(token, `${API_URL}/api/dashboard/consolidado`, undefined, 'Error al cargar el consolidado');
+}

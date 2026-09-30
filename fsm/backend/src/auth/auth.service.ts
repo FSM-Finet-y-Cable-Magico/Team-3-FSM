@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
@@ -12,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { CambiarPasswordDto } from './dto/cambiar-password.dto.js';
 import { CrearUsuarioDto } from './dto/crear-usuario.dto.js';
+import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 
 @Injectable()
 export class AuthService {
@@ -161,11 +163,9 @@ export class AuthService {
   }
 
   async listarUsuarios(id_empresa: number) {
+    // CU-43: tambien las desactivadas. Si no aparecen, no hay como reactivarlas.
     const usuarios = await this.prisma.usuario.findMany({
-      where: {
-        id_empresa,
-        activo: true,
-      },
+      where: { id_empresa },
       include: {
         roles: {
           include: {
@@ -183,8 +183,49 @@ export class AuthService {
       nombre_usuario: u.nombre_usuario,
       email: u.email,
       fecha_creacion: u.fecha_creacion,
+      activo: u.activo,
       rol: u.roles[0]?.rol?.nombre_rol ?? '',
     }));
+  }
+
+  /**
+   * CU-43: desactivar (o reactivar) una cuenta. Una cuenta desactivada no
+   * puede iniciar sesion, y la estrategia JWT rechaza tambien los tokens que
+   * ya tenia emitidos: el corte es inmediato, no a las 8 horas.
+   *
+   * No se borra nada: el historial, las OT y la auditoria de esa persona
+   * siguen apuntando a su fila. Devuelve cuantas OT activas le quedan para
+   * que la Vista avise y el jefe tecnico las reasigne (RF-45).
+   */
+  async cambiarActivo(id_usuario: number, activo: boolean, actor: UsuarioAutenticado) {
+    if (id_usuario === actor.userId && !activo) {
+      throw new BadRequestException('No puedes desactivar tu propia cuenta');
+    }
+    const usuario = await this.prisma.usuario.findFirst({
+      where: { id_usuario, id_empresa: actor.id_empresa },
+    });
+    if (!usuario) throw new NotFoundException('Usuario no encontrado');
+
+    if (usuario.activo !== activo) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.usuario.update({ where: { id_usuario }, data: { activo } });
+        await tx.log_auditoria.create({
+          data: {
+            id_usuario: actor.userId,
+            accion: activo ? 'REACTIVAR_USUARIO' : 'DESACTIVAR_USUARIO',
+            entidad_afectada: 'usuario',
+            id_entidad_afectada: id_usuario,
+            valor_anterior: { activo: usuario.activo },
+            valor_nuevo: { activo },
+          },
+        });
+      });
+    }
+
+    const ot_activas = await this.prisma.orden_trabajo.count({
+      where: { id_tecnico: id_usuario, id_empresa: actor.id_empresa, estado: { in: ['ASIGNADA', 'EN_CURSO'] } },
+    });
+    return { id_usuario, activo, ot_activas };
   }
 
   /**

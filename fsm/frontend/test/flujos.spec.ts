@@ -1000,3 +1000,125 @@ test('MOD RF-04: el listado de OT filtra por cierres por aprobar desde la URL', 
   expect(estados.at(-1)).toBe('PENDIENTE_APROBACION');
   await expect(page.getByLabel('Estado')).toHaveValue('PENDIENTE_APROBACION');
 });
+
+// CU-43: desactivar una cuenta corta el acceso en el acto, asi que se pide
+// confirmacion en la vista (no en un dialogo del navegador) y se avisa si el
+// tecnico deja OT activas sin hacer.
+test('CU-43: el ADMIN desactiva una cuenta, ve sus OT pendientes y la reactiva', async ({ page }) => {
+  await preparar(page);
+  const usuarios = [
+    { id_usuario: 7, id_empresa: 1, nombre_completo: 'Admin de prueba', nombre_usuario: 'admin.prueba', email: null, fecha_creacion: '2026-01-01T12:00:00Z', rol: 'ADMIN', activo: true },
+    { id_usuario: 14, id_empresa: 1, nombre_completo: 'Pedro Rojas', nombre_usuario: 'pedro.rojas', email: null, fecha_creacion: '2026-01-01T12:00:00Z', rol: 'TECNICO', activo: true },
+  ];
+  const cambios: unknown[] = [];
+  await page.route('http://127.0.0.1:3000/api/auth/usuarios', route => route.fulfill({ json: usuarios }));
+  await page.route(/\/api\/auth\/usuarios\/14\/activo$/, route => {
+    const { activo } = route.request().postDataJSON();
+    cambios.push(activo);
+    usuarios[1].activo = activo;
+    return route.fulfill({ json: { id_usuario: 14, activo, ot_activas: activo ? 0 : 2 } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/usuarios');
+
+  const fila = page.getByRole('row', { name: /Pedro Rojas/ });
+  // Nadie se desactiva a si mismo desde aca.
+  await expect(page.getByRole('row', { name: /Admin de prueba/ }).getByRole('button', { name: 'Desactivar' })).toHaveCount(0);
+
+  await fila.getByRole('button', { name: 'Desactivar' }).click();
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo).toContainText('Pedro Rojas');
+  await dialogo.getByRole('button', { name: 'Desactivar cuenta' }).click();
+
+  await expect(page.getByText('Pedro Rojas tiene 2 OT activas')).toBeVisible();
+  await expect(fila.getByText('Desactivada', { exact: true })).toBeVisible();
+  await fila.getByRole('button', { name: 'Reactivar' }).click();
+  await expect(fila.getByText('Activa', { exact: true })).toBeVisible();
+  expect(cambios).toEqual([false, true]);
+});
+
+// CU-14: historial de microdesconexiones de una ONT.
+const historialOnt = (interrupciones: unknown[]) => ({
+  numero_serie: 'ZTEG1234', nombre_cliente_ext: 'Ana Soto',
+  periodo: { desde: '2026-08-30T15:00:00.000Z', hasta: '2026-09-29T15:00:00.000Z' },
+  eventos: [],
+  interrupciones,
+  indicadores: {
+    total: interrupciones.length, cortas: interrupciones.length, largas: 0, minutos_totales: 5 * interrupciones.length,
+    dias_con_varias_cortas: interrupciones.length ? [{ dia: '2026-09-20', cortas: 3 }] : [],
+    horario_recurrente: interrupciones.length ? [{ hora: 3, dias: 4 }] : [],
+  },
+});
+
+test('CU-14: desde el monitoreo se abre el historial de interrupciones de una ONT', async ({ page }) => {
+  await preparar(page);
+  const periodos: (string | null)[] = [];
+  await page.route('http://127.0.0.1:3000/api/monitoreo/resumen', route => route.fulfill({ json: { total_ont: 1, por_estado: { ONLINE: 1 }, potencia_fuera_de_rango: 0, fecha_actualizacion: '2026-09-29T15:00:00Z' } }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/ont?*', route => route.fulfill({ json: [
+    { numero_serie: 'ZTEG1234', id_unidad: null, id_cliente: null, zona: 'Norte', olt_externo: 'OLT-1', nombre_cliente_ext: 'Ana Soto', estado_conexion: 'LOS', potencia_actual_dbm: null, potencia_fuera_de_rango: false, medido_en: '2026-09-29T15:00:00Z' },
+  ] }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/criticos-por-caja*', route => route.fulfill({ json: { cajas: [], totales: { cajas_afectadas: 0, clientes_criticos: 0, criticos_sin_caja: 0 } } }));
+  await page.route(/\/api\/monitoreo\/ont\/ZTEG1234\/interrupciones/, route => {
+    periodos.push(new URL(route.request().url()).searchParams.get('desde'));
+    return route.fulfill({ json: historialOnt([
+      { desde: '2026-09-20T13:00:00.000Z', hasta: '2026-09-20T13:05:00.000Z', estado: 'LOS', minutos: 5, en_curso: false, empezo_antes: false, indicio: 'Pérdida de señal óptica: conector, cable de acometida o fibra' },
+    ]) });
+  });
+  await login(page, 'admin'); await page.goto('/admin/monitoreo');
+
+  await page.getByRole('tab', { name: 'Todas las ONT' }).click();
+  await page.getByRole('link', { name: 'ZTEG1234' }).click();
+  await expect(page).toHaveURL(/\/admin\/monitoreo\/ont\/ZTEG1234$/);
+  await expect(page.getByRole('heading', { name: /ZTEG1234/ })).toBeVisible();
+  await expect(page.getByText('Pérdida de señal óptica')).toBeVisible();
+  await expect(page.getByText('Cortes diarios cerca de las 03:00 (4 días)')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Última semana' }).click();
+  await expect.poll(() => periodos.length).toBeGreaterThan(1);
+  expect(periodos.at(-1)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+});
+
+test('CU-14: sin interrupciones lo dice con el texto del CU', async ({ page }) => {
+  await preparar(page);
+  await page.route(/\/api\/monitoreo\/ont\/ZTEG1234\/interrupciones/, route => route.fulfill({ json: historialOnt([]) }));
+  await login(page, 'admin'); await page.goto('/admin/monitoreo/ont/ZTEG1234');
+  await expect(page.getByText('Sin interrupciones registradas en este período.')).toBeVisible();
+});
+
+// CU-23: resumen diario de materiales.
+test('CU-23: el resumen diario muestra los materiales por tecnico y avisa lo que espera aprobacion', async ({ page }) => {
+  await preparar(page);
+  const fechas: (string | null)[] = [];
+  await page.route('http://127.0.0.1:3000/api/reportes/materiales*', route => {
+    fechas.push(new URL(route.request().url()).searchParams.get('fecha'));
+    return route.fulfill({ json: {
+      fecha: '2026-09-29', total_ot: 2, pendientes_aprobacion: 1,
+      materiales: [{ material: 'Conector SC/APC', cantidad: 5, por_tecnico: [{ tecnico: 'Ana Díaz', cantidad: 3 }, { tecnico: 'Pedro Rojas', cantidad: 2 }] }],
+    } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/reportes/materiales');
+
+  await expect(page.getByRole('cell', { name: 'Conector SC/APC' })).toBeVisible();
+  await expect(page.getByText('Ana Díaz: 3')).toBeVisible();
+  await expect(page.getByText('Incluye 1 cierre que espera aprobación')).toBeVisible();
+
+  await page.getByLabel('Día').fill('2026-09-28');
+  await expect.poll(() => fechas.at(-1)).toBe('2026-09-28');
+});
+
+// CU-34: datos consolidados de las empresas.
+test('CU-34: el ADMIN compara las empresas en una sola pantalla', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/dashboard/consolidado', route => route.fulfill({ json: {
+    empresas: [
+      { id_empresa: 1, nombre: 'FiNet', clientes_activos: 120, ot_activas: 9, ot_por_aprobar: 3, ot_completadas_30_dias: 50 },
+      { id_empresa: 2, nombre: 'Cable Mágico', clientes_activos: 40, ot_activas: 4, ot_por_aprobar: 0, ot_completadas_30_dias: 12 },
+    ],
+    totales: { clientes_activos: 160, ot_activas: 13, ot_por_aprobar: 3, ot_completadas_30_dias: 62 },
+  } }));
+  await login(page, 'admin');
+  await page.getByRole('link', { name: 'Empresas' }).click();
+
+  await expect(page.getByRole('row', { name: /FiNet/ })).toContainText('120');
+  await expect(page.getByRole('row', { name: /Cable Mágico/ })).toContainText('40');
+  await expect(page.getByRole('row', { name: /Total/ })).toContainText('160');
+});

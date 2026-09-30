@@ -1,8 +1,10 @@
-import { Controller, Post, Get, Body, Ip } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Ip, Param, ParseIntPipe } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { CambiarPasswordDto } from './dto/cambiar-password.dto.js';
 import { CrearUsuarioDto } from './dto/crear-usuario.dto.js';
+import { CambiarActivoDto } from './dto/cambiar-activo.dto.js';
+import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
@@ -39,5 +41,16 @@ export class AuthController {
   @Get('usuarios')
   listarUsuarios(@CurrentUser() user: { id_empresa: number }) {
     return this.authService.listarUsuarios(user.id_empresa);
+  }
+
+  /** CU-43: desactivar o reactivar una cuenta de la empresa activa. */
+  @Roles('ADMIN')
+  @Patch('usuarios/:id/activo')
+  cambiarActivo(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CambiarActivoDto,
+    @CurrentUser() user: UsuarioAutenticado,
+  ) {
+    return this.authService.cambiarActivo(id, dto.activo, user);
   }
 }

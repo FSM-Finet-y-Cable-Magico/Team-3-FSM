@@ -27,6 +27,13 @@ export class DashboardController {
     return this.dashboardService.listarEmpresas();
   }
 
+  /** CU-34: las empresas lado a lado. */
+  @Roles('ADMIN')
+  @Get('consolidado')
+  consolidado() {
+    return this.dashboardService.consolidado();
+  }
+
   @Roles('ADMIN')
   @Get('empresa/:id')
   datosPorEmpresa(@Param('id') id: string) {

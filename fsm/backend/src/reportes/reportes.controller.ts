@@ -52,6 +52,17 @@ export class ReportesController {
     return this.responder(r, formato, res);
   }
 
+  /** CU-23: resumen de materiales usados en un dia (por defecto, hoy). */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('materiales')
+  materiales(
+    @CurrentUser() user: UsuarioAutenticado,
+    @Query('fecha') fecha?: string,
+    @Query('empresa') empresa?: string,
+  ) {
+    return this.reportes.resumenMateriales(this.empresaDe(user, empresa), fecha);
+  }
+
   /** RF-38 (b) / CU-26: el usuario elige el rango. */
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Get('on-demand')
