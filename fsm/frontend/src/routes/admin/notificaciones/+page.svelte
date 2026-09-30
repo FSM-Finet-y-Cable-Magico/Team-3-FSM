@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Alert from '$lib/components/Alert.svelte';
   // Notificaciones (RF-43 plantillas, RF-45 OT detenidas).
   //
   // RF-42 --avisar a los clientes de una falla-- no vive acá sino en el panel de
@@ -254,7 +255,7 @@
   {/if}
 
   {#if error}
-    <div role="alert" class="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">{error}</div>
+    <Alert class="rounded-lg text-sm">{error}</Alert>
   {/if}
   {#if aviso}
     <div role="status" class="bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3">{aviso}</div>
