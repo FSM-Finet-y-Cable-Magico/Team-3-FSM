@@ -154,7 +154,7 @@ describe('aprobacion del cierre de OT', () => {
       await service.rechazarCierre(781, { motivo: 'Falta foto de la roseta' }, jefe);
 
       expect(fila.estado).toBe('EN_CURSO');
-      expect(fila).toMatchObject({ fecha_completada: null, potencia_optica_dbm: null });
+      expect(fila).toMatchObject({ potencia_optica_dbm: null });
       expect(tx.uso_material_ot.deleteMany).toHaveBeenCalledWith({ where: { id_ot: 781 } });
       expect(tx.llamada_cortes.deleteMany).toHaveBeenCalledWith({ where: { id_ot: 781 } });
       expect(tx.evidencia_foto.createMany).not.toHaveBeenCalled();
@@ -169,6 +169,19 @@ describe('aprobacion del cierre de OT', () => {
       expect(tx.log_auditoria.create).toHaveBeenCalledWith({
         data: expect.objectContaining({ accion: 'RECHAZAR_CIERRE_OT', id_entidad_afectada: 781 }),
       });
+    });
+
+    it('volver a cerrar tras un rechazo conserva la clave de idempotencia del primer cierre', async () => {
+      // Con el aviso al cierre del tecnico, el primer cierre ya se aviso a G1.
+      // La clave es id_ot + fecha_completada: si el segundo cierre trae otra
+      // fecha, G1 lo toma como un cierre nuevo y descuenta el material dos
+      // veces. Con la misma clave, lo descarta como duplicado.
+      const primera = fila.fecha_completada;
+      const service = await construir('CIERRE');
+      await service.rechazarCierre(781, { motivo: 'Falta foto de la roseta' }, jefe);
+      await service.cerrarOT(781, cierre, tecnico);
+
+      expect(fila.fecha_completada).toEqual(primera);
     });
 
     it('el tecnico puede volver a cerrar despues de un rechazo', async () => {

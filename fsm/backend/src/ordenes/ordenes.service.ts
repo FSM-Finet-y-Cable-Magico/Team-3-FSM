@@ -834,7 +834,12 @@ export class OrdenesService {
           // se termino el trabajo en terreno, no cuando se aprobo: es la que
           // miden los reportes y la que forma la clave de idempotencia.
           estado: ESTADO_PENDIENTE_APROBACION,
-          fecha_completada: new Date(),
+          // Tras un rechazo se conserva la del primer cierre: con el aviso al
+          // cierre del tecnico, ese cierre ya se aviso con la clave
+          // id_ot + fecha_completada, y una fecha nueva haria que G1 lo tome por
+          // un cierre distinto y descuente el material dos veces. Con la misma
+          // clave lo descarta como duplicado.
+          fecha_completada: ot.fecha_completada ?? new Date(),
           potencia_optica_dbm: dto.potencia_optica_dbm,
           id_categoria_falla: categoriaFalla?.id_categoria ?? null,
           categoria_falla_otro: dto.categoria_falla_otro?.trim() || null,
@@ -1266,7 +1271,8 @@ export class OrdenesService {
         where: { id_ot },
         data: {
           estado: 'EN_CURSO',
-          fecha_completada: null,
+          // fecha_completada NO se borra: forma la clave de idempotencia del
+          // aviso a G1/G8. Ver cerrarOT.
           potencia_optica_dbm: null,
           id_categoria_falla: null,
           categoria_falla_otro: null,
