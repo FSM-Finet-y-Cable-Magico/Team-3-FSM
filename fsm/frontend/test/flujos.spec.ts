@@ -1608,3 +1608,37 @@ test('CU-20: el ADMIN ve lo que haria la reconciliacion de puertos antes de apli
   await expect(dialogo).toContainText('Listo: se crearon 8 puertos y se ocuparon 3');
   expect(llamadas).toEqual(['', '?aplicar=true']);
 });
+
+// CU-25: baja de servicio.
+test('CU-25: la baja muestra lo que se desconecta, pide confirmar la deuda y enlaza las dos OT', async ({ page }) => {
+  await preparar(page);
+  const bajas: unknown[] = [];
+  await page.route('http://127.0.0.1:3000/api/clientes/rut/12345678-5', route =>
+    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: 'VERDE', contratos_activos: [] }, historial_ot: [] } }));
+  await page.route(/\/api\/clientes\/1\/baja$/, route => {
+    if (route.request().method() === 'POST') {
+      bajas.push(route.request().postDataJSON());
+      return route.fulfill({ status: 201, json: { id_cliente: 1, estado: 'BAJA', ot_baja_puerto: 500, ot_baja_equipo: 501 } });
+    }
+    return route.fulfill({ json: {
+      id_cliente: 1, nombre_completo: 'Cliente de prueba', rut: '12345678-5', estado: 'ACTIVO', direccion: 'Calle de prueba 100, El Quisco',
+      onts: ['ZTEG1234'], puertos: [{ id_puerto: 23, numero_puerto: 3, id_caja_nap: 5, caja: 'NAP-B' }],
+      motivos: ['VOLUNTARIA', 'MOROSIDAD', 'FUERZA_MAYOR', 'MUDANZA_SIN_COBERTURA'],
+    } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/clientes/12345678-5');
+
+  await page.getByRole('button', { name: 'Dar de baja' }).click();
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo).toContainText('ZTEG1234');
+  await expect(dialogo).toContainText('Puerto 3 de NAP-B');
+  await dialogo.getByLabel('Motivo').selectOption('MUDANZA_SIN_COBERTURA');
+  const confirmar = dialogo.getByRole('button', { name: 'Registrar baja' });
+  await expect(confirmar).toBeDisabled();
+  await dialogo.getByLabel('Confirmo que el cliente no tiene deuda pendiente').check();
+  await confirmar.click();
+
+  await expect(page.getByRole('link', { name: 'OT #500' })).toHaveAttribute('href', '/admin/ot/500');
+  await expect(page.getByRole('link', { name: 'OT #501' })).toBeVisible();
+  expect(bajas).toEqual([{ motivo: 'MUDANZA_SIN_COBERTURA', confirma_sin_deuda: true }]);
+});

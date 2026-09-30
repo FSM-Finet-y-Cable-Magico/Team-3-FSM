@@ -117,4 +117,15 @@ describe('reserva de puerto NAP en la OT de instalacion (CU-20)', () => {
       data: { estado: 'LIBRE', id_cliente_asociado: null },
     });
   });
+
+  it('CU-25: cerrar la OT-BAJA-PUERTO deja LIBRE el puerto ocupado por el cliente', async () => {
+    ot.tipo_ot = 'BAJA';
+    const foto = { url_cloudinary: 'https://res.cloudinary.com/x/y.jpg', formato: 'jpg', tamano_kb: 1 };
+    await service.cerrarOT(900, { fotos: [foto], materiales: [], potencia_optica_dbm: -21 }, tecnico);
+
+    expect(puertoUpdateMany).toHaveBeenCalledWith({
+      where: { id_caja_nap: 5, estado: 'OCUPADO', id_cliente_asociado: 10 },
+      data: { estado: 'LIBRE', id_cliente_asociado: null },
+    });
+  });
 });

@@ -850,6 +850,9 @@ export class OrdenesService {
       // CU-20: el tecnico confirma la instalacion; el puerto reservado para el
       // cliente queda OCUPADO.
       if (ot.tipo_ot === 'INSTALACION') await this.moverPuerto(tx, ot, 'confirmar');
+      // CU-25: la OT-BAJA-PUERTO (la de baja que lleva caja) deja el puerto
+      // del cliente LIBRE al desconectarlo.
+      if (ot.tipo_ot === 'BAJA') await this.moverPuerto(tx, ot, 'desconectar');
 
       await tx.historial_ot.create({
         data: {
@@ -915,11 +918,17 @@ export class OrdenesService {
   private async moverPuerto(
     tx: Prisma.TransactionClient,
     ot: { id_caja_nap: number | null; id_cliente: number | null },
-    como: 'confirmar' | 'liberar',
+    como: 'confirmar' | 'liberar' | 'desconectar',
   ) {
     if (!ot.id_caja_nap || !ot.id_cliente) return;
     await tx.puerto_nap.updateMany({
-      where: { id_caja_nap: ot.id_caja_nap, estado: ESTADO_PUERTO.RESERVADO, id_cliente_asociado: ot.id_cliente },
+      where: {
+        id_caja_nap: ot.id_caja_nap,
+        // Desconectar (CU-25) suelta el puerto ya ocupado; las otras dos
+        // acciones actuan sobre la reserva de la instalacion (CU-20).
+        estado: como === 'desconectar' ? ESTADO_PUERTO.OCUPADO : ESTADO_PUERTO.RESERVADO,
+        id_cliente_asociado: ot.id_cliente,
+      },
       data:
         como === 'confirmar'
           ? { estado: ESTADO_PUERTO.OCUPADO }

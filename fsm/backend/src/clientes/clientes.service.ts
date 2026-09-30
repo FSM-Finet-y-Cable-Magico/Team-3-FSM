@@ -12,6 +12,7 @@ import { validarRut } from '../common/utils/rut.util.js';
 import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
 import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
+import { MOTIVOS_BAJA, type MotivoBaja } from './dto/baja-servicio.dto.js';
 import {
   ADVERTENCIA_DIRECCION,
   MENSAJE_JUSTIFICACION_RIESGO,
@@ -272,6 +273,114 @@ export class ClientesService {
     });
 
     return resultado;
+  }
+
+  /** CU-25: lo que muestra el formulario de baja antes de confirmar. */
+  async resumenBaja(id_cliente: number, id_empresa: number) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id_cliente, id_empresa },
+      include: { direcciones: { where: { es_principal: true }, take: 1 } },
+    });
+    if (!cliente) throw new NotFoundException('Cliente no encontrado');
+    const [onts, puertos] = await Promise.all([
+      this.prisma.registro_ont.findMany({ where: { id_cliente, id_empresa }, select: { numero_serie: true } }),
+      this.prisma.puerto_nap.findMany({
+        where: { id_cliente_asociado: id_cliente, estado: 'OCUPADO', caja_nap: { id_empresa } },
+        select: { id_puerto: true, numero_puerto: true, id_caja_nap: true, caja_nap: { select: { identificador_unico: true } } },
+      }),
+    ]);
+    const dir = cliente.direcciones[0];
+    return {
+      id_cliente,
+      nombre_completo: cliente.nombre_completo,
+      rut: cliente.rut,
+      estado: cliente.estado,
+      direccion: dir ? textoDireccion(dir) : null,
+      onts: onts.map((o) => o.numero_serie),
+      puertos: puertos.map((p) => ({
+        id_puerto: p.id_puerto,
+        numero_puerto: p.numero_puerto,
+        id_caja_nap: p.id_caja_nap,
+        caja: p.caja_nap?.identificador_unico ?? null,
+      })),
+      motivos: [...MOTIVOS_BAJA],
+    };
+  }
+
+  /**
+   * CU-25: baja de servicio. El cliente pasa a BAJA y se generan dos OT en
+   * PENDIENTE para el panel del jefe tecnico:
+   *  - OT-BAJA-PUERTO: desconectar el puerto NAP. Lleva la caja; al cerrarla,
+   *    el puerto del cliente queda LIBRE (OrdenesService.cerrarOT).
+   *  - OT-BAJA-EQUIPO: retirar la ONT. Al cerrarla el tecnico la declara
+   *    retirada para diagnostico, que G1 lleva a "En revision".
+   * Si el cliente esta ausente, esa OT sigue el flujo normal de cliente ausente
+   * (excepcion 2).
+   */
+  async darDeBaja(
+    id_cliente: number,
+    dto: { motivo: MotivoBaja; confirma_sin_deuda: boolean; observaciones?: string },
+    actor: { userId: number; id_empresa: number },
+  ) {
+    if (dto.confirma_sin_deuda !== true) {
+      throw new BadRequestException('Confirma que el cliente no tiene deuda pendiente antes de registrar la baja');
+    }
+    const resumen = await this.resumenBaja(id_cliente, actor.id_empresa);
+    if (resumen.estado === 'BAJA') throw new BadRequestException('El cliente ya está dado de baja');
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id_cliente, id_empresa: actor.id_empresa },
+      include: { direcciones: { where: { es_principal: true }, take: 1 } },
+    });
+    const id_direccion = cliente?.direcciones[0]?.id_direccion ?? null;
+    const puerto = resumen.puertos[0];
+    const extra = dto.observaciones?.trim() ? ` Observaciones: ${dto.observaciones.trim()}` : '';
+
+    const creadas = await this.prisma.$transaction(async (tx) => {
+      await tx.cliente.update({ where: { id_cliente }, data: { estado: 'BAJA' } });
+
+      const base = {
+        id_empresa: actor.id_empresa,
+        id_cliente,
+        id_direccion,
+        tipo_ot: 'BAJA',
+        prioridad: 'MEDIA',
+        estado: 'PENDIENTE',
+        fecha_creacion: new Date(),
+      };
+      const otPuerto = await tx.orden_trabajo.create({
+        data: {
+          ...base,
+          ...(puerto?.id_caja_nap && { id_caja_nap: puerto.id_caja_nap }),
+          observaciones: puerto
+            ? `OT-BAJA-PUERTO: desconectar el puerto ${puerto.numero_puerto} de la caja ${puerto.caja ?? puerto.id_caja_nap}. Motivo: ${dto.motivo}.${extra}`
+            : `OT-BAJA-PUERTO: desconectar el puerto NAP del cliente (sin puerto registrado). Motivo: ${dto.motivo}.${extra}`,
+        },
+      });
+      const otEquipo = await tx.orden_trabajo.create({
+        data: {
+          ...base,
+          observaciones: `OT-BAJA-EQUIPO: retirar la ONT ${resumen.onts.join(', ') || '(sin serie registrada)'} y declararla retirada para diagnostico. Motivo: ${dto.motivo}.${extra}`,
+        },
+      });
+      for (const ot of [otPuerto, otEquipo]) {
+        await tx.historial_ot.create({
+          data: { id_ot: ot.id_ot, id_usuario: actor.userId, estado_anterior: null, estado_nuevo: 'PENDIENTE', observaciones: `Baja de servicio: ${dto.motivo}` },
+        });
+      }
+      await tx.log_auditoria.create({
+        data: {
+          id_usuario: actor.userId,
+          accion: 'BAJA_SERVICIO',
+          entidad_afectada: 'cliente',
+          id_entidad_afectada: id_cliente,
+          valor_anterior: { estado: resumen.estado },
+          valor_nuevo: { estado: 'BAJA', motivo: dto.motivo, ot_baja_puerto: otPuerto.id_ot, ot_baja_equipo: otEquipo.id_ot },
+        },
+      });
+      return { ot_baja_puerto: otPuerto.id_ot, ot_baja_equipo: otEquipo.id_ot };
+    });
+
+    return { id_cliente, estado: 'BAJA', ...creadas };
   }
 
   /**

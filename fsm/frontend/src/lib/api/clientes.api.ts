@@ -106,6 +106,30 @@ export async function cambiarNivelRiesgo(
   });
 }
 
+/** CU-25: lo que muestra el formulario de baja. */
+export interface ResumenBaja {
+  id_cliente: number;
+  nombre_completo: string;
+  rut: string | null;
+  estado: string;
+  direccion: string | null;
+  onts: string[];
+  puertos: { id_puerto: number; numero_puerto: number | null; id_caja_nap: number | null; caja: string | null }[];
+  motivos: string[];
+}
+
+export async function resumenBaja(token: string, id: number): Promise<ResumenBaja> {
+  return fetchApi(token, `${API_URL}/api/clientes/${id}/baja`);
+}
+
+export async function darDeBaja(
+  token: string,
+  id: number,
+  dto: { motivo: string; confirma_sin_deuda: boolean; observaciones?: string },
+): Promise<{ id_cliente: number; estado: string; ot_baja_puerto: number; ot_baja_equipo: number }> {
+  return fetchApi(token, `${API_URL}/api/clientes/${id}/baja`, { method: 'POST', body: JSON.stringify(dto) });
+}
+
 /** CU-07: un cliente asociado a la direccion buscada. */
 export interface ClienteEnDireccion {
   id_cliente: number;
