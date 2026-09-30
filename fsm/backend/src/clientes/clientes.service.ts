@@ -21,6 +21,10 @@ export interface FiltrosClientes {
   direccion?: string;
 }
 const MAX_CONTRATOS_ACTIVOS = 50;
+/** Tope de OT que CU-07 trae para agrupar. Con decenas por cliente sobra. */
+const MAX_OT_HISTORIAL = 500;
+/** Cuantas OT se detallan por direccion; el resumen no se recorta. */
+const MAX_OT_POR_DIRECCION = 20;
 
 @Injectable()
 export class ClientesService {
@@ -368,5 +372,126 @@ export class ClientesService {
         precio_mensual: true,
       },
     });
+  }
+
+  /**
+   * CU-07 "Consultando el historial de un cliente por direccion".
+   *
+   * Un cliente puede tener varias direcciones de servicio, y lo que le sirve al
+   * jefe tecnico no es la lista plana de OT sino QUE PASO EN CADA CASA: si la
+   * de Quilvo lleva tres reparaciones en dos meses y la otra ninguna, el
+   * problema es del domicilio y no del cliente.
+   *
+   * SE CONSULTA POR CLIENTE, NO POR DIRECCION, y se agrupa en memoria. No es
+   * un rodeo: `orden_trabajo` tiene `@@index([id_cliente])` pero NO tiene
+   * indice sobre `id_direccion`, asi que filtrar por direccion haria un scan de
+   * la tabla. Agregar ese indice es aditivo pero va sobre una tabla compartida
+   * con G1 y G8, o sea ventana coordinada; y para el volumen real --decenas de
+   * OT por cliente-- agrupar en memoria no se nota.
+   */
+  async historialPorDireccion(id_cliente: number, id_empresa: number) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id_cliente, id_empresa },
+      select: {
+        id_cliente: true,
+        rut: true,
+        nombre_completo: true,
+        direcciones: {
+          select: {
+            id_direccion: true,
+            direccion_completa: true,
+            comuna: true,
+            ciudad: true,
+            es_principal: true,
+          },
+          orderBy: [{ es_principal: 'desc' }, { id_direccion: 'asc' }],
+        },
+      },
+    });
+    if (!cliente) throw new NotFoundException('Cliente no encontrado');
+
+    const ordenes = await this.prisma.orden_trabajo.findMany({
+      where: { id_cliente, id_empresa },
+      orderBy: { fecha_creacion: 'desc' },
+      // Tope de seguridad. Si algun cliente llegara a superarlo, el resumen
+      // seria de las mas recientes y no de todo; se avisa abajo en vez de
+      // dejar que el conteo mienta.
+      take: MAX_OT_HISTORIAL + 1,
+      select: {
+        id_ot: true,
+        id_direccion: true,
+        tipo_ot: true,
+        estado: true,
+        prioridad: true,
+        fecha_creacion: true,
+        fecha_completada: true,
+        categoria_falla: { select: { id_categoria: true, nombre: true } },
+      },
+    });
+
+    const truncado = ordenes.length > MAX_OT_HISTORIAL;
+    const usadas = truncado ? ordenes.slice(0, MAX_OT_HISTORIAL) : ordenes;
+
+    const porDireccion = new Map<number, typeof usadas>();
+    let sin_direccion = 0;
+    for (const ot of usadas) {
+      if (ot.id_direccion == null) {
+        sin_direccion++;
+        continue;
+      }
+      const lista = porDireccion.get(ot.id_direccion);
+      if (lista) lista.push(ot);
+      else porDireccion.set(ot.id_direccion, [ot]);
+    }
+
+    const contar = <T extends string>(valores: (T | null)[]) => {
+      const cuenta: Record<string, number> = {};
+      for (const v of valores) if (v) cuenta[v] = (cuenta[v] ?? 0) + 1;
+      return cuenta;
+    };
+
+    const direcciones = cliente.direcciones.map((d) => {
+      // Una direccion sin OT entra igual, con total 0: saber que en esa casa
+      // nunca paso nada es informacion, y omitirla la haria parecer inexistente.
+      const suyas = porDireccion.get(d.id_direccion) ?? [];
+      const categorias = contar(suyas.map((o) => o.categoria_falla?.nombre ?? null));
+      const [masFrecuente] = Object.entries(categorias).sort((a, b) => b[1] - a[1]);
+
+      return {
+        ...d,
+        total_ot: suyas.length,
+        por_tipo: contar(suyas.map((o) => o.tipo_ot)),
+        por_estado: contar(suyas.map((o) => o.estado)),
+        // La primera es la mas reciente: `ordenes` viene ordenado desc.
+        ultima_ot: suyas[0]?.fecha_creacion ?? null,
+        categoria_mas_frecuente: masFrecuente ? { nombre: masFrecuente[0], veces: masFrecuente[1] } : null,
+        ordenes: suyas.slice(0, MAX_OT_POR_DIRECCION).map((o) => ({
+          id_ot: o.id_ot,
+          tipo_ot: o.tipo_ot,
+          estado: o.estado,
+          prioridad: o.prioridad,
+          fecha_creacion: o.fecha_creacion,
+          fecha_completada: o.fecha_completada,
+          categoria_falla: o.categoria_falla,
+        })),
+      };
+    });
+
+    return {
+      cliente: {
+        id_cliente: cliente.id_cliente,
+        rut: cliente.rut,
+        nombre_completo: cliente.nombre_completo,
+      },
+      direcciones,
+      /**
+       * OT del cliente que no apuntan a ninguna direccion. `id_direccion` es
+       * opcional en el modelo, asi que existen: se declaran para que la suma de
+       * `total_ot` cuadre con el total y nadie salga a buscar OT perdidas.
+       */
+      ot_sin_direccion: sin_direccion,
+      total_ot: usadas.length,
+      truncado,
+    };
   }
 }

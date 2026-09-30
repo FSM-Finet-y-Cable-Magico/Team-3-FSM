@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { ClientesService } from './clientes.service.js';
 import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
@@ -45,6 +45,22 @@ export class ClientesController {
     @CurrentUser() user: { id_empresa: number },
   ) {
     return this.clientesService.consultarPorRut(rut, user.id_empresa);
+  }
+
+  /**
+   * CU-07. Historial del cliente agrupado por direccion de servicio: que paso
+   * en cada casa, no la lista plana de OT.
+   *
+   * Va antes de `@Patch(':id')` no por ruteo --son verbos distintos-- sino para
+   * quedar junto a las otras lecturas.
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get(':id/historial-direcciones')
+  historialPorDireccion(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: { id_empresa: number },
+  ) {
+    return this.clientesService.historialPorDireccion(id, user.id_empresa);
   }
 
   @Roles('ADMIN', 'JEFE_TECNICO')
