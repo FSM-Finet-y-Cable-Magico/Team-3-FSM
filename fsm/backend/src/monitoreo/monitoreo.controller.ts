@@ -2,6 +2,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { MonitoreoService } from './monitoreo.service.js';
 import { CapacidadCajasService } from './capacidad-cajas.service.js';
+import { PurgaMonitoreoService } from './purga-monitoreo.service.js';
 import { DescubrimientoService } from './descubrimiento.service.js';
 import { LigadoCajaService } from './ligado-caja.service.js';
 import { AlertasService } from './alertas.service.js';
@@ -27,6 +28,7 @@ export class MonitoreoController {
     private ligado: LigadoCajaService,
     private alertas: AlertasService,
     private capacidad: CapacidadCajasService,
+    private purga: PurgaMonitoreoService,
   ) {}
 
   // --- Alertas (CU-13 / CU-15 / CU-17 / CU-52 / CU-53) -----------------------
@@ -242,5 +244,25 @@ export class MonitoreoController {
     @Query('aplicar') aplicar?: string,
   ) {
     return this.capacidad.completarCapacidades(user.id_empresa, aplicar === 'true');
+  }
+  /**
+   * Acota monitoreo_ont a las ultimas N lecturas por ONT.
+   *
+   * Es la tabla que llenó el disco y dejó produccion caida nueve dias. En
+   * produccion la corre el poller una vez al dia; este endpoint esta para
+   * mirar el resumen antes de prenderlo y para forzarla si hace falta.
+   *
+   * NO BORRA salvo que se pida `?aplicar=true`.
+   */
+  @Roles('ADMIN')
+  @Post('purga-monitoreo')
+  purgaMonitoreo(
+    @Query('aplicar') aplicar?: string,
+    @Query('conservar_por_ont') conservar?: string,
+  ) {
+    return this.purga.purgar({
+      aplicar: aplicar === 'true',
+      conservarPorOnt: conservar === undefined ? undefined : Number(conservar),
+    });
   }
 }
