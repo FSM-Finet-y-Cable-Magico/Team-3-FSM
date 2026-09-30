@@ -19,10 +19,39 @@ const DIAS_HISTORIAL_MAXIMO = 90;
 /** Tope de eventos por consulta. Un mes de una ONT normal son decenas. */
 const MAX_EVENTOS_HISTORIAL = 5000;
 
+/** Lo que hace falta de la ultima fila guardada para saber si cambio algo. */
+interface UltimaGuardada {
+  estado: string | null;
+  potencia: number | null;
+  timestamp: number;
+}
+
+/** Fila de monitoreo_ont recien armada, antes de escribirse. */
+interface FilaMonitoreo {
+  id_registro_ont: number | null;
+  potencia_actual_dbm: number | null;
+  estado_conexion: string;
+  timestamp_medicion: Date;
+}
+
+function esIgualALaGuardada(f: FilaMonitoreo, ultimas: Map<number, UltimaGuardada>): boolean {
+  // Sin id_registro_ont no hay con que compararla, asi que se escribe.
+  if (f.id_registro_ont == null) return false;
+  const u = ultimas.get(f.id_registro_ont);
+  if (u === undefined) return false;
+  return (
+    u.estado === f.estado_conexion &&
+    u.potencia === (f.potencia_actual_dbm ?? null) &&
+    u.timestamp === f.timestamp_medicion.getTime()
+  );
+}
+
 export interface ResumenIngesta {
   fuente: string;
   leidas: number;
   persistidas: number;
+  /** Lecturas identicas a la ultima guardada de su ONT, que no se reescriben. */
+  omitidas: number;
   sin_unidad: number;
   cambios_estado: number;
   registros_enriquecidos: number;
@@ -50,6 +79,48 @@ export class MonitoreoService {
   // ---------------------------------------------------------------------------
   // Ingesta — lo que llama el poller (y el endpoint manual)
   // ---------------------------------------------------------------------------
+
+  /**
+   * La ultima fila guardada de cada ONT del lote.
+   *
+   * Se consulta en cada tick en vez de recordarse en memoria: asi el dedupe
+   * sigue siendo correcto tras un reinicio del backend, tras una purga de la
+   * tabla y si alguna vez corren dos instancias. Son ~940 filas y entra por
+   * el indice (id_registro_ont, timestamp_medicion), asi que cuesta mucho
+   * menos que las 945 escrituras que evita.
+   *
+   * Ordena por `id_monitoreo DESC`, no por `timestamp_medicion`: aca interesa
+   * la ultima fila ESCRITA, que es contra la que hay que comparar. El lector
+   * de alertas ordena distinto a proposito, porque busca otra cosa.
+   */
+  private async ultimasGuardadas(filas: FilaMonitoreo[]): Promise<Map<number, UltimaGuardada>> {
+    const ids = [...new Set(filas.map((f) => f.id_registro_ont).filter((x): x is number => x != null))];
+    if (ids.length === 0) return new Map();
+
+    const guardadas = await this.prisma.$queryRaw<
+      { id_registro_ont: number; estado_conexion: string | null; potencia: string | null; timestamp_medicion: Date }[]
+    >`
+      SELECT DISTINCT ON (m.id_registro_ont)
+             m.id_registro_ont,
+             m.estado_conexion,
+             m.potencia_actual_dbm::text AS potencia,
+             m.timestamp_medicion
+        FROM monitoreo_ont m
+       WHERE m.id_registro_ont = ANY(${ids})
+       ORDER BY m.id_registro_ont, m.id_monitoreo DESC
+    `;
+
+    return new Map(
+      guardadas.map((g) => [
+        g.id_registro_ont,
+        {
+          estado: g.estado_conexion,
+          potencia: g.potencia === null ? null : Number(g.potencia),
+          timestamp: g.timestamp_medicion.getTime(),
+        },
+      ]),
+    );
+  }
 
   async ingestarLecturas(filtro?: FiltroConsulta): Promise<ResumenIngesta> {
     const t0 = Date.now();
@@ -105,8 +176,21 @@ export class MonitoreoService {
       });
     }
 
+    // No se vuelve a escribir lo que ya esta guardado. Medido sobre el respaldo
+    // de produccion del 29-09: de 394.799 filas, 364.220 eran identicas a la
+    // anterior de su misma ONT --el 92,2%-- y quedarian 30.579. Es lo que hace
+    // que la tabla crezca 272.000 filas al dia y lo que llenó el disco.
+    //
+    // No se pierde nada: `timestamp_medicion` es el last_status_change de
+    // SmartOLT, asi que dos lecturas con el mismo estado, la misma potencia y
+    // el mismo timestamp son la misma medicion leida dos veces, y ni siquiera
+    // se pueden ordenar entre si en el tiempo.
+    const ultimas = await this.ultimasGuardadas(filasMonitoreo);
+    const nuevas = filasMonitoreo.filter((f) => !esIgualALaGuardada(f, ultimas));
+    const omitidas = filasMonitoreo.length - nuevas.length;
+
     const [insertadas] = await this.prisma.$transaction([
-      this.prisma.monitoreo_ont.createMany({ data: filasMonitoreo }),
+      this.prisma.monitoreo_ont.createMany({ data: nuevas }),
       ...(eventos.length
         ? [this.prisma.historial_conexion_ont.createMany({ data: eventos })]
         : []),
@@ -116,6 +200,7 @@ export class MonitoreoService {
       fuente: this.fuente.nombre,
       leidas: lecturas.length,
       persistidas: insertadas.count,
+      omitidas,
       sin_unidad: [...registros.values()].filter((r) => r.id_unidad == null).length,
       cambios_estado: eventos.length,
       registros_enriquecidos,
@@ -123,6 +208,7 @@ export class MonitoreoService {
     };
     this.logger.log(
       `Ingesta [${resumen.fuente}]: ${resumen.persistidas} lecturas, ` +
+        `${resumen.omitidas} sin cambios, ` +
         `${resumen.cambios_estado} cambios de estado, ${resumen.sin_unidad} sin unidad, ${resumen.ms}ms`,
     );
 

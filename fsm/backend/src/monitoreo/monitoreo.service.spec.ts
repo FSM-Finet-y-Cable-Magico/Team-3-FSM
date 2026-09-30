@@ -23,14 +23,24 @@ describe('MonitoreoService.ingestarLecturas', () => {
   let monitoreoCreateMany: jest.Mock;
   let historialCreateMany: jest.Mock;
   let lecturas: LecturaOnt[];
+  /** Lo que el dedupe encuentra ya guardado. Vacío = tabla recién purgada. */
+  let yaGuardado: {
+    id_registro_ont: number;
+    estado_conexion: string | null;
+    potencia: string | null;
+    timestamp_medicion: Date;
+  }[];
 
   beforeEach(async () => {
     monitoreoCreateMany = jest.fn(async () => ({ count: 1 }));
     historialCreateMany = jest.fn(async () => ({ count: 1 }));
+    yaGuardado = [];
 
     const prismaMock = {
       monitoreo_ont: { createMany: monitoreoCreateMany },
       historial_conexion_ont: { createMany: historialCreateMany },
+      // El dedupe consulta la ultima fila guardada de cada ONT del lote.
+      $queryRaw: jest.fn(async () => yaGuardado),
       $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
     };
 
@@ -91,6 +101,100 @@ describe('MonitoreoService.ingestarLecturas', () => {
           estado_conexion: 'ONLINE',
         }),
       ],
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // El dedupe. Es lo que impide que la tabla vuelva a llenar el disco: medido
+  // sobre el respaldo de produccion, el 92,2% de las 394.799 filas eran
+  // identicas a la anterior de su misma ONT.
+  // -------------------------------------------------------------------------
+
+  describe('no reescribe lo que ya esta guardado', () => {
+    const MEDIDO = new Date('2026-09-28T14:00:00.000Z');
+
+    it('omite la lectura identica a la ultima guardada', async () => {
+      yaGuardado = [
+        { id_registro_ont: 1, estado_conexion: 'ONLINE', potencia: '-21.50', timestamp_medicion: MEDIDO },
+      ];
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: MEDIDO }];
+
+      const r = await service.ingestarLecturas();
+
+      expect(r.leidas).toBe(1);
+      expect(r.omitidas).toBe(1);
+      expect(monitoreoCreateMany).toHaveBeenCalledWith({ data: [] });
+    });
+
+    it.each([
+      ['cambia el estado', { estado_conexion: 'LOS' }],
+      ['cambia la potencia', { potencia: '-28.00' }],
+      ['cambia el timestamp', { timestamp_medicion: new Date('2026-09-28T15:00:00.000Z') }],
+    ])('escribe cuando %s', async (_caso, distinto) => {
+      yaGuardado = [
+        {
+          id_registro_ont: 1,
+          estado_conexion: 'ONLINE',
+          potencia: '-21.50',
+          timestamp_medicion: MEDIDO,
+          ...distinto,
+        },
+      ];
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: MEDIDO }];
+
+      const r = await service.ingestarLecturas();
+
+      expect(r.omitidas).toBe(0);
+      expect(monitoreoCreateMany).toHaveBeenCalledWith({ data: [expect.objectContaining({ id_registro_ont: 1 })] });
+    });
+
+    it('con la tabla vacia escribe todo: tras una purga o un reinicio no se pierde la lectura', async () => {
+      yaGuardado = [];
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: MEDIDO }];
+
+      const r = await service.ingestarLecturas();
+
+      expect(r.omitidas).toBe(0);
+      expect(monitoreoCreateMany).toHaveBeenCalledWith({ data: [expect.objectContaining({ id_registro_ont: 1 })] });
+    });
+
+    it('compara la potencia por valor, no por como venga escrita', async () => {
+      // La columna es Decimal(5,2) y vuelve como texto: "-21.50" es el mismo
+      // numero que -21.5, y sin la conversion el dedupe no omitiria nada.
+      yaGuardado = [
+        { id_registro_ont: 1, estado_conexion: 'ONLINE', potencia: '-21.50', timestamp_medicion: MEDIDO },
+      ];
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: MEDIDO }];
+
+      expect((await service.ingestarLecturas()).omitidas).toBe(1);
+    });
+
+    it('distingue una potencia nula de un cero', async () => {
+      yaGuardado = [
+        { id_registro_ont: 1, estado_conexion: 'LOS', potencia: null, timestamp_medicion: MEDIDO },
+      ];
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: 0, estado: 'LOS', medido_en: MEDIDO }];
+
+      expect((await service.ingestarLecturas()).omitidas).toBe(0);
+    });
+
+    it('omitir la escritura no impide historizar el cambio de estado', async () => {
+      // El historial se lleva en memoria y la fila de monitoreo puede estar
+      // repetida sin que el evento lo este: son dos decisiones separadas.
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: MEDIDO }];
+      await service.ingestarLecturas();
+
+      yaGuardado = [
+        { id_registro_ont: 1, estado_conexion: 'LOS', potencia: null, timestamp_medicion: MEDIDO },
+      ];
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: null, estado: 'LOS', medido_en: MEDIDO }];
+      const r = await service.ingestarLecturas();
+
+      expect(r.omitidas).toBe(1);
+      expect(r.cambios_estado).toBe(1);
+      expect(historialCreateMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({ id_registro_ont: 1, evento: 'LOS' })],
+      });
     });
   });
 
