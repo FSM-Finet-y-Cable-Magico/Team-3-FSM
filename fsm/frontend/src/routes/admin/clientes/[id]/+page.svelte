@@ -31,6 +31,48 @@
   let editLoading = $state(false);
   let editError = $state('');
 
+  // CU-25: baja de servicio.
+  let resumen = $state<clientesApi.ResumenBaja | null>(null);
+  let motivoBaja = $state('');
+  let sinDeuda = $state(false);
+  let obsBaja = $state('');
+  let bajaLoading = $state(false);
+  let bajaError = $state('');
+  let bajaHecha = $state<{ ot_baja_puerto: number; ot_baja_equipo: number } | null>(null);
+
+  async function abrirBaja() {
+    if (!cliente) return;
+    bajaError = '';
+    motivoBaja = '';
+    sinDeuda = false;
+    obsBaja = '';
+    try {
+      resumen = await clientesApi.resumenBaja(token, cliente.id_cliente);
+    } catch (err) {
+      bajaError = err instanceof Error ? err.message : 'Error al preparar la baja';
+    }
+  }
+
+  async function registrarBaja() {
+    if (!cliente || !motivoBaja || !sinDeuda) return;
+    bajaLoading = true;
+    bajaError = '';
+    try {
+      const r = await clientesApi.darDeBaja(token, cliente.id_cliente, {
+        motivo: motivoBaja,
+        confirma_sin_deuda: true,
+        ...(obsBaja.trim() && { observaciones: obsBaja.trim() }),
+      });
+      bajaHecha = { ot_baja_puerto: r.ot_baja_puerto, ot_baja_equipo: r.ot_baja_equipo };
+      cliente = { ...cliente, estado: 'BAJA' };
+      resumen = null;
+    } catch (err) {
+      bajaError = err instanceof Error ? err.message : 'Error al registrar la baja';
+    } finally {
+      bajaLoading = false;
+    }
+  }
+
   // MOD RF-32: semaforo de riesgo.
   let showRiesgoModal = $state(false);
   let nivelNuevo = $state<NivelRiesgo>('VERDE');
@@ -181,6 +223,13 @@
       <a href="/admin/clientes" class="btn-texto mt-4">&larr; Volver a clientes</a>
     {:else if cliente}
       <a href="/admin/clientes" class="btn-texto mb-4">&larr; Volver a clientes</a>
+      {#if bajaHecha}
+        <div role="status" class="mt-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          Baja registrada. Quedaron pendientes
+          <a href={`/admin/ot/${bajaHecha.ot_baja_puerto}`} class="btn-texto">OT #{bajaHecha.ot_baja_puerto}</a> (desconexión del puerto) y
+          <a href={`/admin/ot/${bajaHecha.ot_baja_equipo}`} class="btn-texto">OT #{bajaHecha.ot_baja_equipo}</a> (retiro de la ONT).
+        </div>
+      {/if}
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-2">
         <!-- Columna izquierda: Datos del cliente -->
@@ -192,6 +241,9 @@
                 {#if rol !== 'TECNICO' && !editMode}
                   <button onclick={iniciarEdicion} class="btn-texto">Editar ficha</button>
                   <button onclick={abrirRiesgo} class="btn-texto">Cambiar nivel de riesgo</button>
+                  {#if cliente.estado !== 'BAJA'}
+                    <button onclick={abrirBaja} class="btn-texto-peligro">Dar de baja</button>
+                  {/if}
                 {/if}
               </div>
             </div>
@@ -201,6 +253,17 @@
                 <div>
                   <span class="text-xs text-gray-500 uppercase">RUT</span>
                   <p class="text-sm font-mono">{cliente.rut}</p>
+                </div>
+                <div>
+                  <span class="text-xs text-gray-500 uppercase">Zona</span>
+                  {#if cliente.zona}
+                    <p class="text-sm">
+                      {cliente.zona.nombre}
+                      <span class="text-xs text-gray-500">({cliente.zona.origen === 'MONITOREO' ? 'según el monitoreo' : 'según la caja NAP'})</span>
+                    </p>
+                  {:else}
+                    <p class="text-sm text-gray-500">Sin zona registrada</p>
+                  {/if}
                 </div>
                 <div>
                   <span class="text-xs text-gray-500 uppercase">Estado</span>
@@ -425,6 +488,44 @@
         <button onclick={() => (showRiesgoModal = false)} class="flex-1 btn btn-secundario text-sm">Volver</button>
         <button onclick={guardarRiesgo} disabled={riesgoLoading} class="flex-1 btn btn-primario text-sm">
           {riesgoLoading ? 'Guardando...' : 'Guardar nivel'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- CU-25: baja de servicio -->
+{#if resumen}
+  <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="titulo-baja">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4 space-y-3 text-sm">
+      <h3 id="titulo-baja" class="text-lg font-semibold text-gray-800">Dar de baja a {resumen.nombre_completo}</h3>
+      <dl class="grid grid-cols-3 gap-x-3 gap-y-1">
+        <dt class="text-gray-500">Dirección</dt><dd class="col-span-2">{resumen.direccion ?? '-'}</dd>
+        <dt class="text-gray-500">ONT</dt><dd class="col-span-2 font-mono">{resumen.onts.join(', ') || 'Sin registro'}</dd>
+        <dt class="text-gray-500">Puerto NAP</dt>
+        <dd class="col-span-2">
+          {#each resumen.puertos as p (p.id_puerto)}<span class="block">Puerto {p.numero_puerto} de {p.caja ?? p.id_caja_nap}</span>{:else}Sin registro{/each}
+        </dd>
+      </dl>
+      <p class="text-gray-600">Se generan dos OT pendientes: desconectar el puerto y retirar la ONT.</p>
+      <label class="block text-xs font-medium text-gray-600">Motivo
+        <select bind:value={motivoBaja} class="mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="">Elige el motivo</option>
+          {#each resumen.motivos as m (m)}<option value={m}>{m}</option>{/each}
+        </select>
+      </label>
+      <label class="block text-xs font-medium text-gray-600">Observaciones (opcional)
+        <textarea bind:value={obsBaja} rows={2} maxlength={500} class="mt-1 w-full border rounded-lg px-3 py-2 text-sm resize-none"></textarea>
+      </label>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" bind:checked={sinDeuda} class="h-4 w-4" />
+        Confirmo que el cliente no tiene deuda pendiente
+      </label>
+      {#if bajaError}<Alert class="rounded-lg text-sm">{bajaError}</Alert>{/if}
+      <div class="flex gap-3">
+        <button onclick={() => (resumen = null)} class="flex-1 btn btn-secundario text-sm">Volver</button>
+        <button onclick={registrarBaja} disabled={bajaLoading || !motivoBaja || !sinDeuda} class="flex-1 btn btn-peligro text-sm">
+          {bajaLoading ? 'Registrando...' : 'Registrar baja'}
         </button>
       </div>
     </div>

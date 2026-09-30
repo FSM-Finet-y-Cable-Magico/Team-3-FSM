@@ -12,6 +12,11 @@ export interface ClienteFicha {
   obs_conflictivo?: string;
   /** MOD RF-32: semaforo de riesgo. El motivo es obs_conflictivo. */
   nivel_riesgo?: import('$lib/utils/riesgo').NivelRiesgo;
+  /**
+   * RF-53. El catalogo de zonas es del Grupo 2 (D-02); mientras no lo exponga,
+   * la zona sale de la ONT (MONITOREO) o de la caja del puerto (CAJA_NAP).
+   */
+  zona?: { nombre: string; origen: 'MONITOREO' | 'CAJA_NAP' } | null;
   fecha_creacion: string;
   direccion_principal?: {
     direccion_completa: string;
@@ -61,8 +66,11 @@ export interface ClienteConHistorial {
 export interface PlanResumen {
   id_plan: number;
   nombre_comercial: string;
-  velocidad_mbps: number;
+  tipo_plan?: string;
+  tipo_cliente?: string;
+  velocidad_mbps: number | null;
   precio_mensual: number;
+  descripcion?: string | null;
 }
 
 interface ClientesPaginados {
@@ -106,6 +114,30 @@ export async function cambiarNivelRiesgo(
   });
 }
 
+/** CU-25: lo que muestra el formulario de baja. */
+export interface ResumenBaja {
+  id_cliente: number;
+  nombre_completo: string;
+  rut: string | null;
+  estado: string;
+  direccion: string | null;
+  onts: string[];
+  puertos: { id_puerto: number; numero_puerto: number | null; id_caja_nap: number | null; caja: string | null }[];
+  motivos: string[];
+}
+
+export async function resumenBaja(token: string, id: number): Promise<ResumenBaja> {
+  return fetchApi(token, `${API_URL}/api/clientes/${id}/baja`);
+}
+
+export async function darDeBaja(
+  token: string,
+  id: number,
+  dto: { motivo: string; confirma_sin_deuda: boolean; observaciones?: string },
+): Promise<{ id_cliente: number; estado: string; ot_baja_puerto: number; ot_baja_equipo: number }> {
+  return fetchApi(token, `${API_URL}/api/clientes/${id}/baja`, { method: 'POST', body: JSON.stringify(dto) });
+}
+
 /** CU-07: un cliente asociado a la direccion buscada. */
 export interface ClienteEnDireccion {
   id_cliente: number;
@@ -146,13 +178,14 @@ export async function listarClientes(
   token: string,
   page: number = 1,
   limit: number = 20,
-  filtros?: { nombre?: string; rut?: string; telefono?: string; direccion?: string },
+  filtros?: { nombre?: string; rut?: string; telefono?: string; direccion?: string; zona?: string },
 ): Promise<ClientesPaginados> {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (filtros?.nombre) params.set('nombre', filtros.nombre);
   if (filtros?.rut) params.set('rut', filtros.rut);
   if (filtros?.telefono) params.set('telefono', filtros.telefono);
   if (filtros?.direccion) params.set('direccion', filtros.direccion);
+  if (filtros?.zona) params.set('zona', filtros.zona);
   return fetchApi(token, `${API_URL}/api/clientes?${params.toString()}`);
 }
 

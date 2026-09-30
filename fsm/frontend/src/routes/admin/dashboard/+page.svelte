@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as notificacionesApi from '$lib/api/notificaciones.api';
   import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import { goto } from '$app/navigation';
@@ -119,7 +120,10 @@
     unsubDashboard = null;
   });
 
+  let avisosProximos = $state<{ id_ot: number; envio_en: string; clientes: number }[]>([]);
+
   async function cargar() {
+    notificacionesApi.avisosProximos(token).then((a) => (avisosProximos = a)).catch(() => {});
     actualizando = true;
     // CU-33: la empresa la elige el ADMIN en el menu y viaja en cada peticion.
     await dashboardStore.cargarIndicadores(token);
@@ -247,6 +251,14 @@
         clickable={true}
         href="/admin/ot?estado=PENDIENTE_CLIENTE_AUSENTE"
       />
+      <!-- MOD RF-37: cierres rechazados hoy, junto a los que esperan. -->
+      <StatCard
+        titulo="Cierres Rechazados"
+        valor={indicadores.ot_rechazadas_hoy ?? 0}
+        subtitulo="hoy"
+        color={(indicadores.ot_rechazadas_hoy ?? 0) > 0 ? 'red' : 'gray'}
+        icono={ICONO_EXCLAM}
+      />
       <!-- MOD RF-04: lo que el jefe tecnico tiene que revisar. -->
       <StatCard
         titulo="Cierres por Aprobar"
@@ -265,6 +277,18 @@
         icono={ICONO_HOURGLASS}
       />
     </div>
+
+    <!-- CU-50: recordatorio de los avisos de mantencion que salen en 24 h. -->
+    {#if avisosProximos.length}
+      <div class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 space-y-1">
+        {#each avisosProximos as a (a.id_ot)}
+          <p>
+            Notificación programada para las {new Date(a.envio_en).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}
+            · <a href={`/admin/ot/${a.id_ot}`} class="btn-texto">OT #{a.id_ot}</a> · {a.clientes} clientes
+          </p>
+        {/each}
+      </div>
+    {/if}
 
     <!-- Fila 3: Técnicos + Últimas completadas -->
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">

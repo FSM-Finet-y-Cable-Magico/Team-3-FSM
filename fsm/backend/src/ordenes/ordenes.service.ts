@@ -34,6 +34,7 @@ const RESULTADO_LLAMADA = {
 const MAX_INTENTOS_LLAMADA = 3;
 const HORAS_ENTRE_INTENTOS = 2;
 import { ESTADO_TICKET } from '../tickets/tickets.constants.js';
+import { ESTADO_PUERTO } from '../planta-externa/dto/editar-topologia.dto.js';
 import {
   ADVERTENCIA_DIRECCION,
   MENSAJE_SOLO_ADMIN,
@@ -169,6 +170,24 @@ export class OrdenesService {
     }
     const id_direccion = direccion?.id_direccion ?? null;
 
+    // CU-20: el puerto elegido se reserva para el cliente hasta que el tecnico
+    // confirma la instalacion al cerrar la OT.
+    let puerto: { id_puerto: number; id_caja_nap: number | null } | null = null;
+    if (dto.id_puerto !== undefined) {
+      if (dto.tipo_ot !== 'INSTALACION') {
+        throw new BadRequestException('Solo una OT de instalación reserva un puerto NAP');
+      }
+      const p = await this.prisma.puerto_nap.findFirst({
+        where: { id_puerto: dto.id_puerto, caja_nap: { id_empresa } },
+        select: { id_puerto: true, id_caja_nap: true, estado: true, numero_puerto: true },
+      });
+      if (!p) throw new BadRequestException('El puerto no existe en la empresa');
+      if ((p.estado ?? '').toUpperCase() !== ESTADO_PUERTO.LIBRE) {
+        throw new BadRequestException(`El puerto ${p.numero_puerto ?? p.id_puerto} no está libre`);
+      }
+      puerto = p;
+    }
+
     // CU-35, excepcion 2: la direccion es de un cliente en ROJO. No bloquea:
     // la OT se crea y vuelve con la advertencia para verificar la identidad.
     const advertencia_lista_roja =
@@ -184,6 +203,7 @@ export class OrdenesService {
           id_tecnico: dto.id_tecnico ?? null,
           id_direccion,
           id_ticket: opciones.id_ticket ?? null,
+          ...(puerto && { id_caja_nap: puerto.id_caja_nap }),
           tipo_ot: dto.tipo_ot,
           prioridad: dto.prioridad ?? 'MEDIA',
           estado,
@@ -202,6 +222,13 @@ export class OrdenesService {
           fecha_hora: new Date(),
         },
       });
+
+      if (puerto) {
+        await tx.puerto_nap.update({
+          where: { id_puerto: puerto.id_puerto },
+          data: { estado: ESTADO_PUERTO.RESERVADO, id_cliente_asociado: cliente.id_cliente },
+        });
+      }
 
       await tx.log_auditoria.create({
         data: {
@@ -664,6 +691,8 @@ export class OrdenesService {
         },
       });
       if (soltarTicket) await this.moverTicket(tx, soltarTicket, id_ot, userId, 'cancelada');
+      // CU-20: una instalacion cancelada devuelve su puerto reservado.
+      if (dto.estado === 'CANCELADA') await this.moverPuerto(tx, ot, 'liberar');
 
       await tx.historial_ot.create({
         data: {
@@ -818,6 +847,13 @@ export class OrdenesService {
         },
       });
 
+      // CU-20: el tecnico confirma la instalacion; el puerto reservado para el
+      // cliente queda OCUPADO.
+      if (ot.tipo_ot === 'INSTALACION') await this.moverPuerto(tx, ot, 'confirmar');
+      // CU-25: la OT-BAJA-PUERTO (la de baja que lleva caja) deja el puerto
+      // del cliente LIBRE al desconectarlo.
+      if (ot.tipo_ot === 'BAJA') await this.moverPuerto(tx, ot, 'desconectar');
+
       await tx.historial_ot.create({
         data: {
           id_ot,
@@ -872,6 +908,32 @@ export class OrdenesService {
 
     this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
     return { ...otActualizada, advertencia_potencia, alerta_reparaciones_30_dias };
+  }
+
+  /**
+   * CU-20: el puerto que la OT reservo (RESERVADO, en su caja, a nombre de su
+   * cliente) se confirma al cerrar o se libera al cancelar. La OT no guarda el
+   * id del puerto: lo identifican la caja y el cliente.
+   */
+  private async moverPuerto(
+    tx: Prisma.TransactionClient,
+    ot: { id_caja_nap: number | null; id_cliente: number | null },
+    como: 'confirmar' | 'liberar' | 'desconectar',
+  ) {
+    if (!ot.id_caja_nap || !ot.id_cliente) return;
+    await tx.puerto_nap.updateMany({
+      where: {
+        id_caja_nap: ot.id_caja_nap,
+        // Desconectar (CU-25) suelta el puerto ya ocupado; las otras dos
+        // acciones actuan sobre la reserva de la instalacion (CU-20).
+        estado: como === 'desconectar' ? ESTADO_PUERTO.OCUPADO : ESTADO_PUERTO.RESERVADO,
+        id_cliente_asociado: ot.id_cliente,
+      },
+      data:
+        como === 'confirmar'
+          ? { estado: ESTADO_PUERTO.OCUPADO }
+          : { estado: ESTADO_PUERTO.LIBRE, id_cliente_asociado: null },
+    });
   }
 
   /**

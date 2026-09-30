@@ -4,6 +4,7 @@ import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
 import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
 import { CambiarNivelRiesgoDto } from './dto/cambiar-nivel-riesgo.dto.js';
+import { BajaServicioDto } from './dto/baja-servicio.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
@@ -22,6 +23,7 @@ export class ClientesController {
     @Query('rut') rut?: string,
     @Query('telefono') telefono?: string,
     @Query('direccion') direccion?: string,
+    @Query('zona') zona?: string,
   ) {
     // page y limit se pasan crudos: normalizarPaginacion en el servicio ya
     // recorta el rango y descarta lo que no sea un numero utilizable.
@@ -30,6 +32,7 @@ export class ClientesController {
       rut,
       telefono,
       direccion,
+      zona,
     });
   }
 
@@ -89,6 +92,24 @@ export class ClientesController {
     @CurrentUser() user: { userId: number; id_empresa: number },
   ) {
     return this.clientesService.editarFicha(+id, dto, user.userId, user.id_empresa);
+  }
+
+  /** CU-25: lo que muestra el formulario de baja. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get(':id/baja')
+  resumenBaja(@Param('id') id: string, @CurrentUser() user: { id_empresa: number }) {
+    return this.clientesService.resumenBaja(+id, user.id_empresa);
+  }
+
+  /** CU-25: baja de servicio, con sus dos OT. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Post(':id/baja')
+  darDeBaja(
+    @Param('id') id: string,
+    @Body() dto: BajaServicioDto,
+    @CurrentUser() user: { userId: number; id_empresa: number },
+  ) {
+    return this.clientesService.darDeBaja(+id, dto, user);
   }
 
   /** MOD RF-32: semaforo de riesgo VERDE, AMARILLO o ROJO. */

@@ -6,6 +6,7 @@
   import { page } from '$app/stores';
   import { authStore } from '$lib/stores/auth.store';
   import * as ordenesApi from '$lib/api/ordenes.api';
+  import * as notificacionesApi from '$lib/api/notificaciones.api';
   import EstadoBadge from '$lib/components/EstadoBadge.svelte';
   import SemaforoRiesgo from '$lib/components/SemaforoRiesgo.svelte';
   import { nivelDeCliente } from '$lib/utils/riesgo';
@@ -55,6 +56,50 @@
   let ausenteError = $state('');
 
   let cambiandoEstado = $state(false);
+
+  // CU-50: aviso anticipado de mantencion.
+  let plantillasMantencion = $state<notificacionesApi.Plantilla[]>([]);
+  let mostrarAviso = $state(false);
+  let idPlantillaAviso = $state('');
+  let avisoMenos24 = $state(false);
+  let avisando = $state(false);
+  let avisoError = $state('');
+  let avisoHecho = $state<notificacionesApi.AvisoMantencion | null>(null);
+  const puedeAvisar = $derived(
+    Boolean(ot?.fecha_programada && new Date(ot.fecha_programada) > new Date()) &&
+      (rol === 'ADMIN' || rol === 'JEFE_TECNICO'),
+  );
+
+  async function abrirAviso() {
+    avisoError = '';
+    avisoMenos24 = false;
+    mostrarAviso = true;
+    try {
+      plantillasMantencion = (await notificacionesApi.listarPlantillas(token)).filter(
+        (p) => p.tipo_evento === 'MANTENCION_PROGRAMADA' && p.activa,
+      );
+      idPlantillaAviso = plantillasMantencion[0] ? String(plantillasMantencion[0].id_plantilla) : '';
+    } catch (err) {
+      avisoError = err instanceof Error ? err.message : 'No se pudieron cargar las plantillas';
+    }
+  }
+
+  async function avisar(inmediato: boolean) {
+    if (!idPlantillaAviso) return;
+    avisando = true;
+    avisoError = '';
+    try {
+      avisoHecho = await notificacionesApi.programarAvisoMantencion(token, idOT, Number(idPlantillaAviso), inmediato);
+      mostrarAviso = false;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error al programar el aviso';
+      // Excepcion 1 de CU-50: con menos de 24 h se ofrece enviar de inmediato.
+      if (msg.includes('menor a 24 horas')) avisoMenos24 = true;
+      avisoError = msg;
+    } finally {
+      avisando = false;
+    }
+  }
 
   // CU-56: resolucion a distancia por el jefe tecnico.
   let mostrarModalRemoto = $state(false);
@@ -387,6 +432,18 @@
     {#if ot.estado !== 'COMPLETADA' && ot.estado !== 'CANCELADA'}
       <div class="bg-white rounded-xl shadow p-6">
         <h3 class="font-semibold text-gray-700 mb-4">Acciones</h3>
+
+        <!-- CU-50: aviso anticipado a los clientes de la caja. -->
+        {#if puedeAvisar}
+          <button onclick={abrirAviso} class="btn-texto mb-4 mr-4">Avisar mantención</button>
+        {/if}
+        {#if avisoHecho}
+          <p role="status" class="mb-4 text-sm text-green-700">
+            {avisoHecho.estado === 'SIMULADO'
+              ? `Aviso enviado a ${avisoHecho.destinatarios} clientes (simulado).`
+              : `Aviso programado para el ${new Date(avisoHecho.envio_en).toLocaleString('es-CL')} a ${avisoHecho.destinatarios} clientes.`}
+          </p>
+        {/if}
 
         <!-- CU-56: el jefe tecnico puede resolverla sin visita. -->
         {#if (rol === 'ADMIN' || rol === 'JEFE_TECNICO') && ot.estado !== 'PENDIENTE_APROBACION'}
@@ -774,6 +831,36 @@
         >
           {marcandoAusente ? 'Marcando...' : 'Marcar ausente'}
         </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Modal aviso de mantencion (CU-50) -->
+{#if mostrarAviso}
+  <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="titulo-aviso">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4 space-y-3">
+      <h3 id="titulo-aviso" class="font-semibold text-gray-800">Avisar la mantención de la OT #{ot?.id_ot}</h3>
+      <p class="text-sm text-gray-600">
+        Se avisa a los clientes de la caja NAP 24 horas antes de la intervención. El envío queda registrado como simulado mientras no haya proveedor de mensajería.
+      </p>
+      <label class="block text-xs font-medium text-gray-600">Plantilla
+        <select bind:value={idPlantillaAviso} class="mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-white">
+          {#each plantillasMantencion as p (p.id_plantilla)}
+            <option value={String(p.id_plantilla)}>{p.canal} · {p.contenido_texto?.slice(0, 40)}</option>
+          {:else}
+            <option value="">No hay plantillas de mantención programada</option>
+          {/each}
+        </select>
+      </label>
+      {#if avisoError}<p class="text-sm text-amber-800">{avisoError}</p>{/if}
+      <div class="flex gap-3">
+        <button onclick={() => (mostrarAviso = false)} class="flex-1 btn btn-secundario text-sm">Volver</button>
+        {#if avisoMenos24}
+          <button onclick={() => avisar(true)} disabled={avisando} class="flex-1 btn btn-peligro text-sm">Enviar de inmediato</button>
+        {:else}
+          <button onclick={() => avisar(false)} disabled={avisando || !idPlantillaAviso} class="flex-1 btn btn-primario text-sm">Programar aviso</button>
+        {/if}
       </div>
     </div>
   </div>

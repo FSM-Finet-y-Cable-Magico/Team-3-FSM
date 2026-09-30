@@ -1527,3 +1527,189 @@ test('CU-07: busca los clientes de una direccion y abre la ficha del elegido', a
   await page.getByRole('button', { name: 'Buscar' }).click();
   await expect(page.getByText('No se encontraron clientes en esa dirección. Verifique la información ingresada.')).toBeVisible();
 });
+
+// CU-20: disponibilidad de puertos NAP.
+async function prepararPuertos(page: Page, puertosCaja: any[]) {
+  const creadas: any[] = [];
+  await page.route(/\/api\/clientes\/rut\//, route =>
+    route.fulfill({ json: { cliente: { ...cliente, contratos_activos: [] }, historial_ot: [] } }));
+  await page.route('http://127.0.0.1:3000/api/clientes/lista-roja/verificar*', route => route.fulfill({ json: { vetado: null, mensaje: null, advertencia: null } }));
+  await page.route('http://127.0.0.1:3000/api/planta-externa/cajas-disponibles*', route => route.fulfill({ json: [
+    { id_caja_nap: 5, identificador_unico: 'NAP-B', zona: 'Norte', numero_poste: null, latitud: null, longitud: null, capacidad_puertos: 4, libres: 2 },
+  ] }));
+  await page.route('http://127.0.0.1:3000/api/planta-externa/cajas/5/puertos', route => route.fulfill({ json: {
+    id_caja_nap: 5, identificador_unico: 'NAP-B', zona: 'Norte', capacidad_puertos: 4, sin_registro: 2, reservados: 0, ocupados: 1, en_mantencion: 1,
+    puertos: puertosCaja,
+  } }));
+  await page.route('http://127.0.0.1:3000/api/planta-externa/cajas/5/cercanas', route => route.fulfill({ json: [
+    { id_caja_nap: 2, identificador_unico: 'NAP-CERCA', zona: 'Norte', libres: 3, distancia_m: 110 },
+  ] }));
+  await page.route('http://127.0.0.1:3000/api/ordenes', route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    creadas.push(route.request().postDataJSON());
+    return route.fulfill({ status: 201, json: { ...ot, id_ot: 901, advertencia_lista_roja: null } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/ot/nueva');
+  await page.getByLabel('RUT del cliente').fill('12345678-5');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  await page.getByLabel('Tipo de OT *').selectOption('INSTALACION');
+  await page.getByLabel('Caja NAP').selectOption({ label: 'NAP-B · Norte (2 sin registro)' });
+  return creadas;
+}
+
+test('CU-20: la instalacion reserva el puerto LIBRE elegido en el mapa de la caja', async ({ page }) => {
+  await preparar(page);
+  const creadas = await prepararPuertos(page, [
+    { id_puerto: 21, numero_puerto: 1, estado: 'OCUPADO', id_cliente_asociado: 20 },
+    { id_puerto: 22, numero_puerto: 2, estado: 'EN_MANTENCION', id_cliente_asociado: null },
+    { id_puerto: 23, numero_puerto: 3, estado: 'LIBRE', id_cliente_asociado: null },
+  ]);
+
+  await expect(page.getByRole('button', { name: 'Puerto 1 · OCUPADO' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Puerto 3 · LIBRE' }).click();
+  await expect(page.getByRole('button', { name: 'Puerto 3 · LIBRE' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Crear OT' }).click();
+
+  await expect.poll(() => creadas.length).toBe(1);
+  expect(creadas[0]).toMatchObject({ tipo_ot: 'INSTALACION', id_puerto: 23 });
+});
+
+test('CU-20: una caja sin puertos libres lo dice y sugiere las mas cercanas', async ({ page }) => {
+  await preparar(page);
+  await prepararPuertos(page, [
+    { id_puerto: 21, numero_puerto: 1, estado: 'OCUPADO', id_cliente_asociado: 20 },
+    { id_puerto: 22, numero_puerto: 2, estado: 'EN_MANTENCION', id_cliente_asociado: null },
+  ]);
+  await expect(page.getByText('Esta caja NAP no tiene puertos disponibles.')).toBeVisible();
+  await expect(page.getByText('NAP-CERCA · 110 m · 3 sin registro')).toBeVisible();
+});
+
+test('CU-20: el ADMIN ve lo que haria la reconciliacion de puertos antes de aplicarla', async ({ page }) => {
+  await preparar(page);
+  const llamadas: string[] = [];
+  await page.route('http://127.0.0.1:3000/api/planta-externa/cajas', route => route.fulfill({ json: [] }));
+  await page.route(/\/api\/planta-externa\/puertos\/reconciliar/, route => {
+    const url = new URL(route.request().url());
+    llamadas.push(url.search);
+    return route.fulfill({ status: 201, json: {
+      aplicado: url.searchParams.get('aplicar') === 'true', cajas_revisadas: 4, puertos_creados: 8, puertos_ocupados: 3,
+      clientes_sin_puerto: [{ id_caja_nap: 3, identificador_unico: 'NAP-C', id_cliente: 31 }], cajas_sin_capacidad: [],
+    } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/topologia');
+
+  await page.getByRole('button', { name: 'Reconciliar puertos' }).click();
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo).toContainText('Se crearían 8 puertos y se ocuparían 3');
+  await expect(dialogo).toContainText('1 cliente sin puerto libre');
+  expect(llamadas).toEqual(['']);
+
+  await dialogo.getByRole('button', { name: 'Aplicar' }).click();
+  await expect(dialogo).toContainText('Listo: se crearon 8 puertos y se ocuparon 3');
+  expect(llamadas).toEqual(['', '?aplicar=true']);
+});
+
+// CU-25: baja de servicio.
+test('CU-25: la baja muestra lo que se desconecta, pide confirmar la deuda y enlaza las dos OT', async ({ page }) => {
+  await preparar(page);
+  const bajas: unknown[] = [];
+  await page.route('http://127.0.0.1:3000/api/clientes/rut/12345678-5', route =>
+    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: 'VERDE', contratos_activos: [] }, historial_ot: [] } }));
+  await page.route(/\/api\/clientes\/1\/baja$/, route => {
+    if (route.request().method() === 'POST') {
+      bajas.push(route.request().postDataJSON());
+      return route.fulfill({ status: 201, json: { id_cliente: 1, estado: 'BAJA', ot_baja_puerto: 500, ot_baja_equipo: 501 } });
+    }
+    return route.fulfill({ json: {
+      id_cliente: 1, nombre_completo: 'Cliente de prueba', rut: '12345678-5', estado: 'ACTIVO', direccion: 'Calle de prueba 100, El Quisco',
+      onts: ['ZTEG1234'], puertos: [{ id_puerto: 23, numero_puerto: 3, id_caja_nap: 5, caja: 'NAP-B' }],
+      motivos: ['VOLUNTARIA', 'MOROSIDAD', 'FUERZA_MAYOR', 'MUDANZA_SIN_COBERTURA'],
+    } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/clientes/12345678-5');
+
+  await page.getByRole('button', { name: 'Dar de baja' }).click();
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo).toContainText('ZTEG1234');
+  await expect(dialogo).toContainText('Puerto 3 de NAP-B');
+  await dialogo.getByLabel('Motivo').selectOption('MUDANZA_SIN_COBERTURA');
+  const confirmar = dialogo.getByRole('button', { name: 'Registrar baja' });
+  await expect(confirmar).toBeDisabled();
+  await dialogo.getByLabel('Confirmo que el cliente no tiene deuda pendiente').check();
+  await confirmar.click();
+
+  await expect(page.getByRole('link', { name: 'OT #500' })).toHaveAttribute('href', '/admin/ot/500');
+  await expect(page.getByRole('link', { name: 'OT #501' })).toBeVisible();
+  expect(bajas).toEqual([{ motivo: 'MUDANZA_SIN_COBERTURA', confirma_sin_deuda: true }]);
+});
+
+// RF-53 y RF-54: zona del cliente.
+test('RF-53: la ficha muestra la zona y de donde sale', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/clientes/rut/12345678-5', route =>
+    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: 'VERDE', zona: { nombre: 'Norte', origen: 'MONITOREO' }, contratos_activos: [] }, historial_ot: [] } }));
+  await login(page, 'admin'); await page.goto('/admin/clientes/12345678-5');
+  await expect(page.getByText('Norte')).toBeVisible();
+  await expect(page.getByText('según el monitoreo')).toBeVisible();
+});
+
+test('RF-54: el listado de clientes filtra por zona', async ({ page }) => {
+  await preparar(page);
+  const consultas: string[] = [];
+  await page.route(/\/api\/clientes\?/, route => {
+    consultas.push(new URL(route.request().url()).search);
+    return route.fulfill({ json: { data: [], total: 0, page: 1, limit: 20 } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/clientes');
+  await page.getByLabel('Zona').fill('Norte');
+  await page.getByLabel('Zona').press('Enter');
+  await expect.poll(() => consultas.at(-1)).toContain('zona=Norte');
+});
+
+// CU-50: aviso anticipado de mantencion.
+test('CU-50: desde una OT programada se avisa a los clientes 24 h antes, y con menos se pide confirmar', async ({ page }) => {
+  await preparar(page);
+  const pedidos: unknown[] = [];
+  const futura = new Date(Date.now() + 3 * 86_400_000).toISOString();
+  await page.route('http://127.0.0.1:3000/api/ordenes/1', route => route.fulfill({ json: { ...ot, estado: 'ASIGNADA', fecha_programada: futura } }));
+  await page.route('http://127.0.0.1:3000/api/notificaciones/plantillas', route => route.fulfill({ json: [
+    { id_plantilla: 9, id_empresa: 1, tipo_evento: 'MANTENCION_PROGRAMADA', canal: 'SMS', contenido_texto: 'Hola', tiempo_estimado_reparacion: null, activa: true, es_base: false, editable: true, variables_usadas: [] },
+    { id_plantilla: 5, id_empresa: 1, tipo_evento: 'FALLA', canal: 'SMS', contenido_texto: 'Hola', tiempo_estimado_reparacion: null, activa: true, es_base: false, editable: true, variables_usadas: [] },
+  ] }));
+  let primera = true;
+  await page.route(/\/api\/notificaciones\/mantencion\/1$/, route => {
+    const cuerpo = route.request().postDataJSON();
+    pedidos.push(cuerpo);
+    if (primera && !cuerpo.inmediato) {
+      primera = false;
+      return route.fulfill({ status: 400, json: { message: 'El tiempo disponible es menor a 24 horas. La notificación se enviará de inmediato si confirma.' } });
+    }
+    return route.fulfill({ status: 201, json: { id_ot: 1, estado: cuerpo.inmediato ? 'SIMULADO' : 'PROGRAMADO', envio_en: futura, destinatarios: 12, sin_contacto: 1 } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/ot/1');
+
+  await page.getByRole('button', { name: 'Avisar mantención' }).click();
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo.getByLabel('Plantilla')).toHaveValue('9');
+  await dialogo.getByRole('button', { name: 'Programar aviso' }).click();
+
+  await expect(dialogo.getByText('menor a 24 horas')).toBeVisible();
+  await dialogo.getByRole('button', { name: 'Enviar de inmediato' }).click();
+  await expect(page.getByText('Aviso enviado a 12 clientes')).toBeVisible();
+  expect(pedidos).toEqual([{ id_plantilla: 9 }, { id_plantilla: 9, inmediato: true }]);
+});
+
+// Catalogo de planes, solo lectura.
+test('el catalogo de planes se consulta y dice que el alta depende de B-01', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/clientes/planes', route => route.fulfill({ json: [
+    { id_plan: 1, nombre_comercial: 'Fibra 600', tipo_plan: 'INTERNET', tipo_cliente: 'HOGAR', velocidad_mbps: 600, precio_mensual: 19990, descripcion: 'Simétrico' },
+  ] }));
+  await login(page, 'admin');
+  await page.getByRole('link', { name: 'Planes' }).click();
+  const fila = page.getByRole('row', { name: /Fibra 600/ });
+  await expect(fila).toContainText('600 Mbps');
+  await expect(fila).toContainText('$19.990');
+  await expect(page.getByText('solo lectura')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Nuevo plan|Editar/ })).toHaveCount(0);
+});

@@ -97,6 +97,28 @@ export class PlantaExternaController {
     return this.topologia.puertosDeCaja(+id, idEmpresa);
   }
 
+  /** CU-20, excepcion 1: cajas cercanas con puertos libres. */
+  @Roles('ADMIN', 'JEFE_TECNICO', 'TECNICO')
+  @Get('cajas/:id/cercanas')
+  cercanas(
+    @CurrentUser() user: UserPayload,
+    @Param('id') id: string,
+    @Query('empresa') empresa?: string,
+  ) {
+    const idEmpresa = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.topologia.cajasCercanas(+id, idEmpresa);
+  }
+
+  /**
+   * CU-20: pone los puertos de acuerdo con las ONT ligadas. Sin
+   * `aplicar=true` solo informa lo que haria.
+   */
+  @Roles('ADMIN')
+  @Post('puertos/reconciliar')
+  reconciliarPuertos(@CurrentUser() user: UserPayload, @Query('aplicar') aplicar?: string) {
+    return this.topologia.reconciliarPuertos(user.id_empresa, user.userId, aplicar === 'true');
+  }
+
   // -------------------------------------------------------------------------
   // CU-18 · Registrando elemento de topología
   // -------------------------------------------------------------------------

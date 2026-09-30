@@ -88,6 +88,9 @@ const prisma = {
   },
   // MOD RF-32: la ficha trae el nivel del semaforo desde lista_negra.
   lista_negra: { findMany: jest.fn(async () => []) },
+  // RF-53: la ficha trae la zona desde la ONT o la caja del puerto.
+  registro_ont: { findFirst: jest.fn(async () => null) },
+  puerto_nap: { findFirst: jest.fn(async () => null) },
   // CU-43: la estrategia JWT rechaza el token de una cuenta desactivada.
   usuario: { findUnique: jest.fn(async () => ({ activo: true })) },
   // CU-33: la estrategia JWT valida que la empresa activa del ADMIN exista.

@@ -7,8 +7,9 @@
   import * as ordenesApi from '$lib/api/ordenes.api';
   import * as clientesApi from '$lib/api/clientes.api';
   import RutInput from '$lib/components/RutInput.svelte';
+  import SelectorPuerto from '$lib/components/SelectorPuerto.svelte';
 
-  let token = '';
+  let token = $state('');
 
   let paso = $state(1);
 
@@ -48,6 +49,8 @@
   let rol = $state('');
   let listaRoja = $state<{ vetado: { motivo: string } | null; mensaje: string | null; advertencia: string | null } | null>(null);
   let justificacion = $state('');
+  // CU-20: puerto reservado para la instalacion.
+  let idPuerto = $state<number | null>(null);
 
   onMount(() => {
     authStore.checkAuth();
@@ -140,6 +143,7 @@
         bloque_horario: buildBloqueHorario(),
         observaciones: observaciones || undefined,
         ...(vetado && tipoOT === 'INSTALACION' && { justificacion_lista_roja: justificacion.trim() }),
+        ...(tipoOT === 'INSTALACION' && idPuerto && { id_puerto: idPuerto }),
       });
       goto(`/admin/ot/${nueva.id_ot}`);
     } catch (err) {
@@ -321,6 +325,12 @@
             ></textarea>
           </div>
         </div>
+
+        {#if tipoOT === 'INSTALACION'}
+          <div class="mt-4">
+            <SelectorPuerto {token} onelegir={(id) => (idPuerto = id)} />
+          </div>
+        {/if}
 
         {#if vetado && tipoOT === 'INSTALACION'}
           {#if rol === 'ADMIN'}

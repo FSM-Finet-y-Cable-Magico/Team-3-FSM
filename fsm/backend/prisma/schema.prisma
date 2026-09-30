@@ -285,12 +285,18 @@ model log_notificacion {
   /// Que incidente lo origino (CU-48). Sin esto no se puede responder "a quien
   /// le avisamos de esta falla" ni evitar avisar dos veces por lo mismo.
   id_alerta       Int?
+  /// CU-50: la OT de mantencion por la que se avisa. Con estado PROGRAMADO,
+  /// fecha_envio es CUANDO se va a enviar (24 h antes de la intervencion).
+  id_ot           Int?
   cliente         cliente?                @relation(fields: [id_cliente], references: [id_cliente])
+  orden_trabajo   orden_trabajo?          @relation(fields: [id_ot], references: [id_ot])
   plantilla       plantilla_notificacion? @relation(fields: [id_plantilla], references: [id_plantilla])
   alerta          alerta_monitoreo?       @relation(fields: [id_alerta], references: [id_alerta])
 
   @@index([id_alerta])
   @@index([id_cliente])
+  // CU-50: el poller busca los PROGRAMADO vencidos.
+  @@index([estado_envio, fecha_envio])
 }
 
 model tipo_equipo {
@@ -414,6 +420,8 @@ model orden_trabajo {
   /// P0 del acuerdo con G8: la solicitud con la que G8 pidio esta OT por
   /// `POST /integraciones/instalaciones`. Null en toda OT creada dentro de G3.
   solicitud_integracion          solicitud_instalacion_integracion?
+  /// CU-50: avisos de mantencion programados o enviados por esta OT.
+  avisos                         log_notificacion[]
 
   // C6 (#19). PostgreSQL no indexa las claves foraneas por si solo: de estas
   // columnas, solo la PK y el @unique de id_ticket tenian indice.
