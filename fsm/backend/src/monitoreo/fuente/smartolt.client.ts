@@ -3,6 +3,7 @@ import type {
   FuenteMonitoreo,
   FiltroConsulta,
   LecturaOnt,
+  OdbInfo,
   OltInfo,
   OntDetalle,
   EstadoConexion,
@@ -55,6 +56,16 @@ interface RawOnu {
   last_status_change?: string;
 }
 
+/** Una fila de `/system/get_odbs`: el catalogo de cajas, con su capacidad. */
+interface RawOdb {
+  id?: number | string;
+  name?: string;
+  nr_of_ports?: number | string;
+  zone_name?: string;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+}
+
 /** SmartOLT envuelve la mayoría de las respuestas: { status: true, response: [...] }. */
 interface RespuestaSmartOlt<T> {
   status?: boolean;
@@ -94,6 +105,41 @@ export class SmartOltClient implements FuenteMonitoreo {
       ip_gestion: o.ip ?? null,
       ubicacion: o.location ?? null,
     }));
+  }
+
+  /**
+   * Catálogo de cajas: `/system/get_odbs`.
+   *
+   * Es un endpoint DISTINTO del censo de ONT, y eso importa por dos razones.
+   * Trae `nr_of_ports`, que el censo no dice por ningún lado y sin el cual no
+   * se pueden crear los puertos de una caja. Y tiene el límite de 1000
+   * llamadas/hora de `get_olts`, no el de 15/hora de `get_all_onus_details`.
+   */
+  async listarOdbs(): Promise<OdbInfo[]> {
+    const raw = await this.get<RawOdb>('/system/get_odbs');
+    return raw.map((o) => ({
+      id_externo: String(o.id ?? ''),
+      nombre: (o.name ?? '').trim(),
+      capacidad: this.num(o.nr_of_ports),
+      zona: o.zone_name ?? null,
+      lat: this.decimal(o.latitude),
+      lon: this.decimal(o.longitude),
+    }));
+  }
+
+  /**
+   * Las coordenadas del catálogo vienen casi siempre vacías --2 de 301 medido el
+   * 29-09-- y las pocas que hay no comparten formato: una en decimal y otra en
+   * grados y minutos. Solo se acepta el decimal; lo demás se descarta en vez de
+   * guardar una coordenada que manda al técnico a otro país.
+   */
+  private decimal(valor: unknown): number | null {
+    if (typeof valor === 'number') return Number.isFinite(valor) ? valor : null;
+    if (typeof valor !== 'string') return null;
+    const limpio = valor.trim();
+    if (!/^-?\d{1,3}(\.\d+)?$/.test(limpio)) return null;
+    const n = Number(limpio);
+    return Number.isFinite(n) ? n : null;
   }
 
   async listarOntDetalles(filtro?: FiltroConsulta): Promise<OntDetalle[]> {

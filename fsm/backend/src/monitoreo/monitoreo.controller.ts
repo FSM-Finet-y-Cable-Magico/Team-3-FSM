@@ -1,6 +1,7 @@
 
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { MonitoreoService } from './monitoreo.service.js';
+import { CapacidadCajasService } from './capacidad-cajas.service.js';
 import { DescubrimientoService } from './descubrimiento.service.js';
 import { LigadoCajaService } from './ligado-caja.service.js';
 import { AlertasService } from './alertas.service.js';
@@ -25,6 +26,7 @@ export class MonitoreoController {
     private descubrimiento: DescubrimientoService,
     private ligado: LigadoCajaService,
     private alertas: AlertasService,
+    private capacidad: CapacidadCajasService,
   ) {}
 
   // --- Alertas (CU-13 / CU-15 / CU-17 / CU-52 / CU-53) -----------------------
@@ -223,5 +225,22 @@ export class MonitoreoController {
   @Post('sincronizar-topologia')
   sincronizar() {
     return this.descubrimiento.sincronizarTopologia();
+  }
+
+  /**
+   * Completa `caja_nap.capacidad_puertos` desde el catalogo de SmartOLT, que es
+   * lo que CU-20 necesita para poder crear puertos. Sin esto la reconciliacion
+   * corre y no hace nada: la capacidad esta en 1 de 911 cajas.
+   *
+   * NO ESCRIBE salvo que se pida `?aplicar=true`. Toca la base compartida, asi
+   * que primero se mira el resumen y despues se aplica.
+   */
+  @Roles('ADMIN')
+  @Post('capacidad-cajas')
+  capacidadCajas(
+    @CurrentUser() user: { id_empresa: number },
+    @Query('aplicar') aplicar?: string,
+  ) {
+    return this.capacidad.completarCapacidades(user.id_empresa, aplicar === 'true');
   }
 }

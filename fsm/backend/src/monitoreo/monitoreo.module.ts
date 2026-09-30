@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { MonitoreoController } from './monitoreo.controller.js';
 import { MonitoreoService } from './monitoreo.service.js';
 import { MonitoreoPollerService } from './monitoreo-poller.service.js';
+import { CapacidadCajasService } from './capacidad-cajas.service.js';
 import { DescubrimientoService } from './descubrimiento.service.js';
 import { RegistroOntService } from './registro-ont.service.js';
 import { LigadoCajaService } from './ligado-caja.service.js';
@@ -58,6 +59,7 @@ const fuenteProvider = {
     AlertasService,
     MonitoreoService,
     MonitoreoPollerService,
+    CapacidadCajasService,
     DescubrimientoService,
     MonitoreoGateway,
   ],
