@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { parsearKml, type NodoTopologia, type ResumenDescartes } from './kml-parser.js';
+import { variantesRut } from '../common/utils/rut.util.js';
 
 export interface ResumenImportKml {
   leidos: number;
@@ -244,23 +245,33 @@ export class PlantaExternaService {
     });
 
     const demo = [
-      { sn: 'SN-0001', rut: '11111111-1', nombre: 'Juana Pérez', dir: 'Av. Costanera 100', comuna: 'Cartagena', caja: 'NAP-CTG-01' },
-      { sn: 'SN-0002', rut: '22222222-2', nombre: 'Pedro Soto', dir: 'Calle El Muelle 25', comuna: 'Cartagena', caja: 'NAP-CTG-01' },
-      { sn: 'SN-0003', rut: '33333333-3', nombre: 'Ana Rojas', dir: 'Los Aromos 8', comuna: 'San Antonio', caja: 'NAP-SA-01' },
+      { sn: 'SN-0001', rut: '111111111', nombre: 'Juana Pérez', dir: 'Av. Costanera 100', comuna: 'Cartagena', caja: 'NAP-CTG-01' },
+      { sn: 'SN-0002', rut: '222222222', nombre: 'Pedro Soto', dir: 'Calle El Muelle 25', comuna: 'Cartagena', caja: 'NAP-CTG-01' },
+      { sn: 'SN-0003', rut: '333333333', nombre: 'Ana Rojas', dir: 'Los Aromos 8', comuna: 'San Antonio', caja: 'NAP-SA-01' },
     ];
 
     for (const d of demo) {
-      const cliente = await this.prisma.cliente.upsert({
-        where: { rut: d.rut },
-        create: {
-          rut: d.rut,
-          nombre_completo: d.nombre,
-          estado: 'ACTIVO',
-          id_empresa: finet?.id_empresa,
-          direcciones: { create: { direccion_completa: d.dir, comuna: d.comuna, es_principal: true } },
-        },
-        update: {},
+      // Buscar por todas las grafias y no con `upsert` sobre `rut` exacto: los
+      // RUT de demo se guardaban antes con guion, asi que un upsert por el
+      // valor canonico no encontraria esas filas y sembraria un duplicado de
+      // la misma persona en la corrida siguiente.
+      const existente = await this.prisma.cliente.findFirst({
+        where: { rut: { in: variantesRut(d.rut) } },
       });
+
+      const cliente =
+        existente ??
+        (await this.prisma.cliente.create({
+          data: {
+            rut: d.rut,
+            nombre_completo: d.nombre,
+            estado: 'ACTIVO',
+            id_empresa: finet?.id_empresa,
+            direcciones: {
+              create: { direccion_completa: d.dir, comuna: d.comuna, es_principal: true },
+            },
+          },
+        }));
 
       const caja = await this.prisma.caja_nap.findUnique({
         where: { identificador_unico: d.caja },
