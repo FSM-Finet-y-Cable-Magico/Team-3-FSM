@@ -87,6 +87,36 @@ export async function puertosDeCaja(token: string, id: number): Promise<DetalleP
   return fetchApi(token, `${API_URL}/api/planta-externa/cajas/${id}/puertos`);
 }
 
+/** CU-20, excepcion 1: cajas cercanas con al menos un puerto libre. */
+export interface CajaCercana {
+  id_caja_nap: number;
+  identificador_unico: string | null;
+  zona: string | null;
+  libres: number;
+  distancia_m: number;
+}
+
+export async function cajasCercanas(token: string, id: number): Promise<CajaCercana[]> {
+  return fetchApi(token, `${API_URL}/api/planta-externa/cajas/${id}/cercanas`);
+}
+
+/** CU-20: resultado de reconciliar los puertos con las ONT ligadas. */
+export interface ReconciliacionPuertos {
+  aplicado: boolean;
+  cajas_revisadas: number;
+  puertos_creados: number;
+  puertos_ocupados: number;
+  clientes_sin_puerto: { id_caja_nap: number; identificador_unico: string | null; id_cliente: number }[];
+  cajas_sin_capacidad: { id_caja_nap: number; identificador_unico: string | null }[];
+}
+
+/** Sin `aplicar` solo informa lo que haria. */
+export async function reconciliarPuertos(token: string, aplicar: boolean): Promise<ReconciliacionPuertos> {
+  return fetchApi(token, `${API_URL}/api/planta-externa/puertos/reconciliar${aplicar ? '?aplicar=true' : ''}`, {
+    method: 'POST',
+  });
+}
+
 export async function crearCaja(token: string, dto: CrearCaja): Promise<CajaListada> {
   return fetchApi<CajaListada>(token, `${API_URL}/api/planta-externa/cajas`, {
     method: 'POST',

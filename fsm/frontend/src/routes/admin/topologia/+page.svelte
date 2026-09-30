@@ -7,6 +7,28 @@
   import type { CajaListada } from '$lib/api/topologia.api';
 
   let token = $state('');
+  let rol = $state('');
+
+  // CU-20: reconciliar los puertos con las ONT ligadas. Primero se muestra lo
+  // que haria; se aplica solo si el ADMIN lo confirma.
+  let reconciliacion = $state<topologiaApi.ReconciliacionPuertos | null>(null);
+  let mostrarReconciliar = $state(false);
+  let reconciliando = $state(false);
+  let errorReconciliar = $state('');
+
+  async function reconciliar(aplicar: boolean) {
+    reconciliando = true;
+    errorReconciliar = '';
+    mostrarReconciliar = true;
+    try {
+      reconciliacion = await topologiaApi.reconciliarPuertos(token, aplicar);
+      if (aplicar) cargar();
+    } catch (e) {
+      errorReconciliar = e instanceof Error ? e.message : 'Error al reconciliar';
+    } finally {
+      reconciliando = false;
+    }
+  }
   let cajas = $state<CajaListada[]>([]);
   let cargando = $state(true);
   let error = $state('');
@@ -61,6 +83,7 @@
       return;
     }
     token = state.token ?? '';
+    rol = state.usuario?.rol ?? '';
     cargar();
   });
 
@@ -153,6 +176,10 @@
         Cajas NAP y ocupación registrada de sus puertos
       </p>
     </div>
+    <div class="flex items-center gap-3">
+    {#if rol === 'ADMIN'}
+      <button onclick={() => reconciliar(false)} class="btn btn-secundario">Reconciliar puertos</button>
+    {/if}
     <button
       onclick={abrirNueva}
       class="btn btn-primario"
@@ -162,6 +189,7 @@
       </svg>
       Nueva caja
     </button>
+    </div>
   </div>
 </div>
 
@@ -382,6 +410,38 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+{/if}
+
+{#if mostrarReconciliar}
+  <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="titulo-reconciliar">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4 space-y-3 text-sm">
+      <h2 id="titulo-reconciliar" class="text-lg font-semibold text-slate-900">Reconciliar puertos con las ONT</h2>
+      <p class="text-slate-600">Marca ocupado el puerto de cada cliente que tiene su ONT en la caja, y crea los puertos de las cajas que no tienen ninguno.</p>
+      {#if reconciliando}
+        <p role="status" class="text-slate-500">Calculando...</p>
+      {:else if errorReconciliar}
+        <p class="text-red-600">{errorReconciliar}</p>
+      {:else if reconciliacion}
+        {#if reconciliacion.aplicado}
+          <p class="font-medium text-green-700">Listo: se crearon {reconciliacion.puertos_creados} puertos y se ocuparon {reconciliacion.puertos_ocupados}.</p>
+        {:else}
+          <p class="font-medium text-slate-800">Se crearían {reconciliacion.puertos_creados} puertos y se ocuparían {reconciliacion.puertos_ocupados}, en {reconciliacion.cajas_revisadas} cajas.</p>
+        {/if}
+        {#if reconciliacion.clientes_sin_puerto.length}
+          <p class="text-amber-700">{reconciliacion.clientes_sin_puerto.length} {reconciliacion.clientes_sin_puerto.length === 1 ? 'cliente sin puerto libre' : 'clientes sin puerto libre'} en su caja.</p>
+        {/if}
+        {#if reconciliacion.cajas_sin_capacidad.length}
+          <p class="text-amber-700">{reconciliacion.cajas_sin_capacidad.length} cajas con clientes pero sin capacidad conocida: no se les crean puertos.</p>
+        {/if}
+      {/if}
+      <div class="flex gap-3">
+        <button onclick={() => (mostrarReconciliar = false)} class="flex-1 btn btn-secundario">Cerrar</button>
+        {#if reconciliacion && !reconciliacion.aplicado}
+          <button onclick={() => reconciliar(true)} disabled={reconciliando} class="flex-1 btn btn-primario">Aplicar</button>
+        {/if}
+      </div>
     </div>
   </div>
 {/if}

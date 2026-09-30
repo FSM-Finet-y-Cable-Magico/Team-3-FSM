@@ -18,6 +18,15 @@ import { ESTADO_PUERTO, type EditarCajaDto, type EditarPuertoDto } from './dto/e
  */
 const RADIO_COLISION_M = 300;
 
+/** Distancia en linea recta (haversine), en metros. */
+function distanciaMetros(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const rad = (g: number) => (g * Math.PI) / 180;
+  const a =
+    Math.sin(rad(lat2 - lat1) / 2) ** 2 +
+    Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lng2 - lng1) / 2) ** 2;
+  return 2 * 6_371_000 * Math.asin(Math.sqrt(a));
+}
+
 /** Distancia aproximada en metros. Basta a esta escala. */
 function metrosEntre(aLat: number, aLon: number, bLat: number, bLon: number): number {
   const R = 6371000;
@@ -268,7 +277,9 @@ export class TopologiaService {
     if (estadoFinal === ESTADO_PUERTO.OCUPADO && clienteFinal == null) {
       throw new BadRequestException('Un puerto OCUPADO necesita un cliente asociado');
     }
-    if (estadoFinal !== ESTADO_PUERTO.OCUPADO && clienteFinal != null) {
+    // RESERVADO tambien lleva cliente: es el de la OT de instalacion que lo
+    // reservo (CU-20), y es como se lo encuentra al cerrarla.
+    if (estadoFinal !== ESTADO_PUERTO.OCUPADO && estadoFinal !== ESTADO_PUERTO.RESERVADO && clienteFinal != null) {
       throw new BadRequestException(
         `Un puerto ${estadoFinal} no puede tener un cliente asociado`,
       );
@@ -383,6 +394,185 @@ export class TopologiaService {
         };
       })
       .sort((a, b) => b.libres - a.libres);
+  }
+
+  /**
+   * CU-20: pone los puertos de acuerdo con la red. La fuente de verdad es
+   * `registro_ont`: el ligado del Incremento 2 dejo cada ONT con su caja, y las
+   * que tienen cliente dicen que puerto esta ocupado y por quien.
+   *
+   * Por caja:
+   *  - si no tiene puertos y se conoce su capacidad, los crea LIBRES;
+   *  - cada cliente con ONT en la caja que todavia no tiene puerto ocupa el
+   *    primero LIBRE. Nunca toca uno OCUPADO, RESERVADO ni EN_MANTENCION.
+   *
+   * Idempotente: una segunda corrida no encuentra nada que hacer. Por defecto
+   * NO escribe (`aplicar` en false) y solo dice lo que haria, porque toca miles
+   * de filas en la base compartida.
+   *
+   * Lo que no resuelve lo informa: clientes cuya caja ya esta llena, y cajas
+   * sin puertos ni capacidad conocida (no se inventa cuantos puertos tienen).
+   * Las ONT sin cliente --casi todas, segun el esquema-- no ocupan puerto: un
+   * OCUPADO sin cliente no dice a quien atiende.
+   */
+  async reconciliarPuertos(id_empresa: number, id_usuario: number, aplicar: boolean) {
+    const [cajas, registros] = await Promise.all([
+      this.prisma.caja_nap.findMany({
+        where: { id_empresa },
+        orderBy: { id_caja_nap: 'asc' },
+        include: { puertos: { orderBy: { numero_puerto: 'asc' } } },
+      }),
+      this.prisma.registro_ont.findMany({
+        where: { id_empresa, id_caja_nap: { not: null }, id_cliente: { not: null } },
+        select: { id_caja_nap: true, id_cliente: true },
+      }),
+    ]);
+
+    const clientesPorCaja = new Map<number, number[]>();
+    for (const r of registros) {
+      const lista = clientesPorCaja.get(r.id_caja_nap!) ?? [];
+      if (!lista.includes(r.id_cliente!)) lista.push(r.id_cliente!);
+      clientesPorCaja.set(r.id_caja_nap!, lista);
+    }
+
+    const crear: { id_caja_nap: number; capacidad: number }[] = [];
+    // Asignaciones por posicion (indice del puerto LIBRE) para poder resolver
+    // los ids de los puertos recien creados despues de crearlos.
+    const asignar: { id_caja_nap: number; id_puerto: number | null; indice: number; id_cliente: number }[] = [];
+    const clientes_sin_puerto: { id_caja_nap: number; identificador_unico: string | null; id_cliente: number }[] = [];
+    const cajas_sin_capacidad: { id_caja_nap: number; identificador_unico: string | null }[] = [];
+
+    for (const caja of cajas) {
+      const clientes = clientesPorCaja.get(caja.id_caja_nap) ?? [];
+      let libres: { id_puerto: number | null }[];
+      if (caja.puertos.length === 0) {
+        if (!caja.capacidad_puertos) {
+          if (clientes.length > 0) cajas_sin_capacidad.push({ id_caja_nap: caja.id_caja_nap, identificador_unico: caja.identificador_unico });
+          continue;
+        }
+        crear.push({ id_caja_nap: caja.id_caja_nap, capacidad: caja.capacidad_puertos });
+        libres = Array.from({ length: caja.capacidad_puertos }, () => ({ id_puerto: null }));
+      } else {
+        libres = caja.puertos.filter((p) => (p.estado ?? '').toUpperCase() === ESTADO_PUERTO.LIBRE);
+      }
+      const conPuerto = new Set(
+        caja.puertos
+          .filter((p) => [ESTADO_PUERTO.OCUPADO, ESTADO_PUERTO.RESERVADO].includes((p.estado ?? '').toUpperCase() as never))
+          .map((p) => p.id_cliente_asociado),
+      );
+      let indice = 0;
+      for (const id_cliente of clientes) {
+        if (conPuerto.has(id_cliente)) continue;
+        if (indice >= libres.length) {
+          clientes_sin_puerto.push({ id_caja_nap: caja.id_caja_nap, identificador_unico: caja.identificador_unico, id_cliente });
+          continue;
+        }
+        asignar.push({ id_caja_nap: caja.id_caja_nap, id_puerto: libres[indice].id_puerto, indice, id_cliente });
+        indice++;
+      }
+    }
+
+    const resumen = {
+      aplicado: aplicar,
+      cajas_revisadas: cajas.length,
+      puertos_creados: crear.reduce((a, c) => a + c.capacidad, 0),
+      puertos_ocupados: asignar.length,
+      clientes_sin_puerto,
+      cajas_sin_capacidad,
+    };
+    if (!aplicar || (crear.length === 0 && asignar.length === 0)) return resumen;
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        const creados = new Map<number, { id_puerto: number }[]>();
+        for (const c of crear) {
+          await tx.puerto_nap.createMany({
+            data: Array.from({ length: c.capacidad }, (_, i) => ({
+              id_caja_nap: c.id_caja_nap,
+              numero_puerto: i + 1,
+              estado: ESTADO_PUERTO.LIBRE,
+            })),
+          });
+          creados.set(
+            c.id_caja_nap,
+            await tx.puerto_nap.findMany({
+              where: { id_caja_nap: c.id_caja_nap },
+              orderBy: { numero_puerto: 'asc' },
+              select: { id_puerto: true },
+            }),
+          );
+        }
+        for (const a of asignar) {
+          const id_puerto = a.id_puerto ?? creados.get(a.id_caja_nap)?.[a.indice]?.id_puerto;
+          if (id_puerto == null) continue;
+          await tx.puerto_nap.update({
+            where: { id_puerto },
+            data: { estado: ESTADO_PUERTO.OCUPADO, id_cliente_asociado: a.id_cliente },
+          });
+        }
+        await tx.log_auditoria.create({
+          data: {
+            id_usuario,
+            accion: 'RECONCILIAR_PUERTOS_NAP',
+            entidad_afectada: 'puerto_nap',
+            valor_nuevo: {
+              puertos_creados: resumen.puertos_creados,
+              puertos_ocupados: resumen.puertos_ocupados,
+              clientes_sin_puerto: clientes_sin_puerto.length,
+              cajas_sin_capacidad: cajas_sin_capacidad.length,
+            },
+          },
+        });
+      },
+      // Son miles de filas: el tope por defecto de 5 s de Prisma no alcanza.
+      { timeout: 120_000 },
+    );
+    return resumen;
+  }
+
+  /**
+   * CU-20, excepcion 1: la caja no tiene puertos libres. Sugiere las cajas mas
+   * cercanas de la empresa con al menos un puerto LIBRE, por distancia en linea
+   * recta desde la caja pedida.
+   */
+  async cajasCercanas(id_caja_nap: number, id_empresa: number, cuantas = 5) {
+    const origen = await this.prisma.caja_nap.findFirst({
+      where: { id_caja_nap, id_empresa },
+      select: { id_caja_nap: true, latitud: true, longitud: true },
+    });
+    if (!origen) throw new NotFoundException(`Caja ${id_caja_nap} no encontrada`);
+    if (origen.latitud == null || origen.longitud == null) return [];
+
+    const candidatas = await this.prisma.caja_nap.findMany({
+      where: {
+        id_empresa,
+        id_caja_nap: { not: id_caja_nap },
+        latitud: { not: null },
+        longitud: { not: null },
+        puertos: { some: { estado: ESTADO_PUERTO.LIBRE } },
+      },
+      select: {
+        id_caja_nap: true,
+        identificador_unico: true,
+        zona: true,
+        latitud: true,
+        longitud: true,
+        puertos: { select: { estado: true } },
+      },
+    });
+
+    const lat0 = Number(origen.latitud);
+    const lng0 = Number(origen.longitud);
+    return candidatas
+      .map((c) => ({
+        id_caja_nap: c.id_caja_nap,
+        identificador_unico: c.identificador_unico,
+        zona: c.zona,
+        libres: c.puertos.filter((p) => (p.estado ?? '').toUpperCase() === ESTADO_PUERTO.LIBRE).length,
+        distancia_m: Math.round(distanciaMetros(lat0, lng0, Number(c.latitud), Number(c.longitud))),
+      }))
+      .sort((a, b) => a.distancia_m - b.distancia_m)
+      .slice(0, cuantas);
   }
 
   // ---------------------------------------------------------------------------

@@ -1527,3 +1527,84 @@ test('CU-07: busca los clientes de una direccion y abre la ficha del elegido', a
   await page.getByRole('button', { name: 'Buscar' }).click();
   await expect(page.getByText('No se encontraron clientes en esa dirección. Verifique la información ingresada.')).toBeVisible();
 });
+
+// CU-20: disponibilidad de puertos NAP.
+async function prepararPuertos(page: Page, puertosCaja: any[]) {
+  const creadas: any[] = [];
+  await page.route(/\/api\/clientes\/rut\//, route =>
+    route.fulfill({ json: { cliente: { ...cliente, contratos_activos: [] }, historial_ot: [] } }));
+  await page.route('http://127.0.0.1:3000/api/clientes/lista-roja/verificar*', route => route.fulfill({ json: { vetado: null, mensaje: null, advertencia: null } }));
+  await page.route('http://127.0.0.1:3000/api/planta-externa/cajas-disponibles*', route => route.fulfill({ json: [
+    { id_caja_nap: 5, identificador_unico: 'NAP-B', zona: 'Norte', numero_poste: null, latitud: null, longitud: null, capacidad_puertos: 4, libres: 2 },
+  ] }));
+  await page.route('http://127.0.0.1:3000/api/planta-externa/cajas/5/puertos', route => route.fulfill({ json: {
+    id_caja_nap: 5, identificador_unico: 'NAP-B', zona: 'Norte', capacidad_puertos: 4, sin_registro: 2, reservados: 0, ocupados: 1, en_mantencion: 1,
+    puertos: puertosCaja,
+  } }));
+  await page.route('http://127.0.0.1:3000/api/planta-externa/cajas/5/cercanas', route => route.fulfill({ json: [
+    { id_caja_nap: 2, identificador_unico: 'NAP-CERCA', zona: 'Norte', libres: 3, distancia_m: 110 },
+  ] }));
+  await page.route('http://127.0.0.1:3000/api/ordenes', route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    creadas.push(route.request().postDataJSON());
+    return route.fulfill({ status: 201, json: { ...ot, id_ot: 901, advertencia_lista_roja: null } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/ot/nueva');
+  await page.getByLabel('RUT del cliente').fill('12345678-5');
+  await page.getByRole('button', { name: 'Buscar' }).click();
+  await page.getByLabel('Tipo de OT *').selectOption('INSTALACION');
+  await page.getByLabel('Caja NAP').selectOption({ label: 'NAP-B · Norte (2 sin registro)' });
+  return creadas;
+}
+
+test('CU-20: la instalacion reserva el puerto LIBRE elegido en el mapa de la caja', async ({ page }) => {
+  await preparar(page);
+  const creadas = await prepararPuertos(page, [
+    { id_puerto: 21, numero_puerto: 1, estado: 'OCUPADO', id_cliente_asociado: 20 },
+    { id_puerto: 22, numero_puerto: 2, estado: 'EN_MANTENCION', id_cliente_asociado: null },
+    { id_puerto: 23, numero_puerto: 3, estado: 'LIBRE', id_cliente_asociado: null },
+  ]);
+
+  await expect(page.getByRole('button', { name: 'Puerto 1 · OCUPADO' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Puerto 3 · LIBRE' }).click();
+  await expect(page.getByRole('button', { name: 'Puerto 3 · LIBRE' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Crear OT' }).click();
+
+  await expect.poll(() => creadas.length).toBe(1);
+  expect(creadas[0]).toMatchObject({ tipo_ot: 'INSTALACION', id_puerto: 23 });
+});
+
+test('CU-20: una caja sin puertos libres lo dice y sugiere las mas cercanas', async ({ page }) => {
+  await preparar(page);
+  await prepararPuertos(page, [
+    { id_puerto: 21, numero_puerto: 1, estado: 'OCUPADO', id_cliente_asociado: 20 },
+    { id_puerto: 22, numero_puerto: 2, estado: 'EN_MANTENCION', id_cliente_asociado: null },
+  ]);
+  await expect(page.getByText('Esta caja NAP no tiene puertos disponibles.')).toBeVisible();
+  await expect(page.getByText('NAP-CERCA · 110 m · 3 sin registro')).toBeVisible();
+});
+
+test('CU-20: el ADMIN ve lo que haria la reconciliacion de puertos antes de aplicarla', async ({ page }) => {
+  await preparar(page);
+  const llamadas: string[] = [];
+  await page.route('http://127.0.0.1:3000/api/planta-externa/cajas', route => route.fulfill({ json: [] }));
+  await page.route(/\/api\/planta-externa\/puertos\/reconciliar/, route => {
+    const url = new URL(route.request().url());
+    llamadas.push(url.search);
+    return route.fulfill({ status: 201, json: {
+      aplicado: url.searchParams.get('aplicar') === 'true', cajas_revisadas: 4, puertos_creados: 8, puertos_ocupados: 3,
+      clientes_sin_puerto: [{ id_caja_nap: 3, identificador_unico: 'NAP-C', id_cliente: 31 }], cajas_sin_capacidad: [],
+    } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/topologia');
+
+  await page.getByRole('button', { name: 'Reconciliar puertos' }).click();
+  const dialogo = page.getByRole('dialog');
+  await expect(dialogo).toContainText('Se crearían 8 puertos y se ocuparían 3');
+  await expect(dialogo).toContainText('1 cliente sin puerto libre');
+  expect(llamadas).toEqual(['']);
+
+  await dialogo.getByRole('button', { name: 'Aplicar' }).click();
+  await expect(dialogo).toContainText('Listo: se crearon 8 puertos y se ocuparon 3');
+  expect(llamadas).toEqual(['', '?aplicar=true']);
+});

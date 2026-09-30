@@ -34,6 +34,15 @@ export class CrearOtDto {
   @IsInt()
   id_direccion?: number;
 
+  /**
+   * CU-20: el puerto LIBRE que se reserva para la instalacion. La caja de la OT
+   * sale del puerto.
+   */
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  id_puerto?: number;
+
   @IsOptional()
   @IsString()
   @MaxLength(1000)
