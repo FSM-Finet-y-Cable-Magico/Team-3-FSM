@@ -8,7 +8,7 @@ import {
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ReparacionesRecurrentesService } from '../ordenes/reparaciones-recurrentes.service.js';
-import { validarRut } from '../common/utils/rut.util.js';
+import { filtroRut, validarRut, variantesRut } from '../common/utils/rut.util.js';
 import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
 import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
@@ -51,8 +51,12 @@ export class ClientesService {
       throw new BadRequestException('RUT inválido. Verifique el número');
     }
 
-    const existente = await this.prisma.cliente.findUnique({
-      where: { rut: dto.rut },
+    // El @unique de la columna no alcanza: para la base, "12345678-5" y
+    // "123456785" son dos valores distintos, asi que deja entrar dos veces a
+    // la misma persona. El duplicado se busca en todas las grafias.
+    const existente = await this.prisma.cliente.findFirst({
+      where: { rut: { in: variantesRut(dto.rut) } },
+      select: { id_cliente: true },
     });
 
     if (existente) {
@@ -119,7 +123,7 @@ export class ClientesService {
 
     const cliente = await this.prisma.cliente.findFirst({
       where: {
-        rut,
+        rut: { in: variantesRut(rut) },
         id_empresa,
       },
       include: {
@@ -560,7 +564,7 @@ export class ClientesService {
   ) {
     const cliente = q.rut
       ? await this.prisma.cliente.findFirst({
-          where: { rut: q.rut.trim().toUpperCase(), id_empresa },
+          where: { rut: { in: variantesRut(q.rut) }, id_empresa },
           select: { id_cliente: true, es_conflictivo: true, obs_conflictivo: true },
         })
       : null;
@@ -596,6 +600,7 @@ export class ClientesService {
     const limpiar = (valor?: string) => valor?.trim() || undefined;
     const nombre = limpiar(filtros.nombre);
     const rut = limpiar(filtros.rut);
+    const porRut = rut ? filtroRut(rut) : undefined;
     const telefono = limpiar(filtros.telefono);
     const direccion = limpiar(filtros.direccion);
     const zona = limpiar(filtros.zona);
@@ -617,12 +622,10 @@ export class ClientesService {
     const where: Prisma.clienteWhereInput = {
       id_empresa,
       ...(nombre && { nombre_completo: { contains: nombre, mode: 'insensitive' } }),
-      // El RUT se guarda sin puntos ni guion (ver RutInput), pero el digito
-      // verificador puede ser K y queda con la mayuscula que se tecleo al dar
-      // de alta: RutInput solo la sube para mostrarla en pantalla, no en el
-      // valor que propaga. Sin `insensitive`, buscar "...k" no encuentra al
-      // cliente guardado con "...K", y es 1 de cada 11 RUT.
-      ...(rut && { rut: { contains: rut, mode: 'insensitive' } }),
+      // La columna guarda dos grafias a la vez --mitad "12345678-5" y mitad
+      // "123456785"-- porque los cuatro grupos escriben en ella. filtroRut
+      // compara contra todas; ver variantesRut.
+      ...(porRut && { rut: porRut }),
       ...(telefono && { telefono: { contains: telefono } }),
       ...(direccion && {
         direcciones: {

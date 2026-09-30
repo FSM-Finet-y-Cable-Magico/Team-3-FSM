@@ -52,10 +52,26 @@ describe('busqueda de clientes por criterios multiples', () => {
     });
   });
 
-  it('busca el RUT sin distinguir la K del digito verificador', async () => {
-    await service.listarClientes(1, 1, 20, { rut: '12345678k' });
+  it('busca un RUT completo contra las dos grafias guardadas', async () => {
+    // La columna guarda mitad "12345678-5" y mitad "123456785": comparar por
+    // igualdad exacta encontraba solo una de las dos mitades de la cartera.
+    await service.listarClientes(1, 1, 20, { rut: '12.345.678-5' });
 
-    expect(whereUsado().rut).toEqual({ contains: '12345678k', mode: 'insensitive' });
+    expect(whereUsado().rut).toEqual({ in: expect.arrayContaining(['123456785', '12345678-5', '12.345.678-5']) });
+  });
+
+  it('busca un RUT parcial por el cuerpo, que va sin puntuacion en las dos grafias', async () => {
+    await service.listarClientes(1, 1, 20, { rut: '12.345' });
+
+    expect(whereUsado().rut).toEqual({ contains: '12345', mode: 'insensitive' });
+  });
+
+  it('sigue sin distinguir la K del digito verificador', async () => {
+    await service.listarClientes(1, 1, 20, { rut: '21116770k' });
+
+    // 21116770-K si tiene la K por digito verificador, asi que entra por las
+    // grafias, y ahi van las dos cajas porque `in` no admite `insensitive`.
+    expect(whereUsado().rut).toEqual({ in: expect.arrayContaining(['21116770K', '21116770k', '21116770-K', '21116770-k']) });
   });
 
   it('combina los filtros en un AND, sin ampliar el resultado', async () => {

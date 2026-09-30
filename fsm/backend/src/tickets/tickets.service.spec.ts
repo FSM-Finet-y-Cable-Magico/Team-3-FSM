@@ -35,15 +35,23 @@ describe('TicketsService', () => {
     orden_trabajo: null,
   });
 
+  // Las dos filas se guardan con grafias distintas a proposito: es lo que hay
+  // en produccion --mitad "12345678-5", mitad "123456785"-- y Ana, que es la
+  // que usa el camino feliz de todo el suite, va sin guion mientras el DTO la
+  // pide con guion. Asi el suite entero depende de que el RUT se normalice.
+  const clientesEnBase = [
+    { id_cliente: 10, rut: '123456785', estado: 'ACTIVO', nombre_completo: 'Ana Soto' },
+    { id_cliente: 11, rut: '11111111-1', estado: 'SUSPENDIDO', nombre_completo: 'Luis Paz' },
+  ];
+
   const prisma: any = {
     cliente: {
-      findFirst: jest.fn(async (a: any) =>
-        a.where.rut === '12345678-5' && a.where.id_empresa === 1
-          ? { id_cliente: 10, estado: 'ACTIVO', nombre_completo: 'Ana Soto' }
-          : a.where.rut === '11111111-1' && a.where.id_empresa === 1
-            ? { id_cliente: 11, estado: 'SUSPENDIDO', nombre_completo: 'Luis Paz' }
-            : null,
-      ),
+      // Compara como compara Postgres: contra el texto guardado, tal cual.
+      findFirst: jest.fn(async (a: any) => {
+        const grafias: string[] = a.where.rut?.in ?? [a.where.rut];
+        if (a.where.id_empresa !== 1) return null;
+        return clientesEnBase.find((c) => grafias.includes(c.rut)) ?? null;
+      }),
     },
     categoria_falla: {
       findUnique: jest.fn(async (a: any) => categorias.find((c) => c.id_categoria === a.where.id_categoria) ?? null),
@@ -137,6 +145,19 @@ describe('TicketsService', () => {
     it('sin servicio activo responde el mensaje del CU, tambien si el cliente esta suspendido', async () => {
       await expect(crear({ rut_cliente: '22222222-2' })).rejects.toThrow(MENSAJE_SIN_SERVICIO);
       await expect(crear({ rut_cliente: '11111111-1' })).rejects.toThrow(MENSAJE_SIN_SERVICIO);
+    });
+
+    it('encuentra al cliente aunque el RUT se haya guardado con otra grafia', async () => {
+      // Ana esta guardada como "123456785" y Luis como "11111111-1". Cada uno
+      // se encuentra escribiendo el RUT de las tres formas: el operador no
+      // tiene por que saber con que grafia lo cargo el grupo que lo dio de
+      // alta. Antes de normalizar, la mitad de la cartera era inencontrable.
+      for (const escrito of ['123456785', '12345678-5', '12.345.678-5']) {
+        await expect(crear({ rut_cliente: escrito })).resolves.toMatchObject({ id_cliente: 10 });
+      }
+      for (const escrito of ['111111111', '11111111-1', '11.111.111-1']) {
+        await expect(crear({ rut_cliente: escrito })).rejects.toThrow(MENSAJE_SIN_SERVICIO);
+      }
     });
 
     it('una categoria que no existe es 400', async () => {

@@ -4,7 +4,7 @@ import { Prisma, type orden_trabajo } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ReparacionesRecurrentesService } from './reparaciones-recurrentes.service.js';
 import { ESTADO_SIN_REAGENDAR, SinReagendarService, superaElUmbral } from './sin-reagendar.service.js';
-import { validarRut } from '../common/utils/rut.util.js';
+import { validarRut, variantesRut } from '../common/utils/rut.util.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
 import { ReasignarTecnicoDto } from './dto/reasignar-tecnico.dto.js';
@@ -138,7 +138,7 @@ export class OrdenesService {
     }
 
     const cliente = await this.prisma.cliente.findFirst({
-      where: { rut: dto.rut_cliente, id_empresa },
+      where: { rut: { in: variantesRut(dto.rut_cliente) }, id_empresa },
       include: { direcciones: { where: { es_principal: true }, take: 1 } },
     });
 

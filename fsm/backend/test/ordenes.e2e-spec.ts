@@ -78,10 +78,16 @@ const prisma = {
     count: jest.fn(async () => 1),
   },
   cliente: {
-    findFirst: jest.fn(async ({ where }: Prisma.clienteFindFirstArgs = {}) =>
-      where?.rut === '12345678-5' && where?.id_empresa === 1
-        ? { id_cliente: 1, rut: '12345678-5', nombre_completo: 'Cliente de prueba', direcciones: [], contratos: [] }
-        : null),
+    // El cliente esta guardado SIN guion a proposito: la columna cliente.rut
+    // es compartida con los otros grupos y en produccion hay mitad
+    // "12345678-5" y mitad "123456785". El doble compara contra el texto
+    // guardado, como compara Postgres, y no contra lo que llega en la URL.
+    findFirst: jest.fn(async ({ where }: Prisma.clienteFindFirstArgs = {}) => {
+      const grafias = typeof where?.rut === 'string' ? [where.rut] : ((where?.rut as { in?: string[] })?.in ?? []);
+      return grafias.includes('123456785') && where?.id_empresa === 1
+        ? { id_cliente: 1, rut: '123456785', nombre_completo: 'Cliente de prueba', direcciones: [], contratos: [] }
+        : null;
+    }),
     findMany: jest.fn(async ({ where, skip = 0, take }: Prisma.clienteFindManyArgs = {}) =>
       clientes.filter(c => c.id_empresa === where?.id_empresa).slice(skip, take === undefined ? undefined : skip + take)),
     count: jest.fn(async ({ where }: Prisma.clienteCountArgs = {}) => clientes.filter(c => c.id_empresa === where?.id_empresa).length),
@@ -267,12 +273,20 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
   it.each(['ADMIN', 'JEFE_TECNICO'])('%s consulta la ficha por RUT solo en su empresa', async rol => {
     const res = await request(app.getHttpServer()).get('/api/clientes/rut/12345678-5')
       .auth(token(rol), { type: 'bearer' }).expect(200);
-    expect(res.body.cliente).toMatchObject({ id_cliente: 1, rut: '12345678-5' });
+    expect(res.body.cliente).toMatchObject({ id_cliente: 1, rut: '123456785' });
     await request(app.getHttpServer()).get('/api/clientes/rut/12345678-5')
       .auth(token(rol, 2), { type: 'bearer' }).expect(404);
     expect(prisma.cliente.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
-      where: { rut: '12345678-5', id_empresa: 2 },
+      where: { rut: { in: expect.arrayContaining(['123456785', '12345678-5']) }, id_empresa: 2 },
     }));
+  });
+
+  // El operador no tiene por que saber con que grafia cargo el RUT el grupo
+  // que dio de alta al cliente. Las tres formas llegan al mismo cliente.
+  it.each(['12345678-5', '123456785', '12.345.678-5'])('la ficha se encuentra escribiendo el RUT como %s', async escrito => {
+    const res = await request(app.getHttpServer()).get(`/api/clientes/rut/${escrito}`)
+      .auth(token('ADMIN'), { type: 'bearer' }).expect(200);
+    expect(res.body.cliente).toMatchObject({ id_cliente: 1 });
   });
   it.each(['ADMIN', 'JEFE_TECNICO', 'TECNICO'])('%s consulta OT propia y nunca otra empresa', async rol => {
     await get(1, rol).expect(200);

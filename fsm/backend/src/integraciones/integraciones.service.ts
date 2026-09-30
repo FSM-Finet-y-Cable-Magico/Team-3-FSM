@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { exigirEmpresaEnScope, type ApiScope } from '../common/guards/api-key.guard.js';
+import { filtroRut, variantesRut } from '../common/utils/rut.util.js';
 import {
   ACCION_A_ESTADO_G1,
   DIAGNOSTICO_POR_DEFECTO,
@@ -234,7 +235,7 @@ export class IntegracionesService {
   async clientePorRut(scope: ApiScope, id_empresa: number, rut: string) {
     this.exigirEmpresa(scope, id_empresa);
     const cliente = await this.prisma.cliente.findFirst({
-      where: { rut, id_empresa },
+      where: { rut: { in: variantesRut(rut) }, id_empresa },
       select: {
         id_cliente: true,
         rut: true,
@@ -258,11 +259,14 @@ export class IntegracionesService {
       throw new BadRequestException('busqueda: mínimo 3 caracteres');
     }
     const q = busqueda.trim();
+    // Un termino sin digitos no es un RUT: filtroRut lo descarta para que la
+    // busqueda por nombre no arrastre la rama del RUT.
+    const porRut = filtroRut(q);
     return this.prisma.cliente.findMany({
       where: {
         id_empresa,
         OR: [
-          { rut: { contains: q, mode: 'insensitive' } },
+          ...(porRut ? [{ rut: porRut }] : []),
           { nombre_completo: { contains: q, mode: 'insensitive' } },
         ],
       },

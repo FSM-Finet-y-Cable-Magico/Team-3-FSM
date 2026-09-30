@@ -191,4 +191,34 @@ describe('IntegracionesService: aislamiento y topes', () => {
   it('buscarClientes exige al menos 3 caracteres', async () => {
     await expect(service.buscarClientes(scopeG1, 1, 'an')).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('clientePorRut compara contra las dos grafias guardadas', async () => {
+    // Es el endpoint que consumen G1 y G8. La columna cliente.rut guarda
+    // mitad "12345678-5" y mitad "123456785", asi que la igualdad exacta les
+    // respondia 404 por la mitad de la cartera.
+    await expect(service.clientePorRut(scopeG1, 1, '12345678-5')).rejects.toBeInstanceOf(NotFoundException);
+    expect(findFirst.mock.calls[0][0]).toMatchObject({
+      where: { rut: { in: expect.arrayContaining(['123456785', '12345678-5']) }, id_empresa: 1 },
+    });
+  });
+
+  it('buscarClientes no filtra por RUT cuando el termino es un nombre', async () => {
+    // Sin la guarda, "ana" quedaba en `contains: ''` --que en Postgres calza
+    // con todas las filas-- y la busqueda por nombre devolvia la cartera
+    // completa.
+    await service.buscarClientes(scopeG1, 1, 'ana');
+    const where = (findMany.mock.calls[0][0] as any).where;
+
+    expect(where.OR).toEqual([{ nombre_completo: { contains: 'ana', mode: 'insensitive' } }]);
+  });
+
+  it('buscarClientes busca por RUT y por nombre cuando el termino trae digitos', async () => {
+    await service.buscarClientes(scopeG1, 1, '12345678-5');
+    const where = (findMany.mock.calls[0][0] as any).where;
+
+    expect(where.OR).toEqual([
+      { rut: { in: expect.arrayContaining(['123456785', '12345678-5']) } },
+      { nombre_completo: { contains: '12345678-5', mode: 'insensitive' } },
+    ]);
+  });
 });
