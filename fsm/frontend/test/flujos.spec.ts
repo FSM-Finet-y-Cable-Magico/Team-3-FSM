@@ -1698,3 +1698,18 @@ test('CU-50: desde una OT programada se avisa a los clientes 24 h antes, y con m
   await expect(page.getByText('Aviso enviado a 12 clientes')).toBeVisible();
   expect(pedidos).toEqual([{ id_plantilla: 9 }, { id_plantilla: 9, inmediato: true }]);
 });
+
+// Catalogo de planes, solo lectura.
+test('el catalogo de planes se consulta y dice que el alta depende de B-01', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/clientes/planes', route => route.fulfill({ json: [
+    { id_plan: 1, nombre_comercial: 'Fibra 600', tipo_plan: 'INTERNET', tipo_cliente: 'HOGAR', velocidad_mbps: 600, precio_mensual: 19990, descripcion: 'Simétrico' },
+  ] }));
+  await login(page, 'admin');
+  await page.getByRole('link', { name: 'Planes' }).click();
+  const fila = page.getByRole('row', { name: /Fibra 600/ });
+  await expect(fila).toContainText('600 Mbps');
+  await expect(fila).toContainText('$19.990');
+  await expect(page.getByText('solo lectura')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Nuevo plan|Editar/ })).toHaveCount(0);
+});

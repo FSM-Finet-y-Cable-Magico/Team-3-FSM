@@ -655,18 +655,28 @@ export class ClientesService {
     return { data: clientes, total, page: pageSeguro, limit: limitSeguro };
   }
 
+  /**
+   * Catalogo de planes, en solo lectura (acta con FiNet). El alta y la edicion
+   * quedan pendientes de B-01: de quien son `plan` y `contrato`. El precio es
+   * Decimal y Prisma lo entrega como string: se normaliza a numero aca.
+   */
   async listarPlanes(id_empresa: number) {
-    return this.prisma.plan.findMany({
+    const planes = await this.prisma.plan.findMany({
       where: {
         id_empresa,
         activo: true,
       },
+      orderBy: [{ tipo_plan: 'asc' }, { precio_mensual: 'asc' }],
       select: {
         id_plan: true,
         nombre_comercial: true,
+        tipo_plan: true,
+        tipo_cliente: true,
         velocidad_mbps: true,
         precio_mensual: true,
+        descripcion: true,
       },
     });
+    return planes.map((p) => ({ ...p, precio_mensual: Number(p.precio_mensual) }));
   }
 }

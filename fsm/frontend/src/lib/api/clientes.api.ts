@@ -66,8 +66,11 @@ export interface ClienteConHistorial {
 export interface PlanResumen {
   id_plan: number;
   nombre_comercial: string;
-  velocidad_mbps: number;
+  tipo_plan?: string;
+  tipo_cliente?: string;
+  velocidad_mbps: number | null;
   precio_mensual: number;
+  descripcion?: string | null;
 }
 
 interface ClientesPaginados {
