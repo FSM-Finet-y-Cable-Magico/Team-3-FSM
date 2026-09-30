@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { ApiScope } from '../common/guards/api-key.guard.js';
 import {
@@ -12,12 +12,25 @@ import {
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 import type { PayloadCierre } from '../ordenes/fan-out/fan-out-cierre.js';
 import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from '../ordenes/fan-out/payload-cierre.js';
+import { MOMENTO_FAN_OUT, estadosAvisados, type MomentoFanOut } from '../ordenes/fan-out/momento-fan-out.js';
 
 const MAX_RANGO_DIAS = 90;
 
 @Injectable()
 export class IntegracionesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(MOMENTO_FAN_OUT) private momentoFanOut: MomentoFanOut,
+  ) {}
+
+  /**
+   * Los cierres que ya se avisaron por webhook, que son los que G1 y G8 tienen
+   * que poder reconciliar. Con el aviso al cierre del tecnico, una OT que
+   * espera aprobacion ya se aviso (ver momento-fan-out.ts).
+   */
+  private get estadosCerrados() {
+    return { in: estadosAvisados(this.momentoFanOut) };
+  }
 
   // ---- helpers ----
 
@@ -122,7 +135,7 @@ export class IntegracionesService {
     const page = q.page ?? 1;
     const limit = 100;
 
-    const where = { id_empresa, estado: 'COMPLETADA', fecha_completada: { gte, lt } };
+    const where = { id_empresa, estado: this.estadosCerrados, fecha_completada: { gte, lt } };
     const [data, total] = await Promise.all([
       this.prisma.orden_trabajo.findMany({
         where,
@@ -208,7 +221,7 @@ export class IntegracionesService {
     this.exigirEmpresa(scope, id_empresa);
 
     const ot = await this.prisma.orden_trabajo.findFirst({
-      where: { id_ot, id_empresa, estado: 'COMPLETADA' },
+      where: { id_ot, id_empresa, estado: this.estadosCerrados },
       include: INCLUDE_PAYLOAD_CIERRE,
     });
     if (!ot) throw new NotFoundException(`OT ${id_ot} cerrada no encontrada en la empresa ${id_empresa}`);

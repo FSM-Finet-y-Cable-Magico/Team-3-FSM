@@ -8,6 +8,7 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module.js';
 import { FAN_OUT_CIERRE, type FanOutCierre } from './fan-out/fan-out-cierre.js';
 import { WebhookFanOut } from './fan-out/webhook-fan-out.js';
 import { NoOpFanOut } from './fan-out/noop-fan-out.js';
+import { momentoFanOutProvider } from './fan-out/momento-fan-out.js';
 import { ReparacionesRecurrentesModule } from './reparaciones-recurrentes.module.js';
 import { SinReagendarModule } from './sin-reagendar.module.js';
 
@@ -42,7 +43,7 @@ const fanOutProvider = {
 @Module({
   imports: [ReparacionesRecurrentesModule, SinReagendarModule, ClientesModule, CloudinaryModule, forwardRef(() => DashboardModule)],
   controllers: [OrdenesController],
-  providers: [OrdenesService, fanOutProvider],
+  providers: [OrdenesService, fanOutProvider, momentoFanOutProvider],
   exports: [OrdenesService],
 })
 export class OrdenesModule {}

@@ -1,4 +1,5 @@
 import { authStore } from '$lib/stores/auth.store';
+import { cabeceraEmpresaActiva } from '$lib/stores/empresa-activa.store';
 
 /**
  * Envoltorio unico para hablar con el Controlador.
@@ -37,6 +38,8 @@ export async function pedirJson<T>(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
+      // CU-33: la empresa que eligio el ADMIN. Vacio para los demas.
+      ...cabeceraEmpresaActiva(),
       ...init?.headers,
     },
   });
@@ -65,7 +68,7 @@ export async function pedirCrudo(
 ): Promise<Response> {
   const res = await fetch(url, {
     ...init,
-    headers: { Authorization: `Bearer ${token}`, ...init?.headers },
+    headers: { Authorization: `Bearer ${token}`, ...cabeceraEmpresaActiva(), ...init?.headers },
   });
 
   if (res.status === 401) sesionVencida();

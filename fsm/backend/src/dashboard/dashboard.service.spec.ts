@@ -111,4 +111,20 @@ describe('dashboard · contador de clientes con reparaciones recurrentes', () =>
     // El que esta justo en el umbral cuenta: el RF dice "3 o mas".
     expect(r.clientes_reparacion_recurrente).toBe(2);
   });
+
+  it('MOD RF-04: cuenta los cierres que esperan aprobacion, aunque no haya ninguno', async () => {
+    // El jefe tecnico tiene que ver cuantos cierres le esperan. Con 0 la clave
+    // tiene que estar igual: la Vista muestra la tarjeta siempre.
+    groupBy.mockImplementation(async () => []);
+    const vacio = await service.indicadoresDelDia(1);
+    expect(vacio.ot_por_estado.PENDIENTE_APROBACION).toBe(0);
+
+    groupBy.mockImplementation(async (args: any) =>
+      args?.by?.length === 1 && args.by[0] === 'estado'
+        ? [{ estado: 'PENDIENTE_APROBACION', _count: { estado: 4 } }]
+        : [],
+    );
+    const r = await service.indicadoresDelDia(1);
+    expect(r.ot_por_estado.PENDIENTE_APROBACION).toBe(4);
+  });
 });

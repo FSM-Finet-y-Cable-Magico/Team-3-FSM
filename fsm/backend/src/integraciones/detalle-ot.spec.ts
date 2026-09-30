@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { IntegracionesService } from './integraciones.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { MOMENTO_FAN_OUT } from '../ordenes/fan-out/momento-fan-out.js';
 
 /**
  * P0-b del acuerdo con G8: `GET /integraciones/ordenes/{id}` es la consulta
@@ -35,7 +36,7 @@ describe('detalle de OT para otros sistemas', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     const moduleRef = await Test.createTestingModule({
-      providers: [IntegracionesService, { provide: PrismaService, useValue: { orden_trabajo: { findFirst } } }],
+      providers: [IntegracionesService, { provide: MOMENTO_FAN_OUT, useValue: 'CIERRE' }, { provide: PrismaService, useValue: { orden_trabajo: { findFirst } } }],
     }).compile();
     service = moduleRef.get(IntegracionesService);
   });

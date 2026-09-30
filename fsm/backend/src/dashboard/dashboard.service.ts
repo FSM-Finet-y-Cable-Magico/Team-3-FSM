@@ -153,6 +153,8 @@ export class DashboardService {
       PENDIENTE_CLIENTE_AUSENTE: 0,
       ASIGNADA: 0,
       EN_CURSO: 0,
+      // MOD RF-04: cierres del tecnico que esperan al jefe tecnico.
+      PENDIENTE_APROBACION: 0,
       COMPLETADA: 0,
       CANCELADA: 0,
     } as Record<string, number>;

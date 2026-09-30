@@ -4,9 +4,11 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { authStore } from '$lib/stores/auth.store';
+  import SelectorEmpresa from '$lib/components/SelectorEmpresa.svelte';
 
   let isAuthenticated = $state(false);
-  let usuario: { nombre_usuario: string; rol: string } | null = $state(null);
+  let usuario: { nombre_usuario: string; rol: string; id_empresa: number } | null = $state(null);
+  let token = $state('');
   let menuMovil = $state(false);
 
   onMount(() => {
@@ -18,6 +20,7 @@
     }
     isAuthenticated = state.isAuthenticated;
     usuario = state.usuario;
+    token = state.token ?? '';
   });
 
   // MOD RF-34: /admin es el area de oficina. Un TECNICO que llegue aca --por
@@ -177,6 +180,11 @@
       <!-- La sesión va abajo del todo: se consulta poco y no compite con el
            menú por la atención. -->
       <div class="shrink-0 border-t border-slate-700 p-3">
+        <!-- CU-33: solo el ADMIN cambia de empresa; el Controlador ignora la
+             eleccion de cualquier otro rol. -->
+        {#if usuario.rol === 'ADMIN'}
+          <SelectorEmpresa {token} idEmpresaPropia={usuario.id_empresa} />
+        {/if}
         <div class="px-1 pb-2">
           <p class="text-white text-sm font-medium truncate">{usuario.nombre_usuario}</p>
           <span class="inline-flex items-center mt-0.5 px-2 py-0.5 rounded-full text-xs font-semibold

@@ -11,6 +11,7 @@
     PENDIENTE_CLIENTE_AUSENTE: 'bg-amber-100 text-amber-800',
     ASIGNADA: 'bg-blue-100 text-blue-800',
     EN_CURSO: 'bg-indigo-100 text-indigo-800',
+    PENDIENTE_APROBACION: 'bg-teal-100 text-teal-800',
     COMPLETADA: 'bg-green-100 text-green-800',
     CANCELADA: 'bg-red-100 text-red-800',
     CRITICA: 'bg-red-500 text-white',

@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
 import { FAN_OUT_CIERRE } from './fan-out/fan-out-cierre.js';
+import { MOMENTO_FAN_OUT } from './fan-out/momento-fan-out.js';
 import { ReparacionesRecurrentesService } from './reparaciones-recurrentes.service.js';
 import { SinReagendarService } from './sin-reagendar.service.js';
 
@@ -49,6 +50,7 @@ describe('RF-45 · acciones del panel de OT detenidas', () => {
         { provide: CloudinaryService, useValue: {} },
         { provide: DashboardGateway, useValue: {} },
         { provide: FAN_OUT_CIERRE, useValue: { nombre: 'doble', notificar: async () => {} } },
+        { provide: MOMENTO_FAN_OUT, useValue: 'CIERRE' },
       ],
     }).compile();
     service = mod.get(OrdenesService);

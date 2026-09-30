@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
 import { FAN_OUT_CIERRE } from './fan-out/fan-out-cierre.js';
+import { MOMENTO_FAN_OUT } from './fan-out/momento-fan-out.js';
 import { ReparacionesRecurrentesService } from './reparaciones-recurrentes.service.js';
 import { SinReagendarService } from './sin-reagendar.service.js';
 import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payload-cierre.js';
@@ -75,6 +76,7 @@ describe('fan-out del cierre', () => {
         { provide: CloudinaryService, useValue: {} },
         { provide: DashboardGateway, useValue: { emitirActualizacion: jest.fn() } },
         { provide: FAN_OUT_CIERRE, useValue: { nombre: 'doble', notificar } },
+        { provide: MOMENTO_FAN_OUT, useValue: 'CIERRE' },
       ],
     }).compile();
     service = moduleRef.get(OrdenesService);

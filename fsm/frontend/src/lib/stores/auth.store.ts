@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import * as authApi from '$lib/api/auth.api';
+import { elegirEmpresa } from './empresa-activa.store';
 
 interface UsuarioPayload {
   userId: number;
@@ -43,6 +44,7 @@ function createAuthStore() {
     const { token, rol, id_empresa, cambiar_password } = response;
 
     sessionStorage.setItem('fsm_token', token);
+    elegirEmpresa(null);
     const usuario = decodeJwt(token);
 
     set({
@@ -66,6 +68,8 @@ function createAuthStore() {
 
   function logout() {
     sessionStorage.removeItem('fsm_token');
+    // CU-33: la empresa elegida es de esta sesion, no de la siguiente.
+    elegirEmpresa(null);
     set({ token: null, usuario: null, isAuthenticated: false });
     goto('/login');
   }
