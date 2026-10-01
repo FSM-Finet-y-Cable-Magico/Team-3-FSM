@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Alert from '$lib/components/Alert.svelte';
   // Reportería (RF-38, RF-39, RF-40, RF-41).
   //
   // Una sola pantalla para los cinco tipos porque comparten la misma forma:
@@ -189,7 +190,7 @@
   </div>
 
   {#if error}
-    <div role="alert" class="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">{error}</div>
+    <Alert class="rounded-lg text-sm">{error}</Alert>
   {/if}
 
   {#if cargando}

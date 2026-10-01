@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Alert from '$lib/components/Alert.svelte';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { goto } from '$app/navigation';
@@ -147,10 +148,10 @@
 {#if cargando}
   <p class="text-center py-10 text-slate-500">Cargando...</p>
 {:else if error && !detalle}
-  <div role="alert" class="px-4 py-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">{error}</div>
+  <Alert class="rounded-lg text-sm">{error}</Alert>
 {:else if detalle}
   {#if error}
-    <div role="alert" class="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">{error}</div>
+    <Alert class="rounded-lg text-sm mb-4">{error}</Alert>
   {/if}
 
   <div class="bg-white rounded-xl border border-slate-200 p-5 mb-5">
@@ -187,9 +188,9 @@
         <h2 class="text-lg font-semibold text-slate-900 mb-4">Editar caja</h2>
 
         {#if errorForm}
-          <div role="alert" class="mb-4 px-3 py-2 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">
+          <Alert class="rounded-lg text-sm mb-4">
             {errorForm}
-          </div>
+          </Alert>
         {/if}
 
         <div class="grid gap-4 sm:grid-cols-2">

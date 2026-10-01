@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Alert from '$lib/components/Alert.svelte';
   // Panel de alertas de red para el JEFE_TECNICO.
   // CU-13 (potencia), CU-52/53 (sin señal), CU-17 (caja caída), CU-15 (críticos
   // por NAP), CU-16 (candidatas a preventiva).
@@ -411,7 +412,7 @@
   {/if}
 
   {#if error}
-    <div role="alert" class="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">{error}</div>
+    <Alert class="rounded-lg text-sm">{error}</Alert>
   {/if}
 
   {#if cargando}

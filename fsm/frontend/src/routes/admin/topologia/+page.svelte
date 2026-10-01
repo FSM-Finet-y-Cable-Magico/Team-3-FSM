@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Alert from '$lib/components/Alert.svelte';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { goto } from '$app/navigation';
@@ -263,7 +264,7 @@
 {#if cargando}
   <p class="text-center py-10 text-slate-500">Cargando topología...</p>
 {:else if error}
-  <div role="alert" class="px-4 py-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">{error}</div>
+  <Alert class="rounded-lg text-sm">{error}</Alert>
 {:else if visibles.length === 0}
   <p class="text-center py-10 text-slate-500">Ninguna caja coincide con el filtro.</p>
 {:else}
@@ -328,9 +329,9 @@
         </p>
 
         {#if errorForm}
-          <div role="alert" class="mb-4 px-3 py-2 bg-red-50 border border-red-200 text-red-800 rounded-lg text-sm">
+          <Alert class="rounded-lg text-sm mb-4">
             {errorForm}
-          </div>
+          </Alert>
         {/if}
 
         <div class="space-y-4">

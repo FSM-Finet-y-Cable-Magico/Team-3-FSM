@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Alert from '$lib/components/Alert.svelte';
   // Panel de monitoreo de red en vivo para el JEFE_TECNICO.
   //
   // CU-12 / RF-10: la potencia de cada ONT se actualiza sola. El navegador NO
@@ -217,9 +218,9 @@
   </div>
 
   {#if error}
-    <div role="alert" class="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">
+    <Alert class="rounded-lg text-sm">
       {error}
-    </div>
+    </Alert>
   {/if}
 
   <!-- Si el padron supera lo que el backend entrega de una, el listado por ONT
