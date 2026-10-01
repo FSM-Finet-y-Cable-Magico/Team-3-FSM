@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatearRut } from '$lib/utils/rut';
   import Paginacion from '$lib/components/Paginacion.svelte';
   import Alert from '$lib/components/Alert.svelte';
   import Cargando from '$lib/components/Cargando.svelte';
@@ -216,7 +217,7 @@
             <td class="px-5 py-4 text-sm font-mono font-semibold text-slate-500">#{ot.id_ot}</td>
             <td class="px-5 py-4">
               <p class="text-sm font-medium text-slate-800">{ot.cliente?.nombre_completo ?? '—'}</p>
-              <p class="text-xs font-mono text-slate-400">{ot.cliente?.rut ?? ''}</p>
+              <p class="text-xs font-mono text-slate-400">{formatearRut(ot.cliente?.rut)}</p>
             </td>
             <td class="px-5 py-4 text-sm text-slate-600 font-medium">{ot.tipo_ot}</td>
             <td class="px-5 py-4"><EstadoBadge estado={ot.prioridad} size="sm" /></td>

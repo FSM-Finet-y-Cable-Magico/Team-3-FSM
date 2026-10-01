@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatearRut } from '$lib/utils/rut';
   // CU-07: historial de cliente por direccion. Se buscan los clientes actuales
   // y anteriores de una direccion y se abre la ficha del elegido (CU-06).
   import Alert from '$lib/components/Alert.svelte';
@@ -97,7 +98,7 @@
                     {c.nombre_completo}
                   {/if}
                 </td>
-                <td class="px-3 py-2 font-mono text-xs">{c.rut ?? '-'}</td>
+                <td class="px-3 py-2 font-mono text-xs">{formatearRut(c.rut) || '-'}</td>
                 <td class="px-3 py-2">{c.estado}</td>
                 <td class="px-3 py-2 text-slate-700">
                   {c.direccion}

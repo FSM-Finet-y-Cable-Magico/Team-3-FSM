@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatearRut } from '$lib/utils/rut';
   import Alert from '$lib/components/Alert.svelte';
   // Panel de alertas de red para el JEFE_TECNICO.
   // CU-13 (potencia), CU-52/53 (sin señal), CU-17 (caja caída), CU-15 (críticos
@@ -575,7 +576,7 @@
                               <td class="px-2.5 py-1.5 text-gray-900">{f.cliente ?? '—'}</td>
                               <td class="px-2.5 py-1.5 text-gray-600">{f.direccion ?? '—'}</td>
                               <td class="px-2.5 py-1.5 text-gray-500 whitespace-nowrap">
-                                {f.telefono ?? f.rut ?? '—'}
+                                {f.telefono ?? (formatearRut(f.rut) || '—')}
                               </td>
                               <!-- CU-20: el dato de caja se puede confirmar en terreno -->
                               <td class="px-2.5 py-1.5 whitespace-nowrap">

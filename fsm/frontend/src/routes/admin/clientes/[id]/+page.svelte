@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatearRut } from '$lib/utils/rut';
   import SemaforoRiesgo from '$lib/components/SemaforoRiesgo.svelte';
   import { NIVELES_RIESGO, MIN_JUSTIFICACION_RIESGO, type NivelRiesgo } from '$lib/utils/riesgo';
   import Alert from '$lib/components/Alert.svelte';
@@ -252,7 +253,7 @@
               <div class="space-y-3">
                 <div>
                   <span class="text-xs text-gray-500 uppercase">RUT</span>
-                  <p class="text-sm font-mono">{cliente.rut}</p>
+                  <p class="text-sm font-mono">{formatearRut(cliente.rut)}</p>
                 </div>
                 <div>
                   <span class="text-xs text-gray-500 uppercase">Zona</span>

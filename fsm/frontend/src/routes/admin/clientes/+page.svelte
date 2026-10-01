@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatearRut } from '$lib/utils/rut';
   import Paginacion from '$lib/components/Paginacion.svelte';
   import Alert from '$lib/components/Alert.svelte';
   import Spinner from '$lib/components/Spinner.svelte';
@@ -224,7 +225,7 @@
       <tbody class="divide-y divide-slate-100">
         {#each clientes as c}
           <tr class="hover:bg-slate-50 transition-colors">
-            <td class="px-6 py-4 text-sm font-mono text-slate-700">{c.rut}</td>
+            <td class="px-6 py-4 text-sm font-mono text-slate-700">{formatearRut(c.rut)}</td>
             <td class="px-6 py-4">
               <p class="text-sm font-medium text-slate-800">{c.nombre_completo}</p>
             </td>
