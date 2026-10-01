@@ -3,7 +3,7 @@ import { OrdenesService } from '../ordenes/ordenes.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizarPaginacion } from '../common/utils/paginacion.util.js';
-import { validarRut } from '../common/utils/rut.util.js';
+import { validarRut, variantesRut } from '../common/utils/rut.util.js';
 import {
   ESTADO_TICKET,
   ESTADOS_TICKET_ABIERTOS,
@@ -71,7 +71,7 @@ export class TicketsService {
     if (!validarRut(rut)) throw new BadRequestException(MENSAJE_RUT_INVALIDO);
 
     const cliente = await this.prisma.cliente.findFirst({
-      where: { rut, id_empresa: actor.id_empresa },
+      where: { rut: { in: variantesRut(rut) }, id_empresa: actor.id_empresa },
       select: { id_cliente: true, estado: true },
     });
     // Precondicion del CU: "el cliente tiene servicio activo". Un cliente
