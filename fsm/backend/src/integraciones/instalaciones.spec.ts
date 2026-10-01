@@ -260,6 +260,7 @@ describe('POST /integraciones/instalaciones', () => {
     {} as IntegracionesService,
     { crear } as unknown as InstalacionesService,
     {} as never,
+    {} as never,
   );
   const req = { apiScope: { grupo: 'G8', empresas: [1] } };
 
