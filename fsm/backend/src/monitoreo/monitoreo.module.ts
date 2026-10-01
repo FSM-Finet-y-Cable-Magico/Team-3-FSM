@@ -4,6 +4,8 @@ import { MonitoreoController } from './monitoreo.controller.js';
 import { MonitoreoService } from './monitoreo.service.js';
 import { MonitoreoPollerService } from './monitoreo-poller.service.js';
 import { CapacidadCajasService } from './capacidad-cajas.service.js';
+import { PurgaMonitoreoService } from './purga-monitoreo.service.js';
+import { PurgaMonitoreoPoller } from './purga-monitoreo.poller.js';
 import { DescubrimientoService } from './descubrimiento.service.js';
 import { RegistroOntService } from './registro-ont.service.js';
 import { LigadoCajaService } from './ligado-caja.service.js';
@@ -60,6 +62,8 @@ const fuenteProvider = {
     MonitoreoService,
     MonitoreoPollerService,
     CapacidadCajasService,
+    PurgaMonitoreoService,
+    PurgaMonitoreoPoller,
     DescubrimientoService,
     MonitoreoGateway,
   ],
