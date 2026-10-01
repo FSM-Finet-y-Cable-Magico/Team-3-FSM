@@ -8,7 +8,12 @@ import {
 import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ReparacionesRecurrentesService } from '../ordenes/reparaciones-recurrentes.service.js';
-import { filtroRut, validarRut, variantesRut } from '../common/utils/rut.util.js';
+import {
+  filtroRut,
+  limpiarRut,
+  validarRut,
+  variantesRut,
+} from '../common/utils/rut.util.js';
 import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
 import { EditarClienteDto } from './dto/editar-cliente.dto.js';
 import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
@@ -67,7 +72,12 @@ export class ClientesService {
       const cliente = await tx.cliente.create({
         data: {
           id_empresa,
-          rut: dto.rut,
+          // Canonico, sin puntos ni guion: lo pide el §11 del Documento 0
+          // ("formatear solo en UI") y es lo que ya guarda G2. Hasta ahora se
+          // guardaba `dto.rut` crudo, asi que por API entraba cualquier grafia
+          // y el @unique de la columna no servia de nada: "12345678-5" y
+          // "123456785" son textos distintos para Postgres.
+          rut: limpiarRut(dto.rut),
           nombre_completo: dto.nombre_completo,
           email: dto.email,
           telefono: dto.telefono,
