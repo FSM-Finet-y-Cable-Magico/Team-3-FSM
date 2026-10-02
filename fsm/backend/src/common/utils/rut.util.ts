@@ -75,3 +75,23 @@ export function filtroRut(
   if (limpio.length >= 8 && validarRut(limpio)) return { in: variantesRut(limpio) };
   return { contains: limpio, mode: 'insensitive' };
 }
+
+/**
+ * El RUT en la grafia que fijan los contratos entre grupos: sin puntos, con
+ * guion y la K en mayuscula (`12345678-5`).
+ *
+ * Hace falta porque las dos grafias no son intercambiables entre capas. El §11
+ * del Documento 0 manda guardar sin guion y el §3 del acuerdo con G8 manda
+ * enviarlo CON guion, asi que lo que sale por la API no puede ser el valor
+ * crudo de la columna: desde que el alta guarda canonico, eso serian dos
+ * formatos distintos segun cuando se creo el cliente.
+ *
+ * Devuelve el valor tal cual si no se puede interpretar, para que un dato raro
+ * viaje visible en vez de disfrazado.
+ */
+export function rutParaApi(rut: string | null | undefined): string | null {
+  if (!rut) return null;
+  const limpio = limpiarRut(rut);
+  if (limpio.length < 2 || limpio.length > 9) return rut;
+  return `${limpio.slice(0, -1)}-${limpio.slice(-1)}`;
+}

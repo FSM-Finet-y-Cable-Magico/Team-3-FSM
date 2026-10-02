@@ -89,3 +89,21 @@ describe('construirPayloadCierre', () => {
     expect(p.cliente).toEqual({ rut: '11111111-1', nombre: 'Ana Soto' });
   });
 });
+
+describe('el RUT que sale hacia G1 y G8', () => {
+  // El §3 del acuerdo con G8 fija `12345678-5`. Desde que el alta guarda
+  // canonico (#110), tomar el valor crudo de la columna mandaria "123456785"
+  // para los clientes nuevos y "12345678-5" para los viejos: dos formatos por
+  // el mismo canal, decididos por la fecha de alta del cliente.
+  it('viaja con guion aunque la base lo guarde sin guion', () => {
+    const ot = fila({ cliente: { rut: '123456785', nombre_completo: 'Ana Soto' } } as never);
+    const p = construirPayloadCierre(ot);
+    expect(p.cliente?.rut).toBe('12345678-5');
+    expect(p.cliente?.rut).toMatch(/^\d{7,8}-[\dK]$/);
+  });
+
+  it('tambien normaliza las filas antiguas, que ya traian guion', () => {
+    const ot = fila({ cliente: { rut: '12.345.678-5', nombre_completo: 'Ana Soto' } } as never);
+    expect(construirPayloadCierre(ot).cliente?.rut).toBe('12345678-5');
+  });
+});

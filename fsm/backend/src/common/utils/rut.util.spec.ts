@@ -1,4 +1,4 @@
-import { filtroRut, limpiarRut, validarRut, variantesRut } from './rut.util.js';
+import { filtroRut, limpiarRut, rutParaApi, validarRut, variantesRut } from './rut.util.js';
 
 describe('limpiarRut', () => {
   it('quita puntos, guion y espacios, y sube la K', () => {
@@ -66,5 +66,36 @@ describe('filtroRut con terminos que no son RUT', () => {
 
   it('no confunde la K de un nombre con un digito verificador', () => {
     expect(filtroRut('Karla')).toBeUndefined();
+  });
+});
+
+describe('rutParaApi', () => {
+  // El §3 del acuerdo con G8 fija `12345678-5` para lo que viaja por API, y el
+  // §11 del Documento 0 fija el guardado sin guion. Desde que el alta guarda
+  // canonico, mandar el valor crudo de la columna produciria dos formatos
+  // distintos segun cuando se creo el cliente.
+  it('devuelve la grafia del contrato venga como venga de la base', () => {
+    for (const entrada of ['123456785', '12345678-5', '12.345.678-5']) {
+      expect(rutParaApi(entrada)).toBe('12345678-5');
+    }
+  });
+
+  it('deja la K en mayuscula, que es lo que exige el contrato', () => {
+    expect(rutParaApi('21116770k')).toBe('21116770-K');
+    expect(rutParaApi('21116770K')).toBe('21116770-K');
+  });
+
+  it('calza con el formato que valida nuestro propio DTO de entrada', () => {
+    // Si estas dos reglas se separan, mandamos algo que nosotros mismos
+    // rechazariamos al recibirlo.
+    const delDto = /^\d{7,8}-[\dK]$/;
+    expect(rutParaApi('123456785')).toMatch(delDto);
+    expect(rutParaApi('21116770k')).toMatch(delDto);
+  });
+
+  it('no inventa formato para lo que no es un RUT', () => {
+    expect(rutParaApi(null)).toBeNull();
+    expect(rutParaApi('')).toBeNull();
+    expect(rutParaApi('abc')).toBe('abc');
   });
 });
