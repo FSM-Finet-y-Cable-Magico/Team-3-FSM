@@ -1,5 +1,6 @@
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { EquipoDeclarado, PayloadCierre } from './fan-out-cierre.js';
+import { rutParaApi } from '../../common/utils/rut.util.js';
 
 /**
  * Lo que hay que leer de una OT cerrada para armar su payload. Lo usan el
@@ -43,7 +44,9 @@ export function construirPayloadCierre(ot: OtParaPayload): PayloadCierre {
     potencia_optica_dbm: ot.potencia_optica_dbm == null ? 0 : Number(ot.potencia_optica_dbm),
     resuelto_remotamente: ot.resuelto_remotamente,
     id_tecnico: ot.id_tecnico,
-    cliente: ot.cliente ? { rut: ot.cliente.rut, nombre: ot.cliente.nombre_completo } : null,
+    cliente: ot.cliente
+      ? { rut: rutParaApi(ot.cliente.rut), nombre: ot.cliente.nombre_completo }
+      : null,
     direccion: ot.direccion ?? null,
     categoria_falla: ot.categoria_falla
       ? { id_categoria: ot.categoria_falla.id_categoria, nombre: ot.categoria_falla.nombre }
