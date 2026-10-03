@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { exigirEmpresaEnScope, type ApiScope } from '../common/guards/api-key.guard.js';
-import { filtroRut, variantesRut } from '../common/utils/rut.util.js';
+import { rutParaApi, filtroRut, variantesRut } from '../common/utils/rut.util.js';
 import {
   ACCION_A_ESTADO_G1,
   DIAGNOSTICO_POR_DEFECTO,
@@ -16,6 +16,28 @@ import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from '../ordenes/fan-o
 import { MOMENTO_FAN_OUT, estadosAvisados, type MomentoFanOut } from '../ordenes/fan-out/momento-fan-out.js';
 
 const MAX_RANGO_DIAS = 90;
+
+
+/**
+ * El RUT que sale por `/api/integraciones/*` va en la grafia del contrato
+ * (`12345678-5`), no en la que esta guardada.
+ *
+ * El webhook de cierre ya lo hacia; estos GET devolvian el valor crudo, de
+ * modo que el mismo cierre llegaba con dos formatos segun si G8 lo recibia
+ * por webhook o lo recuperaba por reconciliacion. G8 pidio por escrito que
+ * los dos caminos produzcan el mismo resultado.
+ */
+function conRutDeContrato<T extends { rut?: string | null } | null>(c: T): T {
+  return c ? { ...c, rut: rutParaApi(c.rut) } : c;
+}
+
+function conClienteDeContrato<
+  T extends { cliente?: { rut?: string | null } | null },
+>(fila: T): T {
+  return 'cliente' in fila
+    ? { ...fila, cliente: conRutDeContrato(fila.cliente ?? null) }
+    : fila;
+}
 
 @Injectable()
 export class IntegracionesService {
@@ -118,7 +140,7 @@ export class IntegracionesService {
       this.prisma.orden_trabajo.count({ where }),
     ]);
 
-    return { data, total, page, limit };
+    return { data: data.map(conClienteDeContrato), total, page, limit };
   }
 
   /** Cierres (OT COMPLETADAS) en un rango ≤90 días, con materiales. Para T1-CU-90. */
@@ -150,7 +172,7 @@ export class IntegracionesService {
       this.prisma.orden_trabajo.count({ where }),
     ]);
 
-    return { data, total, page, limit };
+    return { data: data.map(conClienteDeContrato), total, page, limit };
   }
 
   /**
@@ -250,7 +272,7 @@ export class IntegracionesService {
       },
     });
     if (!cliente) throw new NotFoundException(`Cliente ${rut} no encontrado en la empresa ${id_empresa}`);
-    return cliente;
+    return conRutDeContrato(cliente);
   }
 
   async buscarClientes(scope: ApiScope, id_empresa: number, busqueda: string) {
@@ -262,7 +284,7 @@ export class IntegracionesService {
     // Un termino sin digitos no es un RUT: filtroRut lo descarta para que la
     // busqueda por nombre no arrastre la rama del RUT.
     const porRut = filtroRut(q);
-    return this.prisma.cliente.findMany({
+    const encontrados = await this.prisma.cliente.findMany({
       where: {
         id_empresa,
         OR: [
@@ -274,6 +296,7 @@ export class IntegracionesService {
       select: { id_cliente: true, rut: true, nombre_completo: true, telefono: true, estado: true },
       orderBy: { nombre_completo: 'asc' },
     });
+    return encontrados.map(conRutDeContrato);
   }
 
   /**
