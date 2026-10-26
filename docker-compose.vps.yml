@@ -1,0 +1,70 @@
+# Despliegue en la VPS de FiNet (38.7.201.104), cuenta `grupo3`.
+#
+# Difiere del docker-compose.yml de desarrollo en tres cosas:
+#
+#  1. NO levanta Postgres. La base sigue siendo la de Railway, compartida con
+#     G1, G2 y G8, y se alcanza por su URL publica. Levantar una local aca
+#     dejaria dos bases distintas y nadie sabria cual es la buena.
+#
+#  2. Publica en el rango 8300-8399 que nos asignaron, y SOLO en 127.0.0.1.
+#     Los cuatro grupos comparten el host: un puerto sin la direccion de
+#     loopback queda expuesto a internet, y uno fuera del rango choca con
+#     otro grupo. El acceso desde afuera es por tunel SSH, no por el puerto.
+#
+#  3. Toma DATABASE_URL del entorno en vez de construirla. Es la URL publica
+#     de Railway (`junction.proxy.rlwy.net`), no la interna.
+#
+# Uso:
+#   cd /srv/finet/grupo3/FSM-FineT
+#   docker compose -f docker-compose.vps.yml up -d --build
+#
+# Para verlo desde tu maquina, en otra consola local:
+#   ssh -N -L 127.0.0.1:18300:127.0.0.1:8300 grupo3@38.7.201.104
+#   y entrar a http://127.0.0.1:18300
+
+services:
+  backend:
+    build:
+      context: ./fsm/backend
+    restart: unless-stopped
+    environment:
+      # La URL PUBLICA de Railway. La interna (postgres.railway.internal) solo
+      # resuelve dentro de Railway y desde aca no se alcanza.
+      DATABASE_URL: ${DATABASE_URL:?Definí DATABASE_URL con la URL publica de Railway}
+      FRONTEND_URL: ${FRONTEND_URL:-http://127.0.0.1:18301}
+      JWT_SECRET: ${JWT_SECRET:?Definí JWT_SECRET en el .env del servidor}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      INTEGRACION_API_KEYS: ${INTEGRACION_API_KEYS:-}
+      WIFI_LLAVE_PRIVADA_PEM: ${WIFI_LLAVE_PRIVADA_PEM:-}
+      CIERRE_FAN_OUT_MOMENTO: ${CIERRE_FAN_OUT_MOMENTO:-CIERRE}
+      CIERRE_WEBHOOK_G1_URL: ${CIERRE_WEBHOOK_G1_URL:-}
+      CIERRE_WEBHOOK_G1_KEY: ${CIERRE_WEBHOOK_G1_KEY:-}
+      CIERRE_WEBHOOK_G8_URL: ${CIERRE_WEBHOOK_G8_URL:-}
+      CIERRE_WEBHOOK_G8_KEY: ${CIERRE_WEBHOOK_G8_KEY:-}
+      MONITOREO_FUENTE: ${MONITOREO_FUENTE:-}
+      MONITOREO_POLL_ENABLED: ${MONITOREO_POLL_ENABLED:-}
+      MONITOREO_PURGA_ENABLED: ${MONITOREO_PURGA_ENABLED:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?Definí SEED_ADMIN_PASSWORD en el .env del servidor}
+      PORT: 3000
+    ports:
+      - '127.0.0.1:8300:3000'
+
+  frontend:
+    build:
+      context: ./fsm/frontend
+      # Se hornea en el bundle al construir, no es variable de runtime. Si se
+      # cambia, hace falta `up -d --build`: sin eso el navegador sigue
+      # llamando a la URL vieja y falla por CORS.
+      args:
+        PUBLIC_API_URL: ${PUBLIC_API_URL:-http://127.0.0.1:18300}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      ORIGIN: ${FRONTEND_URL:-http://127.0.0.1:18301}
+      PORT: 3000
+    ports:
+      - '127.0.0.1:8301:3000'
