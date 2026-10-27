@@ -25,21 +25,75 @@ distintas y nadie sabría cuál es la buena.
 ```bash
 ssh grupo3@38.7.201.104
 cd /srv/finet/grupo3
-git clone <url-del-repo> FSM-FineT
-cd FSM-FineT
+git clone <url-del-repo> Team-3-FSM
+cd Team-3-FSM
 ```
 
-Crear el `.env` **en el servidor**, nunca versionarlo. Las variables que hacen
-falta están en `.env.example`, más estas dos que son propias de este entorno:
+Crear el `.env` **en el servidor**, nunca versionarlo. No alcanza con copiar el
+`.env.example` de la raíz: ese cubre el compose de desarrollo y le faltan las
+variables de monitoreo, webhooks y Tomodat, que están en
+`fsm/backend/.env.example`. La lista completa para este entorno es esta:
 
 ```
-DATABASE_URL=<la URL publica de Railway, la de junction.proxy.rlwy.net>
+# --- Propias de la VPS ---
+# La URL PUBLICA de Railway. La interna (postgres.railway.internal) solo
+# resuelve dentro de Railway y desde aca no se alcanza.
+DATABASE_URL=postgresql://...@junction.proxy.rlwy.net:55656/railway
 PUBLIC_API_URL=http://127.0.0.1:18300
+FRONTEND_URL=http://127.0.0.1:18301
+
+# --- Obligatorias: sin estas el compose no arranca ---
+JWT_SECRET=<el mismo que Railway, o las sesiones emitidas alla dejan de valer>
+SEED_ADMIN_PASSWORD=<la de Railway>
+
+# --- Evidencia fotografica (sin esto no se puede cerrar una OT) ---
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+
+# --- Integraciones con G1, G2 y G8 ---
+# Comillas simples: el ";" sin comillas rompe el archivo si alguien lo
+# carga con `source`, y bash deja la variable truncada en la primera clave.
+INTEGRACION_API_KEYS='G1:...:1,2;G2:...:1;G8:...:1,2'
+# Tambien entre comillas simples: trae espacios, y los saltos van como "
+"
+# literales. Con comillas DOBLES el parser los convierte antes de tiempo y la
+# llave queda inservible.
+WIFI_LLAVE_PRIVADA_PEM='-----BEGIN PRIVATE KEY-----
+...'
+CIERRE_FAN_OUT_MOMENTO=APROBACION
+CIERRE_WEBHOOK_G1_URL=
+CIERRE_WEBHOOK_G1_KEY=
+CIERRE_WEBHOOK_G8_URL=
+CIERRE_WEBHOOK_G8_KEY=
+
+# --- Monitoreo de red ---
+# Con "smartolt" el modulo construye el cliente real y ABORTA el arranque si le
+# faltan las dos de abajo. Dejar "mock" si todavia no se tienen a mano.
+MONITOREO_FUENTE=smartolt
+SMARTOLT_BASE_URL=
+SMARTOLT_API_TOKEN=
+
+# --- Tareas de fondo: APAGADAS mientras Railway siga arriba (ver abajo) ---
+MONITOREO_POLL_ENABLED=false
+MONITOREO_PURGA_ENABLED=false
+AVISOS_MANTENCION_ENABLED=false
 ```
 
-`DATABASE_URL` tiene que ser la **pública**. La interna
-(`postgres.railway.internal`) solo resuelve dentro de Railway y desde la VPS no
-se alcanza.
+### Las dos instancias no pueden correr las tareas de fondo a la vez
+
+Mientras Railway y la VPS sirvan **la misma base**, las tareas periodicas van
+apagadas aca y prendidas solo en Railway. Si corren en las dos:
+
+- **El poller de monitoreo** duplica el consumo del rate limit de SmartOLT, que
+  es de **15 llamadas por hora** y se comparte con los otros tres grupos. A 30
+  minutos de intervalo, dos instancias se llevan 4 de las 15.
+- **Los avisos de mantencion** le llegan dos veces al mismo cliente. Ojo con
+  esta: es la unica que viene prendida por defecto y solo se apaga con el
+  string exacto `false`.
+- **La purga de `monitoreo_ont`** corre dos veces sobre la misma tabla.
+
+Cuando se apague Railway, prenderlas aca.
 
 ## Levantar
 
