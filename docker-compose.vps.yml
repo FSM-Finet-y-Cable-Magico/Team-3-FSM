@@ -15,7 +15,7 @@
 #     de Railway (`junction.proxy.rlwy.net`), no la interna.
 #
 # Uso:
-#   cd /srv/finet/grupo3/FSM-FineT
+#   cd /srv/finet/grupo3/Team-3-FSM
 #   docker compose -f docker-compose.vps.yml up -d --build
 #
 # Para verlo desde tu maquina, en otra consola local:
@@ -44,9 +44,29 @@ services:
       CIERRE_WEBHOOK_G1_KEY: ${CIERRE_WEBHOOK_G1_KEY:-}
       CIERRE_WEBHOOK_G8_URL: ${CIERRE_WEBHOOK_G8_URL:-}
       CIERRE_WEBHOOK_G8_KEY: ${CIERRE_WEBHOOK_G8_KEY:-}
+      # Monitoreo de red. Con MONITOREO_FUENTE=smartolt el modulo construye el
+      # cliente real y aborta el arranque si le faltan BASE_URL o TOKEN, asi
+      # que las tres van juntas o ninguna.
       MONITOREO_FUENTE: ${MONITOREO_FUENTE:-}
+      SMARTOLT_BASE_URL: ${SMARTOLT_BASE_URL:-}
+      SMARTOLT_API_TOKEN: ${SMARTOLT_API_TOKEN:-}
+      SMARTOLT_CSV_PATH: ${SMARTOLT_CSV_PATH:-}
+      # Tareas de fondo. Las tres son opt-in (solo el string "true" las prende)
+      # y hay que dejarlas APAGADAS mientras Railway siga sirviendo la misma
+      # base: dos instancias ingestando duplican el gasto del rate limit de
+      # SmartOLT, que es de 15 llamadas/HORA y es compartido con los otros
+      # grupos. Prender solo despues de apagar Railway.
       MONITOREO_POLL_ENABLED: ${MONITOREO_POLL_ENABLED:-}
+      MONITOREO_POLL_INTERVAL_MS: ${MONITOREO_POLL_INTERVAL_MS:-}
       MONITOREO_PURGA_ENABLED: ${MONITOREO_PURGA_ENABLED:-}
+      MONITOREO_TOPOLOGIA_ENABLED: ${MONITOREO_TOPOLOGIA_ENABLED:-}
+      # Este es al reves: corre salvo que valga exactamente "false". Con las dos
+      # instancias arriba, el cliente recibiria el aviso de mantencion dos veces.
+      AVISOS_MANTENCION_ENABLED: ${AVISOS_MANTENCION_ENABLED:-false}
+      # Tomodat (planta externa). Sin token el cliente no consulta; la base tiene
+      # que ser https:// o la rechaza (ver tomodat.client.ts).
+      TOMODAT_BASE_URL: ${TOMODAT_BASE_URL:-}
+      TOMODAT_API_TOKEN: ${TOMODAT_API_TOKEN:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?Definí SEED_ADMIN_PASSWORD en el .env del servidor}
       PORT: 3000
     ports:
