@@ -1406,9 +1406,28 @@ export class OrdenesService {
     };
   }
 
+  /**
+   * Catalogo del paso "Materiales utilizados" del cierre: SOLO consumibles.
+   *
+   * Los equipos individualizables (router, ONU) quedan fuera a proposito. Por
+   * el ACUERDO G1<->G3 esos se declaran por numero de serie en `equipos`, que
+   * G1 mapea a su maquina de estados; no se cuentan por cantidad ni salen de
+   * `stock_consumible`. Mientras se listaban aca, los 14 tipos de G1 aparecian
+   * con "Stock: 0" y el boton de sumar deshabilitado, y el tecnico concluia
+   * que los materiales de G1 "no aparecen" cuando en realidad iban en el paso
+   * siguiente.
+   *
+   * El filtro es `false` o nulo, no `NOT true`: la columna admite nulos (hay
+   * tipos cargados sin el dato) y en SQL `NOT (col = true)` tambien descarta
+   * los nulos, que es justo lo que no queremos.
+   */
   async obtenerMateriales(id_empresa: number) {
     const tipos = await this.prisma.tipo_equipo.findMany({
-      where: { id_empresa, activo: true },
+      where: {
+        id_empresa,
+        activo: true,
+        OR: [{ requiere_serie_individual: false }, { requiere_serie_individual: null }],
+      },
       include: {
         stock: {
           // El tipo_equipo ya esta acotado por empresa, pero su stock puede
