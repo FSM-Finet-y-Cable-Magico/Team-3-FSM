@@ -27,7 +27,7 @@ export class RolesGuard implements CanActivate {
     // debe romper el endpoint de forma ruidosa, no dejarlo abierto a
     // cualquier autenticado.
     if (!requiredRoles) {
-      throw new ForbiddenException('No tienes permisos para esta acción');
+      throw new ForbiddenException('No tiene permisos para esta acción');
     }
 
     const { user } = context.switchToHttp().getRequest();
@@ -36,12 +36,12 @@ export class RolesGuard implements CanActivate {
     // app.module.ts importa, y este guard depende de que aquel haya poblado
     // request.user.
     if (!user || !user.rol) {
-      throw new ForbiddenException('No tienes permisos para esta acción');
+      throw new ForbiddenException('No tiene permisos para esta acción');
     }
 
     const hasRole = requiredRoles.includes(user.rol);
     if (!hasRole) {
-      throw new ForbiddenException('No tienes permisos para esta acción');
+      throw new ForbiddenException('No tiene permisos para esta acción');
     }
 
     return true;

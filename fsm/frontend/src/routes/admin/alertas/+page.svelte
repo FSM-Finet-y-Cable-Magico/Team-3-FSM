@@ -729,7 +729,7 @@
         Marcar {modalObjetivo.length === 1 ? 'la alerta' : `${modalObjetivo.length} alertas`} como revisada{modalObjetivo.length === 1 ? '' : 's'}
       </h3>
       <p class="text-sm text-gray-500 mt-1">
-        Queda registrado con tu usuario y la fecha. No vuelve a levantarse por 24 horas aunque el
+        Queda registrado con su usuario y la fecha. No vuelve a levantarse por 24 horas aunque el
         problema siga.
       </p>
 
@@ -767,7 +767,7 @@
       </p>
       <p class="text-xs text-gray-500 mt-1">
         SmartOLT dice <strong>{confirmando.caja ?? 'sin dato'}</strong>. Lo que confirmes queda
-        registrado con tu usuario y el proceso automático no lo vuelve a tocar.
+        registrado con su usuario y el proceso automático no lo vuelve a tocar.
       </p>
 
       <label for="busca-caja" class="block text-sm font-medium text-gray-700 mt-4 mb-1">Buscar caja</label>
@@ -853,7 +853,7 @@
         {:else if aviso}
           {#if !aviso.es_agregada}
             <p class="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm text-blue-900">
-              Esta alerta no es una falla de caja, placa ni OLT. Revisa la lista antes de avisar: puede que estos clientes todavía tengan servicio.
+              Esta alerta no es una falla de caja, placa ni OLT. Revise la lista antes de avisar: puede que estos clientes todavía tengan servicio.
             </p>
           {/if}
 

@@ -207,7 +207,7 @@
         <div class="flex flex-wrap items-end gap-2">
           <label class="text-xs font-medium text-slate-600">Nueva categoría
             <select bind:value={nuevaCategoria} class="mt-1 block border rounded-lg px-3 py-2 text-sm bg-white">
-              <option value="">Elige una categoría</option>
+              <option value="">Seleccione una categoría</option>
               {#each categorias as c (c.id_categoria)}
                 <option value={String(c.id_categoria)}>{c.nombre} ({sla(c)})</option>
               {/each}

@@ -256,7 +256,7 @@
 
                       {#if ot.categoria_falla}
                         <div>
-                          <p class="text-xs font-semibold text-slate-500 uppercase mb-1">Categoria falla</p>
+                          <p class="text-xs font-semibold text-slate-500 uppercase mb-1">Categoría falla</p>
                           <p class="text-slate-700">{ot.categoria_falla.nombre}</p>
                           {#if ot.categoria_falla_otro}
                             <p class="text-slate-500 text-xs mt-0.5">{ot.categoria_falla_otro}</p>

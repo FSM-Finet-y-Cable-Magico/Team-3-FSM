@@ -184,7 +184,7 @@ export class IntegracionesService {
    * en que va la OT. `origen_integracion` es null en las OT creadas en G3.
    */
   async orden(scope: ApiScope, id_ot: number, id_empresa: number) {
-    if (!Number.isInteger(id_ot) || id_ot <= 0) throw new BadRequestException('id de OT invalido');
+    if (!Number.isInteger(id_ot) || id_ot <= 0) throw new BadRequestException('id de OT inválido');
     this.exigirEmpresa(scope, id_empresa);
 
     const ot = await this.prisma.orden_trabajo.findFirst({

@@ -65,7 +65,7 @@
 
   async function crear() {
     if (!rut.trim() || !idCategoria) {
-      errorNuevo = 'Ingresa el RUT y el problema';
+      errorNuevo = 'Ingrese el RUT y el problema';
       return;
     }
     creando = true;
@@ -183,7 +183,7 @@
       </label>
       <label class="block text-xs font-medium text-slate-600">Problema
         <select bind:value={idCategoria} class="mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="">Elige el tipo de problema</option>
+          <option value="">Seleccione el tipo de problema</option>
           {#each categorias as c (c.id_categoria)}
             <option value={String(c.id_categoria)}>{c.nombre} ({sla(c)})</option>
           {/each}

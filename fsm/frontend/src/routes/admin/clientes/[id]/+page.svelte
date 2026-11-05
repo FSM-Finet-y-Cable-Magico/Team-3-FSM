@@ -511,7 +511,7 @@
       <p class="text-gray-600">Se generan dos OT pendientes: desconectar el puerto y retirar la ONT.</p>
       <label class="block text-xs font-medium text-gray-600">Motivo
         <select bind:value={motivoBaja} class="mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="">Elige el motivo</option>
+          <option value="">Seleccione el motivo</option>
           {#each resumen.motivos as m (m)}<option value={m}>{m}</option>{/each}
         </select>
       </label>

@@ -572,7 +572,7 @@
                estan en esta misma pantalla, mas abajo. -->
           <div class="space-y-3">
             <p class="text-sm text-gray-700">
-              El técnico cerró esta OT y espera tu aprobación. Revisa la evidencia, los materiales y la llamada antes de decidir.
+              El técnico cerró esta OT y espera su aprobación. Revise la evidencia, los materiales y la llamada antes de decidir.
             </p>
             <label for="obs-aprobacion" class="block text-xs font-medium text-gray-600">
               Observación de la aprobación (opcional)
