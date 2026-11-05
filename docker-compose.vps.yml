@@ -27,6 +27,12 @@ services:
     build:
       context: ./fsm/backend
     restart: unless-stopped
+    # Para alcanzar un servicio publicado en el loopback de la VPS --por
+    # ejemplo una base de otro grupo en 127.0.0.1:15432-- hay que nombrarlo
+    # `host.docker.internal`: dentro del contenedor, 127.0.0.1 es el
+    # contenedor mismo y no el host. Sin esto la conexion da ECONNREFUSED.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     environment:
       # La URL PUBLICA de Railway. La interna (postgres.railway.internal) solo
       # resuelve dentro de Railway y desde aca no se alcanza.
