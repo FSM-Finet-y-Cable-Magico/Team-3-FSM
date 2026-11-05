@@ -2,17 +2,21 @@
 #
 # Difiere del docker-compose.yml de desarrollo en tres cosas:
 #
-#  1. NO levanta Postgres. La base sigue siendo la de Railway, compartida con
-#     G1, G2 y G8, y se alcanza por su URL publica. Levantar una local aca
-#     dejaria dos bases distintas y nadie sabria cual es la buena.
+#  1. Levanta su propia Postgres. Hasta el 5-11-2026 la base era la de
+#     Railway, compartida con los otros grupos; desde que G1 y G8 pasaron
+#     cada uno a la suya dentro de la VPS, esa base dejo de ser el lugar
+#     comun y G3 tambien corre la propia. Las integraciones no dependen de
+#     compartir base: viajan por el webhook de cierre y por los endpoints
+#     de /api/integraciones.
 #
 #  2. Publica en el rango 8300-8399 que nos asignaron, y SOLO en 127.0.0.1.
 #     Los cuatro grupos comparten el host: un puerto sin la direccion de
 #     loopback queda expuesto a internet, y uno fuera del rango choca con
 #     otro grupo. El acceso desde afuera es por tunel SSH, no por el puerto.
 #
-#  3. Toma DATABASE_URL del entorno en vez de construirla. Es la URL publica
-#     de Railway (`junction.proxy.rlwy.net`), no la interna.
+#  3. Toma DATABASE_URL del entorno en vez de construirla, para poder
+#     apuntarla a otra base sin tocar el compose. Lo normal es que apunte al
+#     servicio `db` de aca.
 #
 # Uso:
 #   cd /srv/finet/grupo3/Team-3-FSM
@@ -23,6 +27,26 @@
 #   y entrar a http://127.0.0.1:18300
 
 services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Definí POSTGRES_USER en el .env del servidor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definí POSTGRES_PASSWORD en el .env del servidor}
+      POSTGRES_DB: ${POSTGRES_DB:-fsm}
+    # En el rango asignado y solo en loopback. Publicarla permite que otro
+    # grupo de la misma VPS la consulte --como hizo G8 con la suya en el
+    # 15432-- sin exponerla a internet.
+    ports:
+      - '127.0.0.1:8305:5432'
+    volumes:
+      - datos_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-fsm} -d ${POSTGRES_DB:-fsm} -h 127.0.0.1']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: ./fsm/backend
@@ -33,10 +57,16 @@ services:
     # contenedor mismo y no el host. Sin esto la conexion da ECONNREFUSED.
     extra_hosts:
       - 'host.docker.internal:host-gateway'
+    # Sin esto el backend arranca antes que la base y el `migrate deploy`
+    # del arranque falla en el primer intento.
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
-      # La URL PUBLICA de Railway. La interna (postgres.railway.internal) solo
-      # resuelve dentro de Railway y desde aca no se alcanza.
-      DATABASE_URL: ${DATABASE_URL:?Definí DATABASE_URL con la URL publica de Railway}
+      # Normalmente el servicio `db` de aca: postgresql://usuario:clave@db:5432/fsm
+      # Para una base publicada en el loopback de la VPS, el host es
+      # `host.docker.internal`, no 127.0.0.1 (ver extra_hosts).
+      DATABASE_URL: ${DATABASE_URL:?Definí DATABASE_URL en el .env del servidor}
       FRONTEND_URL: ${FRONTEND_URL:-http://127.0.0.1:18301}
       JWT_SECRET: ${JWT_SECRET:?Definí JWT_SECRET en el .env del servidor}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
@@ -94,3 +124,6 @@ services:
       PORT: 3000
     ports:
       - '127.0.0.1:8301:3000'
+
+volumes:
+  datos_postgres:
