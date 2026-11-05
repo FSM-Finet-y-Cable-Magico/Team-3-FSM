@@ -266,7 +266,7 @@
 
                       {#if ot.llamada}
                         <div>
-                          <p class="text-xs font-semibold text-slate-500 uppercase mb-1">Llamada cortesia</p>
+                          <p class="text-xs font-semibold text-slate-500 uppercase mb-1">Llamada cortesía</p>
                           <p class="font-medium {ot.llamada.resultado === 'CONFORME' ? 'text-green-600' : 'text-red-500'}">
                             {ot.llamada.resultado}
                           </p>

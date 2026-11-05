@@ -124,12 +124,12 @@
     // CU-56: sin visita no hay que fotografiar.
     if (!resueltoRemotamente && fotosListas.length === 0) falta.push('al menos una foto');
     if (potencia === '' || isNaN(parseFloat(potencia))) falta.push('la potencia optica');
-    if (requiereCategoriaFalla && !idCategoriaFalla) falta.push('la categoria de falla');
+    if (requiereCategoriaFalla && !idCategoriaFalla) falta.push('la categoría de falla');
     if (
       categoriaSeleccionada?.nombre.toLowerCase() === 'otro' &&
       !categoriaFallaOtro.trim()
     ) {
-      falta.push('la descripcion de la falla');
+      falta.push('la descripción de la falla');
     }
     equipos.forEach((e, i) => {
       const n = i + 1;

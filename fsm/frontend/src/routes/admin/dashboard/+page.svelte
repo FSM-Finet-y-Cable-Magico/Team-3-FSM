@@ -202,7 +202,7 @@
         icono={ICONO_CHECK}
       />
       <StatCard
-        titulo="OT Criticas"
+        titulo="OT Críticas"
         valor={indicadores.ot_criticas_activas}
         color="red"
         icono={ICONO_EXCLAM}
@@ -229,9 +229,9 @@
         icono={ICONO_DESKTOP}
       />
       <StatCard
-        titulo="Reparacion Recurrente"
+        titulo="Reparación Recurrente"
         valor={indicadores.clientes_reparacion_recurrente}
-        subtitulo="3+ en 30 dias"
+        subtitulo="3+ en 30 días"
         color="red"
         icono={ICONO_EXCLAM}
         clickable={true}
@@ -245,7 +245,7 @@
       <StatCard
         titulo="Sin Reagendar"
         valor={indicadores.ot_sin_reagendar_30_dias}
-        subtitulo="+30 dias ausente"
+        subtitulo="+30 días ausente"
         color={indicadores.ot_sin_reagendar_30_dias > 0 ? 'red' : 'gray'}
         icono={ICONO_HOURGLASS}
         clickable={true}
@@ -293,13 +293,13 @@
     <!-- Fila 3: Técnicos + Últimas completadas -->
     <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
       <div class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <h3 class="text-base font-semibold text-gray-800 mb-4">Tecnicos del dia</h3>
+        <h3 class="text-base font-semibold text-gray-800 mb-4">Técnicos del día</h3>
         {#if indicadores.tecnicos.length === 0}
           <div class="flex flex-col items-center py-8 text-gray-400">
             <svg class="w-10 h-10 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
             </svg>
-            <p class="text-sm">Sin tecnicos activos hoy</p>
+            <p class="text-sm">Sin técnicos activos hoy</p>
           </div>
         {:else}
           <div class="space-y-2">
@@ -312,7 +312,7 @@
 
       <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <div class="flex items-center justify-between mb-4">
-          <h3 class="text-base font-semibold text-gray-800">Ultimas completadas</h3>
+          <h3 class="text-base font-semibold text-gray-800">Últimas completadas</h3>
           <a href="/admin/ot?estado=COMPLETADA" class="btn-texto">
             Ver todas
           </a>

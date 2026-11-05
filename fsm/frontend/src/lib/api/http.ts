@@ -19,7 +19,7 @@ import { cabeceraEmpresaActiva } from '$lib/stores/empresa-activa.store';
 /** Un 401 significa que la sesion ya no vale: se cierra y se vuelve al login. */
 function sesionVencida(): never {
   authStore.logout();
-  throw new Error('Tu sesión expiró. Vuelve a iniciar sesión.');
+  throw new Error('Su sesión expiró. Vuelva a iniciar sesión.');
 }
 
 /**
