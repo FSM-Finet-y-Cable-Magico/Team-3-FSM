@@ -232,7 +232,7 @@
     </main>
   </div>
 {:else if areaDenegada}
-  <p role="alert" class="p-8 text-center text-slate-600">No tienes acceso a esta sección.</p>
+  <p role="alert" class="p-8 text-center text-slate-600">No tiene acceso a esta sección.</p>
 {:else}
   <p role="status" class="p-8 text-center text-slate-600">Verificando sesión...</p>
 {/if}

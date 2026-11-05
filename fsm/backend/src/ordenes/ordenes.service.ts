@@ -482,10 +482,10 @@ export class OrdenesService {
     if (!ot) throw new NotFoundException('OT no encontrada');
     const rolesPermitidos = soloTecnico ? ['TECNICO'] : ['ADMIN', 'JEFE_TECNICO', 'TECNICO'];
     if (!rolesPermitidos.includes(user.rol)) {
-      throw new ForbiddenException('No tienes permiso para realizar esta acción.');
+      throw new ForbiddenException('No tiene permiso para realizar esta acción.');
     }
     if (user.rol === 'TECNICO' && ot.id_tecnico !== user.userId) {
-      throw new ForbiddenException('No tienes permiso para ver esta OT.');
+      throw new ForbiddenException('No tiene permiso para ver esta OT.');
     }
     return ot;
   }
@@ -757,7 +757,7 @@ export class OrdenesService {
     let categoriaFalla: { id_categoria: number; nombre: string; sla_horas: number | null } | null = null;
     if (ot.tipo_ot === 'REPARACION') {
       if (!dto.id_categoria_falla) {
-        throw new BadRequestException('Debe seleccionar la categoria de falla');
+        throw new BadRequestException('Debe seleccionar la categoría de falla');
       }
 
       categoriaFalla = await this.prisma.categoria_falla.findUnique({
@@ -772,7 +772,7 @@ export class OrdenesService {
         categoriaFalla.nombre.toLowerCase() === 'otro' &&
         !dto.categoria_falla_otro?.trim()
       ) {
-        throw new BadRequestException('Debe describir la categoria de falla');
+        throw new BadRequestException('Debe describir la categoría de falla');
       }
     }
 
@@ -1108,7 +1108,7 @@ export class OrdenesService {
     }
     const obs = dto.observaciones?.trim() || null;
     if (dto.resultado === RESULTADO_LLAMADA.NO_CONFORME && !obs) {
-      throw new BadRequestException('Describe el problema que reporta el cliente');
+      throw new BadRequestException('Describa el problema que reporta el cliente');
     }
 
     let resultado: string = dto.resultado;

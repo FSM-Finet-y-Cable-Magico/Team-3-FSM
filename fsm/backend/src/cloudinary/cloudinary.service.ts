@@ -56,7 +56,7 @@ export class CloudinaryService implements OnModuleInit {
         }).end(file.buffer);
       });
     } catch {
-      throw new ServiceUnavailableException('No se pudo subir la evidencia a Cloudinary. Inténtalo nuevamente.');
+      throw new ServiceUnavailableException('No se pudo subir la evidencia a Cloudinary. Inténtelo nuevamente.');
     }
   }
 }

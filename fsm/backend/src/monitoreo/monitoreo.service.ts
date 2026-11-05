@@ -336,13 +336,13 @@ export class MonitoreoService {
     }
     const dia = /^\d{4}-\d{2}-\d{2}$/;
     if (!p.desde || !dia.test(p.desde) || (p.hasta && !dia.test(p.hasta))) {
-      throw new BadRequestException('Periodo invalido: se espera desde y hasta como YYYY-MM-DD');
+      throw new BadRequestException('Período inválido: se espera desde y hasta como YYYY-MM-DD');
     }
     // Mediodia UTC cae dentro del dia calendario buscado en cualquier zona.
     const { desde } = rangoDiaOperacion(new Date(`${p.desde}T12:00:00Z`));
     const { hasta } = p.hasta ? rangoDiaOperacion(new Date(`${p.hasta}T12:00:00Z`)) : { hasta: ahora };
     if (isNaN(desde.getTime()) || isNaN(hasta.getTime()) || hasta <= desde) {
-      throw new BadRequestException('Periodo invalido: hasta no puede ser anterior a desde');
+      throw new BadRequestException('Período inválido: hasta no puede ser anterior a desde');
     }
     if ((hasta.getTime() - desde.getTime()) / 86_400_000 > DIAS_HISTORIAL_MAXIMO + 1) {
       throw new BadRequestException(`El periodo no puede superar ${DIAS_HISTORIAL_MAXIMO} dias`);

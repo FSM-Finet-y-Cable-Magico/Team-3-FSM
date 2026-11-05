@@ -67,7 +67,7 @@
   function confirmarNoConforme() {
     if (!noConforme) return;
     if (!reclamo.trim()) {
-      reclamoError = 'Describe el problema que reporta el cliente';
+      reclamoError = 'Describa el problema que reporta el cliente';
       return;
     }
     registrar(noConforme, 'NO_CONFORME', reclamo.trim());

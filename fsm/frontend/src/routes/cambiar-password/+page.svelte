@@ -93,7 +93,7 @@
     <h1 class="text-2xl font-bold text-gray-800 mb-4">Cambiar contraseña</h1>
 
     <div class="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg mb-6 text-sm">
-      Por seguridad debes cambiar tu contraseña antes de continuar
+      Por seguridad debe cambiar su contraseña antes de continuar
     </div>
 
     <form onsubmit={handleSubmit}>

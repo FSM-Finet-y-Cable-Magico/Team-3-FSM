@@ -55,7 +55,7 @@
 
   // Paso 3 - Cierre
   let potencia = $state<string>('');
-  // CU-31: la llamada de cortesia la hace el jefe tecnico con la OT completada.
+  // CU-31: la llamada de cortesia la hace el jefe técnico con la OT completada.
   // Si el tecnico hablo con el cliente en el domicilio, la puede dejar aca.
   let resultadoLlamada = $state<'CONFORME' | 'NO_CONFORME' | null>(null);
   let obsLlamada = $state('');
@@ -124,12 +124,12 @@
     // CU-56: sin visita no hay que fotografiar.
     if (!resueltoRemotamente && fotosListas.length === 0) falta.push('al menos una foto');
     if (potencia === '' || isNaN(parseFloat(potencia))) falta.push('la potencia optica');
-    if (requiereCategoriaFalla && !idCategoriaFalla) falta.push('la categoria de falla');
+    if (requiereCategoriaFalla && !idCategoriaFalla) falta.push('la categoría de falla');
     if (
       categoriaSeleccionada?.nombre.toLowerCase() === 'otro' &&
       !categoriaFallaOtro.trim()
     ) {
-      falta.push('la descripcion de la falla');
+      falta.push('la descripción de la falla');
     }
     equipos.forEach((e, i) => {
       const n = i + 1;
@@ -374,9 +374,9 @@
             </button>
           </div>
 
-          <h2 class="font-semibold text-slate-800 mb-1">Fotografias de evidencia</h2>
+          <h2 class="font-semibold text-slate-800 mb-1">Fotografías de evidencia</h2>
           <p class="text-xs text-slate-400 mb-4">
-            {resueltoRemotamente ? 'Opcionales: no hubo visita' : 'Minimo 1 foto requerida'} · {fotosListas.length} cargada{fotosListas.length !== 1 ? 's' : ''}
+            {resueltoRemotamente ? 'Opcionales: no hubo visita' : 'Mínimo 1 foto requerida'} · {fotosListas.length} cargada{fotosListas.length !== 1 ? 's' : ''}
           </p>
 
           <label class="block w-full">
@@ -533,17 +533,17 @@
              cierre sigue disponible: se avisa, no se bloquea. -->
         {#if !opcionesEquipo}
           <div class="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-xl px-4 py-3 mb-4">
-            No se pudieron cargar las opciones de equipos. Podes cerrar la OT igual,
-            pero avisa por radio si retiraste o instalaste un equipo con numero de serie.
+            No se pudieron cargar las opciones de equipos. Puede cerrar la OT igual,
+            pero avise por radio si retiró o instaló un equipo con número de serie.
           </div>
         {:else}
         <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 space-y-3 mb-4">
           <div class="flex items-start justify-between gap-2">
             <div>
-              <h2 class="font-semibold text-slate-800">Equipos con numero de serie</h2>
+              <h2 class="font-semibold text-slate-800">Equipos con número de serie</h2>
               <p class="text-xs text-slate-500 mt-0.5">
-                ONT, router o cualquier equipo que instales o retires. Si no tocaste
-                ninguno, deja esto vacio.
+                ONT, router o cualquier equipo que instale o retire. Si no tocó
+                ninguno, deje esto vacío.
               </p>
             </div>
             <button
@@ -569,7 +569,7 @@
 
               <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1" for="serie-{i}">
-                  Numero de serie *
+                  Número de serie *
                 </label>
                 <input
                   id="serie-{i}"
@@ -585,7 +585,7 @@
 
               <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1" for="accion-{i}">
-                  Que se hizo con el equipo *
+                  Qué se hizo con el equipo *
                 </label>
                 <select
                   id="accion-{i}"
@@ -612,7 +612,7 @@
               {#if esRetiro(equipo.accion)}
                 <div>
                   <label class="block text-sm font-medium text-slate-700 mb-1" for="diag-{i}">
-                    Que le pasa al equipo *
+                    Qué le pasa al equipo *
                   </label>
                   <select
                     id="diag-{i}"
@@ -620,13 +620,13 @@
                     class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
                            focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value={undefined}>Seleccione diagnostico</option>
+                    <option value={undefined}>Seleccione diagnóstico</option>
                     {#each opcionesEquipo?.diagnosticos ?? [] as d}
                       <option value={d}>{d}</option>
                     {/each}
                   </select>
                   <p class="text-xs text-slate-500 mt-1">
-                    Sos el unico que tiene el equipo en la mano: si no lo completas,
+                    Es el único que tiene el equipo en la mano: si no lo completa,
                     inventario lo recibe como
                     "{opcionesEquipo?.diagnostico_por_defecto ?? 'Causa desconocida'}".
                   </p>
@@ -634,7 +634,7 @@
 
                 <div>
                   <label class="block text-sm font-medium text-slate-700 mb-1" for="obs-{i}">
-                    Estado fisico <span class="font-normal text-slate-400">(opcional)</span>
+                    Estado físico <span class="font-normal text-slate-400">(opcional)</span>
                   </label>
                   <input
                     id="obs-{i}"
@@ -658,13 +658,13 @@
           {#if requiereCategoriaFalla}
             <div>
               <label class="block text-sm font-medium text-slate-700 mb-1">
-                Categoria de falla *
+                Categoría de falla *
               </label>
               <select
                 bind:value={idCategoriaFalla}
                 class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Seleccione categoria</option>
+                <option value="">Seleccione categoría</option>
                 {#each categoriasFalla as cat}
                   <option value={cat.id_categoria}>{cat.nombre}{cat.sla_horas ? ` · SLA ${cat.sla_horas}h` : ''}</option>
                 {/each}
@@ -682,10 +682,10 @@
             </div>
           {/if}
 
-          <!-- Potencia optica -->
+          <!-- Potencia óptica -->
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">
-              Potencia optica (dBm) *
+              Potencia óptica (dBm) *
             </label>
             <input
               type="number"
@@ -707,7 +707,7 @@
           <!-- Resultado llamada -->
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-2">
-              Llamada de cortesia <span class="text-slate-400 text-xs">(opcional: si no, la hace el jefe tecnico)</span>
+              Llamada de cortesía <span class="text-slate-400 text-xs">(opcional: si no, la hace el jefe técnico)</span>
             </label>
             <div class="grid grid-cols-2 gap-3">
               <button

@@ -199,7 +199,7 @@ export class AuthService {
    */
   async cambiarActivo(id_usuario: number, activo: boolean, actor: UsuarioAutenticado) {
     if (id_usuario === actor.userId && !activo) {
-      throw new BadRequestException('No puedes desactivar tu propia cuenta');
+      throw new BadRequestException('No puede desactivar su propia cuenta');
     }
     const usuario = await this.prisma.usuario.findFirst({
       where: { id_usuario, id_empresa: actor.id_empresa },

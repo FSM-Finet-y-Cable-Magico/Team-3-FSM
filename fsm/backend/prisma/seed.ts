@@ -113,7 +113,7 @@ async function main() {
       tipo_evento: 'CORTE_IMPREVISTO',
       canal: 'SMS',
       contenido_texto:
-        'Hola {{cliente}}: un dano en la red dejo sin servicio a {{zona}}. ' +
+        'Hola {{cliente}}: un daño en la red dejó sin servicio a {{zona}}. ' +
         'Ya hay una cuadrilla en terreno. Estimamos {{tiempo_estimado}}. {{empresa}}',
       tiempo_estimado_reparacion: '6 a 12 horas',
     },
@@ -121,16 +121,16 @@ async function main() {
       tipo_evento: 'MANTENCION_PROGRAMADA',
       canal: 'SMS',
       contenido_texto:
-        'Hola {{cliente}}: el {{fecha}} haremos una mantencion programada en {{zona}}. ' +
-        'El servicio se interrumpira {{tiempo_estimado}}. {{empresa}}',
+        'Hola {{cliente}}: el {{fecha}} haremos una mantención programada en {{zona}}. ' +
+        'El servicio se interrumpirá {{tiempo_estimado}}. {{empresa}}',
       tiempo_estimado_reparacion: 'cerca de 2 horas',
     },
     {
       tipo_evento: 'FALLA_TELEVISION',
       canal: 'SMS',
       contenido_texto:
-        'Hola {{cliente}}: estamos trabajando en una falla del servicio de television en {{zona}}. ' +
-        'Estimamos {{tiempo_estimado}}. Tu internet no esta afectado. {{empresa}}',
+        'Hola {{cliente}}: estamos trabajando en una falla del servicio de televisión en {{zona}}. ' +
+        'Estimamos {{tiempo_estimado}}. Su internet no está afectado. {{empresa}}',
       tiempo_estimado_reparacion: '3 a 5 horas',
     },
   ];

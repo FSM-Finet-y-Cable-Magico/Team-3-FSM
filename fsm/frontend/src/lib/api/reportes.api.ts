@@ -119,7 +119,7 @@ export async function descargar(
     token,
     `${API_URL}/api${q}${q.includes('?') ? '&' : '?'}formato=${formato}`,
     undefined,
-    'No se pudo generar el archivo. Inténtalo nuevamente en unos minutos.',
+    'No se pudo generar el archivo. Inténtelo nuevamente en unos minutos.',
   );
 
   const blob = await res.blob();

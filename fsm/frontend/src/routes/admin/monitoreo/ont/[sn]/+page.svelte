@@ -44,7 +44,7 @@
   async function cargar() {
     const r = rango();
     if (periodo === 'personalizado' && (!r?.desde || !r?.hasta)) {
-      error = 'Elige el día de inicio y el de término';
+      error = 'Seleccione el día de inicio y el de término';
       return;
     }
     cargando = true;

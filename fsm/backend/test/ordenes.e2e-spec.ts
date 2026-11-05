@@ -301,7 +301,7 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
   });
   it.each([2, 4])('TECNICO no hidrata ni lee la OT ajena/sin asignar %s', async id => {
     const res = await get(id).expect(403);
-    expect(res.body.message).toBe('No tienes permiso para ver esta OT.');
+    expect(res.body.message).toBe('No tiene permiso para ver esta OT.');
     expect(res.body.cliente).toBeUndefined();
     expect(prisma.orden_trabajo.findFirst).toHaveBeenCalledTimes(1);
     expect(prisma.orden_trabajo.findFirst).toHaveBeenCalledWith({ where: { id_ot: id, id_empresa: 1 }, select: { id_tecnico: true } });
