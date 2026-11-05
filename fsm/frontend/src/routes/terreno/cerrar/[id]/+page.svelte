@@ -48,7 +48,6 @@
 
   // Paso 2 - Materiales
   let cantidades = $state<Record<number, number>>({});
-  let series = $state<Record<number, string>>({});
 
   // Paso 3 - Equipos individualizables (acuerdo con G1)
   let opcionesEquipo = $state<terrenoApi.OpcionesEquipo | null>(null);
@@ -245,7 +244,6 @@
       materiales: materialesSeleccionados.map((m) => ({
         id_tipo_equipo: m.id_tipo_equipo,
         cantidad: cantidades[m.id_tipo_equipo],
-        numero_serie: series[m.id_tipo_equipo] || undefined,
       })),
       potencia_optica_dbm: parseFloat(potencia),
       ...(resultadoLlamada && { resultado_llamada: resultadoLlamada, obs_llamada: obsLlamada || undefined }),
@@ -462,7 +460,10 @@
       {#if paso === 2}
         <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
           <h2 class="font-semibold text-slate-800 mb-1">Materiales utilizados</h2>
-          <p class="text-xs text-slate-400 mb-4">Deje en 0 los materiales no utilizados</p>
+          <p class="text-xs text-slate-400 mb-4">
+            Solo consumibles; deje en 0 los que no usó. Los equipos con número de serie
+            (router, ONU) se declaran en el paso siguiente.
+          </p>
 
           {#if materiales.length === 0}
             <p class="text-sm text-slate-400 text-center py-4">No hay materiales registrados en el sistema</p>
@@ -495,14 +496,6 @@
                       >+</button>
                     </div>
                   </div>
-                  {#if mat.requiere_serie_individual && cantidad > 0}
-                    <input
-                      type="text"
-                      bind:value={series[mat.id_tipo_equipo]}
-                      placeholder="Numero de serie"
-                      class="mt-2 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  {/if}
                 </div>
               {/each}
             </div>
