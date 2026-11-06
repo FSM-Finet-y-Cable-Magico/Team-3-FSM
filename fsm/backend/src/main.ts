@@ -36,6 +36,9 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 
-  await app.listen(process.env.PORT ?? 3000);
+  // HOST existe para el despliegue en la red del host: ahi no hay mapeo de
+  // puertos de Docker que acote la escucha, asi que la acota el proceso.
+  // Sin la variable sigue escuchando en todas las interfaces, como antes.
+  await app.listen(process.env.PORT ?? 3000, process.env.HOST ?? '0.0.0.0');
 }
 bootstrap();
