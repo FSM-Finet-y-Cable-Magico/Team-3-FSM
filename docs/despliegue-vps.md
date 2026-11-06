@@ -80,6 +80,30 @@ MONITOREO_PURGA_ENABLED=false
 AVISOS_MANTENCION_ENABLED=false
 ```
 
+### Apuntar a una base publicada en el loopback de la VPS
+
+Si en vez de Railway se usa una base que corre en la propia VPS y esta
+publicada en su loopback (por ejemplo la de otro grupo, en
+`127.0.0.1:15432`), hay que nombrarla `host.docker.internal`, no
+`127.0.0.1`: dentro del contenedor esa direccion es el contenedor mismo. El
+compose ya trae el `extra_hosts` que resuelve ese nombre al host.
+
+```
+DATABASE_URL=postgresql://usuario:clave@host.docker.internal:15432/base?schema=mi_esquema
+```
+
+El `?schema=` importa cuando la cuenta no es duena de `public`: sin el,
+`prisma migrate deploy` intenta crear las tablas ahi y falla por permisos.
+
+Dos consecuencias de mover la base dentro de la VPS, que conviene decidir
+antes y no despues:
+
+- **Railway y Vercel dejan de servir.** Una base publicada en el loopback
+  solo la alcanzan procesos de la propia VPS.
+- **Hace falta el puerto abierto.** Mientras el rango asignado siga cerrado
+  en el cortafuegos, la unica via de entrada es el tunel SSH, y ni el celular
+  del tecnico ni los otros grupos pueden llegar.
+
 ### Las dos instancias no pueden correr las tareas de fondo a la vez
 
 Mientras Railway y la VPS sirvan **la misma base**, las tareas periodicas van
