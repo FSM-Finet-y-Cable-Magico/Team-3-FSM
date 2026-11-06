@@ -51,21 +51,29 @@ services:
     build:
       context: ./fsm/backend
     restart: unless-stopped
-    # Para alcanzar un servicio publicado en el loopback de la VPS --por
-    # ejemplo una base de otro grupo en 127.0.0.1:15432-- hay que nombrarlo
-    # `host.docker.internal`: dentro del contenedor, 127.0.0.1 es el
-    # contenedor mismo y no el host. Sin esto la conexion da ECONNREFUSED.
-    extra_hosts:
-      - 'host.docker.internal:host-gateway'
+    # En la red del host, no en una bridge. Con Docker rootless un contenedor
+    # en bridge NO alcanza un puerto atado al 127.0.0.1 del host: ni siquiera
+    # con `host.docker.internal`, que resuelve el nombre pero no conecta, y
+    # Prisma corta con `P1001: Can't reach database server`. En la red del
+    # host si llega, y con eso el backend puede usar cualquier base publicada
+    # en el loopback de la VPS: la del servicio `db` de aca o la de otro grupo.
+    #
+    # El mapeo de `ports` se ignora en esta red, asi que el puerto lo define
+    # PORT y la interfaz la acota HOST. El resultado es el mismo que antes
+    # --127.0.0.1:8300-- pero lo impone el proceso en vez de Docker.
+    network_mode: host
     # Sin esto el backend arranca antes que la base y el `migrate deploy`
     # del arranque falla en el primer intento.
     depends_on:
       db:
         condition: service_healthy
     environment:
-      # Normalmente el servicio `db` de aca: postgresql://usuario:clave@db:5432/fsm
-      # Para una base publicada en el loopback de la VPS, el host es
-      # `host.docker.internal`, no 127.0.0.1 (ver extra_hosts).
+      # Siempre por 127.0.0.1, que en la red del host es la VPS y no el
+      # contenedor. El servicio `db` de aca esta en el 8305; una base de otro
+      # grupo, en el puerto que haya publicado (G8 uso el 15432).
+      #   postgresql://usuario:clave@127.0.0.1:8305/fsm
+      # El nombre de servicio `db` NO sirve aca: en la red del host no hay
+      # resolucion por nombre de Docker.
       DATABASE_URL: ${DATABASE_URL:?Definí DATABASE_URL en el .env del servidor}
       FRONTEND_URL: ${FRONTEND_URL:-http://127.0.0.1:18301}
       JWT_SECRET: ${JWT_SECRET:?Definí JWT_SECRET en el .env del servidor}
@@ -104,9 +112,9 @@ services:
       TOMODAT_BASE_URL: ${TOMODAT_BASE_URL:-}
       TOMODAT_API_TOKEN: ${TOMODAT_API_TOKEN:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?Definí SEED_ADMIN_PASSWORD en el .env del servidor}
-      PORT: 3000
-    ports:
-      - '127.0.0.1:8300:3000'
+      # En la red del host no hay mapeo que acote la escucha: la acota HOST.
+      PORT: 8300
+      HOST: 127.0.0.1
 
   frontend:
     build:
