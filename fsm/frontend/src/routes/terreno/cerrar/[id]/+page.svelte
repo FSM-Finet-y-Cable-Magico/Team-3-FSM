@@ -123,7 +123,7 @@
     const falta: string[] = [];
     // CU-56: sin visita no hay que fotografiar.
     if (!resueltoRemotamente && fotosListas.length === 0) falta.push('al menos una foto');
-    if (potencia === '' || isNaN(parseFloat(potencia))) falta.push('la potencia optica');
+    if (potencia === '' || isNaN(parseFloat(potencia))) falta.push('la potencia óptica');
     if (requiereCategoriaFalla && !idCategoriaFalla) falta.push('la categoría de falla');
     if (
       categoriaSeleccionada?.nombre.toLowerCase() === 'otro' &&
@@ -133,11 +133,11 @@
     }
     equipos.forEach((e, i) => {
       const n = i + 1;
-      if (!e.numero_serie.trim()) falta.push(`el numero de serie del equipo ${n}`);
+      if (!e.numero_serie.trim()) falta.push(`el número de serie del equipo ${n}`);
       // El diagnostico es opcional en el contrato --G1 asume "Causa
       // desconocida" si no viene-- pero obligatorio aca: es el unico momento en
       // que alguien tiene el equipo en la mano y puede decir que le pasa.
-      if (esRetiro(e.accion) && !e.diagnostico) falta.push(`el diagnostico del equipo ${n}`);
+      if (esRetiro(e.accion) && !e.diagnostico) falta.push(`el diagnóstico del equipo ${n}`);
     });
     return falta;
   });
