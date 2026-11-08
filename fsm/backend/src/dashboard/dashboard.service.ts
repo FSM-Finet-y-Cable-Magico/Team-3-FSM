@@ -6,6 +6,7 @@ import {
   UMBRAL_REPARACIONES_RECURRENTES,
 } from '../ordenes/reparaciones-recurrentes.service.js';
 import { SinReagendarService } from '../ordenes/sin-reagendar.service.js';
+import { nombresEnBase, ROL } from '../auth/roles.constants.js';
 
 @Injectable()
 export class DashboardService {
@@ -58,7 +59,9 @@ export class DashboardService {
         where: {
           id_empresa,
           activo: true,
-          roles: { some: { rol: { nombre_rol: 'TECNICO' } } },
+          // Acepta 'TECNICO' y 'Terreno': la base compartida nombra los roles
+          // distinto. Ver src/auth/roles.constants.ts
+          roles: { some: { rol: { nombre_rol: { in: nombresEnBase(ROL.TECNICO) } } } },
         },
         select: { id_usuario: true, nombre_completo: true },
       }),

@@ -45,6 +45,7 @@ import {
 import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
+import { nombresEnBase, ROL } from '../auth/roles.constants.js';
 
 /**
  * MOD RF-04: el cierre del tecnico deja la OT esperando que el jefe tecnico o
@@ -579,7 +580,9 @@ export class OrdenesService {
       where: {
         id_empresa,
         activo: true,
-        roles: { some: { rol: { nombre_rol: 'TECNICO' } } },
+        // Acepta 'TECNICO' y 'Terreno': la base compartida nombra los roles
+        // distinto. Ver src/auth/roles.constants.ts
+        roles: { some: { rol: { nombre_rol: { in: nombresEnBase(ROL.TECNICO) } } } },
       },
       select: { id_usuario: true, nombre_completo: true, nombre_usuario: true },
     });
