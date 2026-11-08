@@ -25,9 +25,10 @@ const fila = (extra: Partial<OtParaPayload> = {}): OtParaPayload =>
     direccion: { direccion_completa: 'Av. Ejemplo 1234', comuna: 'La Pintana' },
     categoria_falla: null,
     materiales: [
-      { id_tipo_equipo: 7, cantidad: { toString: () => '2' } },
-      { id_tipo_equipo: null, cantidad: { toString: () => '1' } },
+      { id_tipo_equipo: 7, cantidad: { toString: () => '2' }, tipo_equipo: { nombre: 'Cable drop 1 fibra' } },
+      { id_tipo_equipo: null, cantidad: { toString: () => '1' }, tipo_equipo: null },
     ],
+    tecnico: { nombre_usuario: 'mrojas' },
     llamada: { resultado: 'CONFORME' },
     solicitud_integracion: null,
     ...extra,
@@ -45,11 +46,12 @@ describe('construirPayloadCierre', () => {
       potencia_optica_dbm: -21.5,
       resuelto_remotamente: false,
       id_tecnico: 14,
+      usuario_tecnico: 'mrojas',
       cliente: null,
       direccion: { direccion_completa: 'Av. Ejemplo 1234', comuna: 'La Pintana' },
       categoria_falla: null,
       categoria_falla_otro: null,
-      materiales: [{ id_tipo_equipo: 7, cantidad: 2 }],
+      materiales: [{ id_tipo_equipo: 7, nombre: 'Cable drop 1 fibra', cantidad: 2 }],
       equipos_instalados: [
         { numero_serie: 'ONT-123', accion: 'INSTALADO_EN_CLIENTE', estado_g1: 'Instalado en cliente' },
       ],
@@ -87,6 +89,25 @@ describe('construirPayloadCierre', () => {
   it('con el cliente, lo informa con rut y nombre', () => {
     const p = construirPayloadCierre(fila({ cliente: { rut: '11111111-1', nombre_completo: 'Ana Soto' } } as never));
     expect(p.cliente).toEqual({ rut: '11111111-1', nombre: 'Ana Soto' });
+  });
+
+  it('sin tecnico asignado, la clave natural va en null y no rompe', () => {
+    // No deberia pasar --sin tecnico no se puede cerrar-- pero la columna es
+    // nullable y el payload no es lugar para caerse.
+    const p = construirPayloadCierre(fila({ tecnico: null, id_tecnico: null } as never));
+    expect(p.usuario_tecnico).toBeNull();
+    expect(p.id_tecnico).toBeNull();
+  });
+
+  it('si el tipo de equipo quedo huerfano, el nombre va vacio y la fila igual viaja', () => {
+    // Una fila de uso que apunta a un tipo borrado. Se informa la cantidad
+    // igual: perder el consumo es peor que informarlo sin nombre.
+    const p = construirPayloadCierre(
+      fila({
+        materiales: [{ id_tipo_equipo: 7, cantidad: { toString: () => '3' }, tipo_equipo: null }],
+      } as never),
+    );
+    expect(p.materiales).toEqual([{ id_tipo_equipo: 7, nombre: '', cantidad: 3 }]);
   });
 });
 

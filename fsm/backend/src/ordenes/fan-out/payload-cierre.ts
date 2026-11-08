@@ -14,7 +14,14 @@ export const INCLUDE_PAYLOAD_CIERRE = {
   cliente: { select: { rut: true, nombre_completo: true } },
   direccion: { select: { direccion_completa: true, comuna: true } },
   categoria_falla: { select: { id_categoria: true, nombre: true } },
-  materiales: { select: { id_tipo_equipo: true, cantidad: true } },
+  // El nombre del tipo va junto al id porque el id es NUESTRO y no significa
+  // nada en la base de G1 (ver `materiales` en PayloadCierre).
+  materiales: {
+    select: { id_tipo_equipo: true, cantidad: true, tipo_equipo: { select: { nombre: true } } },
+  },
+  // Solo el nombre de usuario: es la clave con la que los otros grupos
+  // cruzan al tecnico. El nombre completo no viaja (ver PayloadCierre).
+  tecnico: { select: { nombre_usuario: true } },
   llamada: { select: { resultado: true } },
   solicitud_integracion: {
     select: {
@@ -44,6 +51,7 @@ export function construirPayloadCierre(ot: OtParaPayload): PayloadCierre {
     potencia_optica_dbm: ot.potencia_optica_dbm == null ? 0 : Number(ot.potencia_optica_dbm),
     resuelto_remotamente: ot.resuelto_remotamente,
     id_tecnico: ot.id_tecnico,
+    usuario_tecnico: ot.tecnico?.nombre_usuario ?? null,
     cliente: ot.cliente
       ? { rut: rutParaApi(ot.cliente.rut), nombre: ot.cliente.nombre_completo }
       : null,
@@ -54,7 +62,11 @@ export function construirPayloadCierre(ot: OtParaPayload): PayloadCierre {
     categoria_falla_otro: ot.categoria_falla_otro,
     materiales: ot.materiales
       .filter((m): m is typeof m & { id_tipo_equipo: number } => m.id_tipo_equipo != null)
-      .map((m) => ({ id_tipo_equipo: m.id_tipo_equipo, cantidad: Number(m.cantidad) })),
+      .map((m) => ({
+        id_tipo_equipo: m.id_tipo_equipo,
+        nombre: m.tipo_equipo?.nombre ?? '',
+        cantidad: Number(m.cantidad),
+      })),
     equipos_instalados: equipos.instalados ?? [],
     equipos_retirados: equipos.retirados ?? [],
     request_id: origen?.request_id ?? null,

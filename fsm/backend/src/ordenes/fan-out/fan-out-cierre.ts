@@ -41,18 +41,53 @@ export interface PayloadCierre {
    * movimiento de equipos a una persona.
    *
    * Es inequivoco: `cerrarOT` exige rol TECNICO y que `ot.id_tecnico` sea el
-   * usuario autenticado, asi que quien cierra ES el asignado. Va el id y no el
-   * nombre por minima exposicion; si G1 necesita mostrarlo, lo consulta.
+   * usuario autenticado, asi que quien cierra ES el asignado.
+   *
+   * ESTE ID NO SIRVE FUERA DEL FSM. Es nuestro `usuario.id_usuario` y no
+   * existe en la base de G1 ni en la de G8: G8 reporto el 8-11 que la OT 56
+   * venia con el tecnico 4 y que ese usuario no estaba registrado. Se mantiene
+   * por compatibilidad con lo que ya consumen, pero para cruzar va `tecnico`.
    *
    * Nullable porque el tipo del modelo lo es, aunque en la practica una OT
    * cerrada siempre lo trae: sin tecnico asignado no se puede cerrar.
    */
   id_tecnico: number | null;
+  /**
+   * El mismo tecnico, por clave natural: `usuario.nombre_usuario`, que es
+   * unico en el FSM y estable entre despliegues. Es con lo que los otros
+   * grupos pueden cruzar sin conocer nuestros ids.
+   *
+   * SE MANTIENE LA MINIMA EXPOSICION. No viaja el nombre completo: lo que
+   * faltaba no era la identidad de la persona sino un identificador que el
+   * receptor pudiera resolver, y un nombre de usuario alcanza para atribuir
+   * un movimiento de equipos sin mandar el nombre legal de un trabajador.
+   *
+   * El comentario anterior decia "si G1 necesita mostrarlos, los consulta",
+   * pero no hay con que: `IntegracionesController` expone doce endpoints y
+   * ninguno devuelve usuarios. Si G1 llega a necesitar el nombre para mostrar,
+   * se agrega ese endpoint y se decide ahi que exponer, en vez de meterlo en
+   * un payload que tambien recibe G8.
+   *
+   * Mismo criterio que el cliente, que viaja por `rut`, y que los equipos, que
+   * viajan por `numero_serie` y nunca por `id_unidad`.
+   */
+  usuario_tecnico: string | null;
   cliente: { rut: string | null; nombre: string } | null;
   direccion: { direccion_completa: string; comuna: string } | null;
   categoria_falla: { id_categoria: number; nombre: string } | null;
   categoria_falla_otro: string | null;
-  materiales: { id_tipo_equipo: number; cantidad: number }[];
+  /**
+   * Consumibles gastados en la visita (los equipos con numero de serie van en
+   * `equipos_instalados` / `equipos_retirados`).
+   *
+   * `id_tipo_equipo` es nuestro y no significa nada en el inventario de G1:
+   * sus catalogos se cargaron por separado y los ids no coinciden. Por eso va
+   * `nombre`, que es con lo que pueden cruzar contra su propio catalogo.
+   *
+   * `nombre` puede venir vacio si la fila de uso quedo apuntando a un tipo
+   * borrado; es una fila huerfana, no un caso normal.
+   */
+  materiales: { id_tipo_equipo: number; nombre: string; cantidad: number }[];
   equipos_instalados: EquipoDeclarado[];
   equipos_retirados: EquipoDeclarado[];
   /**
