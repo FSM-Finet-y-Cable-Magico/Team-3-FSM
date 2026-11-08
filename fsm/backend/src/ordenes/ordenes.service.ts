@@ -12,8 +12,9 @@ import { CambiarPrioridadDto } from './dto/cambiar-prioridad.dto.js';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
 import { ACCION_A_ESTADO_G1 } from './estado-equipo.constants.js';
+import type { ReparacionDeclarada } from './reparacion-cierre.constants.js';
 import { FAN_OUT_CIERRE, type FanOutCierre, type EquipoDeclarado } from './fan-out/fan-out-cierre.js';
-import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payload-cierre.js';
+import { cierreGuardado, construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payload-cierre.js';
 import { MOMENTO_FAN_OUT, type MomentoFanOut } from './fan-out/momento-fan-out.js';
 import { AprobarCierreDto } from './dto/aprobar-cierre.dto.js';
 import { RechazarCierreDto } from './dto/rechazar-cierre.dto.js';
@@ -790,6 +791,34 @@ export class OrdenesService {
       }
     }
 
+    // G1 (8-nov-2026) exige tres datos para registrar el cierre de una
+    // reparacion; sin ellos lo anota como DATOS_REPARACION_INCOMPLETOS. La
+    // obligatoriedad se impone aca y no en el DTO porque depende del
+    // `tipo_ot`, que el DTO no conoce --mismo caso que la categoria de falla--.
+    //
+    // El largo y los valores permitidos ya los valido el DTO. Aca solo se
+    // comprueba que esten: un mensaje por campo faltante, no uno generico, que
+    // es lo que el tecnico necesita leer desde el celular.
+    let reparacion: ReparacionDeclarada | null = null;
+    if (ot.tipo_ot === 'REPARACION') {
+      const falla = dto.falla_reportada?.trim();
+      const solucion = dto.solucion_aplicada?.trim();
+      if (!falla) {
+        throw new BadRequestException('Debe indicar qué falla encontró');
+      }
+      if (!solucion) {
+        throw new BadRequestException('Debe indicar qué hizo para resolverla');
+      }
+      if (!dto.resultado_reparacion) {
+        throw new BadRequestException('Debe indicar cómo quedó la reparación');
+      }
+      reparacion = {
+        falla_reportada: falla,
+        solucion_aplicada: solucion,
+        resultado: dto.resultado_reparacion,
+      };
+    }
+
     // ACUERDO G1↔G3: los equipos individualizables van sobre numero_serie (G3
     // no lee unidad_equipo). Se mapean a la accion semantica + literal tentativo
     // de G1 y viajan en el fan-out; G1 aplica la transicion.
@@ -872,10 +901,14 @@ export class OrdenesService {
           categoria_falla_otro: dto.categoria_falla_otro?.trim() || null,
           resuelto_remotamente: dto.resuelto_remotamente ?? false,
           // Snapshot para la reconciliacion por GET (mismo contenido que el webhook).
-          cierre_equipos:
-            equipos_instalados.length || equipos_retirados.length
-              ? ({ instalados: equipos_instalados, retirados: equipos_retirados } as unknown as Prisma.InputJsonValue)
-              : Prisma.JsonNull,
+          //
+          // La columna lleva DOS secciones independientes --los equipos y los
+          // datos de reparacion-- y cada una puede venir sola. Se arma por
+          // partes a proposito: con el `||` anterior, una reparacion sin
+          // equipos habria dejado la columna en null y los tres datos se
+          // habrian perdido entre el cierre y la aprobacion, que es cuando se
+          // leen para avisarle a G1.
+          cierre_equipos: cierreGuardado(equipos_instalados, equipos_retirados, reparacion),
         },
       });
 
