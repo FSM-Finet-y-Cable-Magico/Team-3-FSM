@@ -144,10 +144,16 @@ const imagenRemota = { secure_url: 'https://res.cloudinary.com/demo/image/upload
 const sdk = { uploader: { upload_stream: jest.fn((_options: UploadApiOptions, callback?: UploadResponseCallback) => ({
   end: (_buffer: Buffer) => callback?.(undefined, imagenRemota),
 })) } };
+// Las OT 1, 2 y 3 son REPARACION, asi que un cierre valido lleva los tres
+// datos que exige G1 (falla, solucion y resultado). Sin ellos el DTO responde
+// 400 antes de llegar al servicio, que es justo lo que prueba
+// 'una reparacion sin los datos de G1 no se puede cerrar'.
 const cierre = () => ({
   fotos: [{ url_cloudinary: 'https://res.cloudinary.com/demo/image/upload/v1/evidencia.jpg', formato: 'jpg', tamano_kb: 1 }],
   materiales: [{ id_tipo_equipo: 1, cantidad: 2 }],
   potencia_optica_dbm: -21, resultado_llamada: 'CONFORME', id_categoria_falla: 1,
+  falla_reportada: 'Fibra cortada en el poste', solucion_aplicada: 'Se empalmo la fibra',
+  resultado_reparacion: 'RESUELTO',
 });
 
 describe('API real: autenticación, permisos, evidencias y consultas', () => {
@@ -346,6 +352,19 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
       await cerrar(1, 'TECNICO', dto).expect(400);
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
+  it.each(['falla_reportada', 'solucion_aplicada', 'resultado_reparacion'])
+    ('una reparacion sin %s no se puede cerrar', async campo => {
+      // Por la API real, con el pipe de validacion puesto: es la unica forma
+      // de comprobar que la regla llega hasta el borde y no se queda en una
+      // prueba de unidad del servicio.
+      const dto = cierre();
+      // El cast es solo para borrar la clave: `dto` conserva su tipo, que es
+      // lo que `cerrar` espera.
+      delete (dto as unknown as Record<string, unknown>)[campo];
+      await cerrar(1, 'TECNICO', dto).expect(400);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
   it.each(['http', 'https'])('cierre con %s persiste evidencia, material, llamada, historial y auditoría', async protocolo => {
     const dto = cierre(); dto.fotos[0].url_cloudinary = protocolo + '://example.com/foto.jpg';
     const res = await cerrar(1, 'TECNICO', dto).expect(201);

@@ -68,6 +68,22 @@
   );
   let idCategoriaFalla = $state('');
   let categoriaFallaOtro = $state('');
+
+  // Los tres datos que G1 exige para registrar el cierre de una REPARACION.
+  // Debe coincidir con LARGO_MIN_TEXTO_REPARACION del backend: si no, el
+  // boton deja cerrar y el servidor responde un 400 que el tecnico no espera.
+  const LARGO_MIN_REPARACION = 5;
+  const LARGO_MAX_REPARACION = 300;
+  let fallaReportada = $state('');
+  let solucionAplicada = $state('');
+  let resultadoReparacion = $state<terrenoApi.ResultadoReparacion | ''>('');
+
+  /** La etiqueta es nuestra; el valor lo compara G1 y va exacto. */
+  const RESULTADOS_REPARACION: { valor: terrenoApi.ResultadoReparacion; etiqueta: string }[] = [
+    { valor: 'RESUELTO', etiqueta: 'Resuelto — el problema quedó corregido' },
+    { valor: 'PARCIAL', etiqueta: 'Parcial — hay servicio, con una limitación' },
+    { valor: 'SIN_SOLUCION', etiqueta: 'Sin solución — no se pudo arreglar en esta visita' },
+  ];
   let alertaReparaciones = $state<{
     activa: boolean;
     total_reparaciones_30_dias: number;
@@ -88,7 +104,10 @@
   const categoriaSeleccionada = $derived(
     categoriasFalla.find((c) => c.id_categoria === Number(idCategoriaFalla)),
   );
-  const requiereCategoriaFalla = $derived(ot?.tipo_ot === 'REPARACION');
+  // La categoria de falla y los tres datos de reparacion aplican al mismo
+  // caso, asi que salen de la misma condicion y no de dos copias.
+  const esReparacion = $derived(ot?.tipo_ot === 'REPARACION');
+  const requiereCategoriaFalla = $derived(esReparacion);
 
   const esRetiro = (accion: string) =>
     opcionesEquipo?.acciones.find((a) => a.accion === accion)?.es_retiro ?? false;
@@ -130,6 +149,18 @@
       !categoriaFallaOtro.trim()
     ) {
       falta.push('la descripción de la falla');
+    }
+    // Los tres de G1. Se distingue "no lo escribió" de "lo escribió corto":
+    // con un solo mensaje el tecnico no sabe si le falta el campo o le falta
+    // texto, y lo reintenta a ciegas.
+    if (esReparacion) {
+      const falla = fallaReportada.trim();
+      const solucion = solucionAplicada.trim();
+      if (!falla) falta.push('qué falla encontró');
+      else if (falla.length < LARGO_MIN_REPARACION) falta.push(`describir la falla con al menos ${LARGO_MIN_REPARACION} caracteres`);
+      if (!solucion) falta.push('qué hizo para resolverla');
+      else if (solucion.length < LARGO_MIN_REPARACION) falta.push(`describir la solución con al menos ${LARGO_MIN_REPARACION} caracteres`);
+      if (!resultadoReparacion) falta.push('cómo quedó la reparación');
     }
     equipos.forEach((e, i) => {
       const n = i + 1;
@@ -250,6 +281,13 @@
       resuelto_remotamente: resueltoRemotamente,
       id_categoria_falla: idCategoriaFalla ? Number(idCategoriaFalla) : undefined,
       categoria_falla_otro: categoriaFallaOtro.trim() || undefined,
+      // Solo en reparaciones: en los demas tipos viajan ausentes y G1 los
+      // recibe en null, que es lo que dice el contrato.
+      ...(esReparacion && {
+        falla_reportada: fallaReportada.trim(),
+        solucion_aplicada: solucionAplicada.trim(),
+        resultado_reparacion: resultadoReparacion || undefined,
+      }),
       // Se separan por accion porque G1 las procesa distinto: las instaladas
       // van al cliente, las retiradas siguen la transicion de su accion.
       equipos_instalados: limpiarEquipos(equipos.filter((e) => !esRetiro(e.accion))),
@@ -679,6 +717,67 @@
                   class="mt-2 w-full border border-slate-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               {/if}
+            </div>
+          {/if}
+
+          <!-- Los tres datos que G1 exige para registrar el cierre de una
+               reparacion. Van juntos y pegados a la categoria de falla porque
+               son el mismo momento mental: que pasaba, que hice, como quedo.
+               En los demas tipos de OT esta seccion no existe. -->
+          {#if esReparacion}
+            <div class="space-y-4 border-t border-slate-100 pt-4">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1" for="falla-reportada">
+                  ¿Qué falla encontró? *
+                </label>
+                <textarea
+                  id="falla-reportada"
+                  bind:value={fallaReportada}
+                  rows="3"
+                  maxlength={LARGO_MAX_REPARACION}
+                  placeholder="Ej: fibra cortada en el poste frente al domicilio"
+                  class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+                ></textarea>
+                <p class="text-xs text-slate-400 mt-1 text-right">
+                  {fallaReportada.trim().length}/{LARGO_MAX_REPARACION}
+                </p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1" for="solucion-aplicada">
+                  ¿Qué hizo para resolverla? *
+                </label>
+                <textarea
+                  id="solucion-aplicada"
+                  bind:value={solucionAplicada}
+                  rows="3"
+                  maxlength={LARGO_MAX_REPARACION}
+                  placeholder="Ej: se empalmó la fibra y se midió potencia en la ONT"
+                  class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+                ></textarea>
+                <p class="text-xs text-slate-400 mt-1 text-right">
+                  {solucionAplicada.trim().length}/{LARGO_MAX_REPARACION}
+                </p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1" for="resultado-reparacion">
+                  ¿Cómo quedó? *
+                </label>
+                <select
+                  id="resultado-reparacion"
+                  bind:value={resultadoReparacion}
+                  class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Seleccione el resultado</option>
+                  {#each RESULTADOS_REPARACION as r}
+                    <option value={r.valor}>{r.etiqueta}</option>
+                  {/each}
+                </select>
+              </div>
             </div>
           {/if}
 

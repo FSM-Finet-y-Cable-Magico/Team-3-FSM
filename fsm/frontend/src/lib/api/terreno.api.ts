@@ -39,6 +39,17 @@ export interface EquipoOt {
   observacion_estado_fisico?: string;
 }
 
+/**
+ * Como quedo una reparacion. Los tres literales los compara G1.
+ *
+ * Es la unica copia de la lista en el frontend, y es deliberada: a diferencia
+ * de las acciones de equipo --que el backend sirve por API justamente para que
+ * no se desincronicen-- estos tres son valores fijos del contrato y van en el
+ * formulario con su etiqueta en español, que el backend no tiene por que
+ * conocer.
+ */
+export type ResultadoReparacion = 'RESUELTO' | 'PARCIAL' | 'SIN_SOLUCION';
+
 export interface CerrarOTDto {
   fotos: { url_cloudinary: string; formato: string; tamano_kb: number }[];
   materiales: { id_tipo_equipo: number; cantidad: number; numero_serie?: string }[];
@@ -49,6 +60,14 @@ export interface CerrarOTDto {
   resuelto_remotamente?: boolean;
   id_categoria_falla?: number;
   categoria_falla_otro?: string;
+  /**
+   * Los tres datos que G1 exige para registrar el cierre de una REPARACION.
+   * Obligatorios en ese tipo de OT y ausentes en los demas; el backend los
+   * valida segun `tipo_ot`.
+   */
+  falla_reportada?: string;
+  solucion_aplicada?: string;
+  resultado_reparacion?: ResultadoReparacion;
   /** G1 los pasa a "Instalado en cliente". */
   equipos_instalados?: EquipoOt[];
   /** G1 aplica la transicion segun `accion` (bodega, revision o baja). */

@@ -56,6 +56,9 @@ describe('construirPayloadCierre', () => {
         { numero_serie: 'ONT-123', accion: 'INSTALADO_EN_CLIENTE', estado_g1: 'Instalado en cliente' },
       ],
       equipos_retirados: [],
+      falla_reportada: null,
+      solucion_aplicada: null,
+      resultado: null,
       request_id: null,
       trace_id: null,
       id_prospecto: null,
@@ -118,6 +121,52 @@ describe('construirPayloadCierre', () => {
       } as never),
     );
     expect(p.direccion).toEqual({ direccion_completa: 'Av. Ejemplo 1234', comuna: 'La Pintana' });
+  });
+
+  describe('datos de reparacion que pide G1', () => {
+    it('viajan los tres cuando la OT es una reparacion', () => {
+      const p = construirPayloadCierre(
+        fila({
+          tipo_ot: 'REPARACION',
+          cierre_equipos: {
+            reparacion: {
+              falla_reportada: 'Fibra cortada en el poste',
+              solucion_aplicada: 'Se empalmo la fibra',
+              resultado: 'PARCIAL',
+            },
+          },
+        } as never),
+      );
+      expect(p).toMatchObject({
+        falla_reportada: 'Fibra cortada en el poste',
+        solucion_aplicada: 'Se empalmo la fibra',
+        resultado: 'PARCIAL',
+      });
+    });
+
+    it('conviven con los equipos en la misma columna', () => {
+      // Las dos secciones comparten `cierre_equipos`. Si una pisa a la otra,
+      // G1 recibe el cierre a medias y no se nota hasta que reclaman.
+      const p = construirPayloadCierre(
+        fila({
+          tipo_ot: 'REPARACION',
+          cierre_equipos: {
+            retirados: [{ numero_serie: 'ONT-9', accion: 'RETIRADO_PARA_DIAGNOSTICO', estado_g1: 'En revisión' }],
+            reparacion: { falla_reportada: 'ONT quemada', solucion_aplicada: 'Se reemplazo', resultado: 'RESUELTO' },
+          },
+        } as never),
+      );
+      expect(p.equipos_retirados).toHaveLength(1);
+      expect(p.falla_reportada).toBe('ONT quemada');
+    });
+
+    it('van en null en una OT sin seccion de reparacion', () => {
+      // Parte del contrato: el mismo payload lo recibe G8, que no los usa.
+      const p = construirPayloadCierre(fila({ cierre_equipos: null } as never));
+      expect(p.falla_reportada).toBeNull();
+      expect(p.solucion_aplicada).toBeNull();
+      expect(p.resultado).toBeNull();
+    });
   });
 
   it('con el cliente, lo informa con rut y nombre', () => {

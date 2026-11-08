@@ -7,19 +7,36 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  MinLength,
   IsBoolean,
   IsInt,
   IsPositive,
   Matches,
   IsUrl,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ACCION_EQUIPO,
   DIAGNOSTICO_RETIRO,
   type AccionEquipo,
   type DiagnosticoRetiro,
 } from '../estado-equipo.constants.js';
+import {
+  LARGO_MAX_TEXTO_REPARACION,
+  LARGO_MIN_TEXTO_REPARACION,
+  RESULTADO_REPARACION,
+  type ResultadoReparacion,
+} from '../reparacion-cierre.constants.js';
+
+/**
+ * Recorta los espacios ANTES de validar el largo.
+ *
+ * Sin esto, cinco espacios pasan `MinLength(5)` y G1 recibe un texto vacio;
+ * y un texto de 300 caracteres con un espacio al final se rechaza por pasarse
+ * del maximo cuando en realidad no se pasa.
+ */
+const recortado = () =>
+  Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value));
 
 export class FotoDto {
   @IsString()
@@ -159,4 +176,28 @@ export class CerrarOtDto {
   @IsString()
   @MaxLength(120)
   categoria_falla_otro?: string;
+
+  /**
+   * Que problema encontro el tecnico. Obligatorio en REPARACION (lo exige el
+   * servicio, que es quien conoce el `tipo_ot`); ausente en los demas tipos.
+   */
+  @IsOptional()
+  @IsString()
+  @recortado()
+  @MinLength(LARGO_MIN_TEXTO_REPARACION)
+  @MaxLength(LARGO_MAX_TEXTO_REPARACION)
+  falla_reportada?: string;
+
+  /** Que hizo para resolverlo. Mismas reglas que `falla_reportada`. */
+  @IsOptional()
+  @IsString()
+  @recortado()
+  @MinLength(LARGO_MIN_TEXTO_REPARACION)
+  @MaxLength(LARGO_MAX_TEXTO_REPARACION)
+  solucion_aplicada?: string;
+
+  /** Como quedo: RESUELTO, PARCIAL o SIN_SOLUCION. */
+  @IsOptional()
+  @IsIn(Object.values(RESULTADO_REPARACION))
+  resultado_reparacion?: ResultadoReparacion;
 }

@@ -91,6 +91,26 @@ export interface PayloadCierre {
   equipos_instalados: EquipoDeclarado[];
   equipos_retirados: EquipoDeclarado[];
   /**
+   * Cierre de REPARACION: que fallaba, que se hizo y como quedo. Los pidio G1
+   * el 8-nov-2026; sin ellos no registra el cierre de la reparacion y lo anota
+   * como la discrepancia `DATOS_REPARACION_INCOMPLETOS`.
+   *
+   * VAN NULL EN TODO LO QUE NO SEA REPARACION, y eso es parte del contrato:
+   * una instalacion o una baja no tienen diagnostico que informar, y este
+   * mismo payload lo recibe G8. Si fueran obligatorios, cualquier cierre que
+   * no sea una reparacion quedaria invalido --el mismo criterio que ya se
+   * aplico a los campos de correlacion de G8--.
+   *
+   * `resultado` se llama asi porque es el nombre que fijo G1. No confundir con
+   * `resultado_llamada`, que es la llamada de cortesia (CU-31) y no tiene nada
+   * que ver. En nuestro propio DTO de entrada el campo se llama
+   * `resultado_reparacion`, justamente para que en el formulario no se
+   * confundan; la traduccion ocurre en `construirPayloadCierre`.
+   */
+  falla_reportada: string | null;
+  solucion_aplicada: string | null;
+  resultado: string | null;
+  /**
    * P0-c del acuerdo con G8: correlacion con la solicitud de instalacion que
    * origino la OT. G8 la usa para activar al cliente del contrato correcto.
    *
