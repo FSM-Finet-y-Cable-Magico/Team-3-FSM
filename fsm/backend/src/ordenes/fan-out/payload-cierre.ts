@@ -1,6 +1,7 @@
 import type { Prisma } from '../../../generated/prisma/client.js';
 import type { EquipoDeclarado, PayloadCierre } from './fan-out-cierre.js';
 import { rutParaApi } from '../../common/utils/rut.util.js';
+import { conDireccionResuelta } from '../direccion-ot.js';
 
 /**
  * Lo que hay que leer de una OT cerrada para armar su payload. Lo usan el
@@ -30,6 +31,10 @@ export const INCLUDE_PAYLOAD_CIERRE = {
       id_prospecto_externo: true,
       id_contrato_externo: true,
       id_plan_externo: true,
+      // Para resolver la direccion cuando la OT no tiene fila propia en
+      // `direccion_servicio`, que es el caso de las que pide G8.
+      direccion_completa: true,
+      comuna: true,
     },
   },
 } satisfies Prisma.orden_trabajoInclude;
@@ -55,7 +60,7 @@ export function construirPayloadCierre(ot: OtParaPayload): PayloadCierre {
     cliente: ot.cliente
       ? { rut: rutParaApi(ot.cliente.rut), nombre: ot.cliente.nombre_completo }
       : null,
-    direccion: ot.direccion ?? null,
+    direccion: conDireccionResuelta(ot).direccion,
     categoria_falla: ot.categoria_falla
       ? { id_categoria: ot.categoria_falla.id_categoria, nombre: ot.categoria_falla.nombre }
       : null,

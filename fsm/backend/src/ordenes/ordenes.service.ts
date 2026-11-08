@@ -46,6 +46,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
 import { nombresEnBase, ROL } from '../auth/roles.constants.js';
+import { conDireccionResuelta } from './direccion-ot.js';
 
 /**
  * MOD RF-04: el cierre del tecnico deja la OT esperando que el jefe tecnico o
@@ -79,7 +80,17 @@ const MAX_EVIDENCIAS_DETALLE = 50;
  * telefono --lo que el tecnico necesita para saber a quien visita y llamarlo
  * antes de marcar cliente ausente--; ni RUT ni email.
  */
-const CONTACTO_SOLICITUD = { select: { nombre_completo: true, telefono: true } } as const;
+const CONTACTO_SOLICITUD = {
+  select: {
+    nombre_completo: true,
+    telefono: true,
+    // La direccion a visitar. Desde que dejamos de crear una fila en
+    // `direccion_servicio` --tabla del CRM, sin permiso de escritura en la
+    // base compartida-- esta es la unica copia. Ver direccion-ot.ts.
+    direccion_completa: true,
+    comuna: true,
+  },
+} as const;
 
 /**
  * MOD RF-32: el nivel vigente del semaforo es la ultima fila del cliente en
@@ -274,7 +285,7 @@ export class OrdenesService {
       include: OT_INCLUDE,
     });
     // Recien creada en la transaccion de arriba: la relectura siempre la encuentra.
-    return { ...creada!, advertencia_lista_roja };
+    return { ...conDireccionResuelta(creada!), advertencia_lista_roja };
   }
 
   async listarOT(
@@ -359,7 +370,7 @@ export class OrdenesService {
     const filas = ids.length
       ? await this.prisma.orden_trabajo.findMany({ where: { id_ot: { in: ids } }, include: OT_INCLUDE })
       : [];
-    const porId = new Map(filas.map((ot) => [ot.id_ot, ot]));
+    const porId = new Map(filas.map((ot) => [ot.id_ot, conDireccionResuelta(ot)]));
 
     const enEspera = ids.filter((id) => porId.get(id)?.estado === ESTADO_SIN_REAGENDAR);
     // Una sola consulta para toda la pagina, no una por OT.
@@ -565,7 +576,7 @@ export class OrdenesService {
     // llegarian al front como "3.00" o "-21.50". Se normalizan a numero aqui
     // para que el tipo declarado en la vista sea el que realmente recibe.
     return {
-      ...ot,
+      ...conDireccionResuelta(ot),
       potencia_optica_dbm:
         ot.potencia_optica_dbm === null ? null : Number(ot.potencia_optica_dbm),
       materiales: ot.materiales.map((material) => ({
@@ -906,6 +917,9 @@ export class OrdenesService {
         fotos: true,
         materiales: { include: { tipo_equipo: { select: { nombre: true } } } },
         llamada: true,
+        // Para resolver la direccion de una OT de G8, que no tiene fila en
+        // `direccion_servicio`. Ver direccion-ot.ts.
+        solicitud_integracion: CONTACTO_SOLICITUD,
       },
     });
 
@@ -928,7 +942,11 @@ export class OrdenesService {
       : null;
 
     this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
-    return { ...otActualizada, advertencia_potencia, alerta_reparaciones_30_dias };
+    return {
+      ...(otActualizada ? conDireccionResuelta(otActualizada) : otActualizada),
+      advertencia_potencia,
+      alerta_reparaciones_30_dias,
+    };
   }
 
   /**

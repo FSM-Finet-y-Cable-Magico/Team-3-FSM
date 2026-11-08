@@ -111,14 +111,25 @@ describe('detalle de OT para la vista', () => {
     expect(ot.potencia_optica_dbm).toBeNull();
   });
 
-  it('trae nombre y telefono de la persona cuando la OT la pidio G8 (P0-d)', async () => {
+  it('trae nombre, telefono y direccion cuando la OT la pidio G8 (P0-d)', async () => {
     // La OT de instalacion de G8 no tiene cliente: sin esto el tecnico no sabe
-    // a quien visita ni puede llamarlo antes de marcar cliente ausente. Solo
-    // nombre y telefono: ni RUT ni email, por minima exposicion.
+    // a quien visita ni puede llamarlo antes de marcar cliente ausente. Ni RUT
+    // ni email, por minima exposicion.
+    //
+    // La direccion tambien sale de aca desde que dejamos de escribir
+    // `direccion_servicio`, que es del CRM (ver ordenes/direccion-ot.ts). Sin
+    // estos dos campos el tecnico no sabe adonde ir.
     await service.obtenerOT(1, { userId: 1, id_empresa: 1, rol: 'ADMIN' });
     const { solicitud_integracion } = findFirst.mock.calls[1][0].include;
 
-    expect(solicitud_integracion).toEqual({ select: { nombre_completo: true, telefono: true } });
+    expect(solicitud_integracion).toEqual({
+      select: {
+        nombre_completo: true,
+        telefono: true,
+        direccion_completa: true,
+        comuna: true,
+      },
+    });
   });
 
   it('acota las evidencias y los materiales que lee del detalle', async () => {
@@ -152,11 +163,16 @@ describe('listado de OT para terreno', () => {
     service = moduleRef.get(OrdenesService);
   });
 
-  it('cada OT trae nombre y telefono de la persona que pidio G8 (P0-d)', async () => {
+  it('cada OT trae nombre, telefono y direccion de la solicitud de G8 (P0-d)', async () => {
     // La tarjeta de terreno se arma desde el listado, no desde el detalle.
     await service.listarOT(1, {});
     expect(findMany.mock.calls[0][0].include.solicitud_integracion).toEqual({
-      select: { nombre_completo: true, telefono: true },
+      select: {
+        nombre_completo: true,
+        telefono: true,
+        direccion_completa: true,
+        comuna: true,
+      },
     });
   });
 

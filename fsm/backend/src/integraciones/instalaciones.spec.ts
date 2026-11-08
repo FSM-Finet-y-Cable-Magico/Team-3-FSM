@@ -156,22 +156,18 @@ describe('InstalacionesService', () => {
     service = moduleRef.get(InstalacionesService);
   });
 
-  it('crea la OT de instalacion sin cliente, apuntando a una direccion propia sin cliente', async () => {
+  it('crea la OT de instalacion sin cliente y SIN escribir en direccion_servicio', async () => {
+    // `direccion_servicio` es del CRM de G8 y en la base compartida solo
+    // tenemos SELECT: el INSERT falla y con el toda la solicitud. La direccion
+    // se guarda una sola vez, en la propia solicitud, y se arma al leer (ver
+    // ordenes/direccion-ot.ts). Antes estaba escrita dos veces.
     const r = await service.crear(scopeG8, ejemplo());
 
-    expect(tx.direccion_servicio.create).toHaveBeenCalledWith({
-      data: {
-        id_cliente: null,
-        direccion_completa: 'Av. Ejemplo 1234',
-        comuna: 'La Pintana',
-        ciudad: 'Santiago',
-        es_principal: false,
-      },
-    });
+    expect(tx.direccion_servicio.create).not.toHaveBeenCalled();
     expect(tx.orden_trabajo.create.mock.calls[0][0].data).toMatchObject({
       id_empresa: 1,
       id_cliente: null,
-      id_direccion: 501,
+      id_direccion: null,
       tipo_ot: 'INSTALACION',
       estado: 'PENDIENTE',
     });

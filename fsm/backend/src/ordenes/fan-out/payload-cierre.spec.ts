@@ -73,6 +73,8 @@ describe('construirPayloadCierre', () => {
           id_prospecto_externo: 45,
           id_contrato_externo: 92,
           id_plan_externo: 15,
+          direccion_completa: 'Los Alerces 455',
+          comuna: 'Quilpué',
         },
       }),
     );
@@ -84,6 +86,38 @@ describe('construirPayloadCierre', () => {
       id_contrato: 92,
       id_plan: 15,
     });
+  });
+
+  it('la OT de G8 informa la direccion aunque no tenga fila propia', () => {
+    // Desde que no escribimos `direccion_servicio` --tabla del CRM, sin
+    // permiso en la base compartida-- la direccion sale de la solicitud.
+    // Si esto se rompe, G1 recibe un cierre sin direccion y no se nota hasta
+    // que reclaman.
+    const p = construirPayloadCierre(
+      fila({
+        direccion: null,
+        solicitud_integracion: {
+          request_id: 'r', trace_id: 't',
+          id_prospecto_externo: 1, id_contrato_externo: 2, id_plan_externo: null,
+          direccion_completa: 'Los Alerces 455', comuna: 'Quilpué',
+        },
+      } as never),
+    );
+    expect(p.direccion).toEqual({ direccion_completa: 'Los Alerces 455', comuna: 'Quilpué' });
+  });
+
+  it('si la OT tiene direccion propia, la solicitud no la pisa', () => {
+    const p = construirPayloadCierre(
+      fila({
+        direccion: { direccion_completa: 'Av. Ejemplo 1234', comuna: 'La Pintana' },
+        solicitud_integracion: {
+          request_id: 'r', trace_id: 't',
+          id_prospecto_externo: 1, id_contrato_externo: 2, id_plan_externo: null,
+          direccion_completa: 'OTRA 999', comuna: 'Otra',
+        },
+      } as never),
+    );
+    expect(p.direccion).toEqual({ direccion_completa: 'Av. Ejemplo 1234', comuna: 'La Pintana' });
   });
 
   it('con el cliente, lo informa con rut y nombre', () => {
