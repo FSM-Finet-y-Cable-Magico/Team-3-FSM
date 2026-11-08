@@ -32,6 +32,12 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/generated ./generated
 COPY --from=builder /app/dist ./dist
+# El código fuente, solo para `npm run seed:global`. Ese script importa el
+# mapa de roles de src/auth/roles.constants.ts, y tsx lo resuelve desde .ts.
+# Sin esto el seed revienta dentro del contenedor con "Cannot find module",
+# y el contenedor es el único lugar desde donde se alcanza la base global.
+# No afecta al arranque normal, que corre desde dist/.
+COPY --from=builder /app/src ./src
 
 COPY --from=builder /app/docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
