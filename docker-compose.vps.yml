@@ -28,7 +28,19 @@
 
 services:
   db:
-    image: postgres:16-alpine
+    # 18 para igualar a Railway (18.6), que es el motor sobre el que el sistema
+    # viene corriendo. Dos razones:
+    #
+    #  1. `pg_dump` no puede volcar un servidor mas nuevo que el. Con la 16 no
+    #     se podia traer el respaldo de Railway: "aborting because of server
+    #     version mismatch".
+    #  2. Cuando esta base pase a ser la de FiNet, conviene que sea la misma
+    #     version en la que el sistema ya se probo, y no una dos mayores atras.
+    #
+    # OJO al cambiar esta version: Postgres no arranca sobre un volumen creado
+    # por otra mayor ("database files are incompatible with server"). Hay que
+    # borrar el volumen `datos_postgres` y volver a poblar.
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?Definí POSTGRES_USER en el .env del servidor}
@@ -51,12 +63,16 @@ services:
     build:
       context: ./fsm/backend
     restart: unless-stopped
-    # En la red del host, no en una bridge. Con Docker rootless un contenedor
-    # en bridge NO alcanza un puerto atado al 127.0.0.1 del host: ni siquiera
-    # con `host.docker.internal`, que resuelve el nombre pero no conecta, y
-    # Prisma corta con `P1001: Can't reach database server`. En la red del
-    # host si llega, y con eso el backend puede usar cualquier base publicada
-    # en el loopback de la VPS: la del servicio `db` de aca o la de otro grupo.
+    # En la red del host, no en una bridge. Dentro de un contenedor en bridge
+    # `127.0.0.1` es el loopback DEL CONTENEDOR, no el del host, asi que un
+    # servicio atado al 127.0.0.1 de la VPS queda fuera de alcance. Tampoco
+    # sirve `host.docker.internal`: resuelve a la IP del gateway de la bridge,
+    # donde ese servicio tampoco escucha. Prisma corta con
+    # `P1001: Can't reach database server`.
+    #
+    # En la red del host, `127.0.0.1` ya es el de la VPS y el backend puede
+    # usar cualquier base publicada en el loopback: la del servicio `db` de
+    # aca o la de otro grupo (G8 publico la suya en el 15432).
     #
     # El mapeo de `ports` se ignora en esta red, asi que el puerto lo define
     # PORT y la interfaz la acota HOST. El resultado es el mismo que antes
