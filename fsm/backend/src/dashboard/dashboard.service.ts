@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
+import { FILTRO_ESTADO_ACTIVO } from '../common/utils/estado-activo.util.js';
 import {
   DIAS_VENTANA_RECURRENCIA,
   UMBRAL_REPARACIONES_RECURRENTES,
@@ -81,7 +82,8 @@ export class DashboardService {
       }),
 
       this.prisma.cliente.count({
-        where: { id_empresa, estado: 'ACTIVO' },
+        // "Activo" en la base global, "ACTIVO" en la nuestra: ver estado-activo.util.ts.
+        where: { id_empresa, estado: FILTRO_ESTADO_ACTIVO },
       }),
 
       this.prisma.orden_trabajo.count({
@@ -246,7 +248,7 @@ export class DashboardService {
     const filas = await Promise.all(
       empresas.map(async (e) => {
         const [clientes_activos, ot_activas, ot_por_aprobar, ot_completadas_30_dias] = await Promise.all([
-          this.prisma.cliente.count({ where: { id_empresa: e.id_empresa, estado: 'ACTIVO' } }),
+          this.prisma.cliente.count({ where: { id_empresa: e.id_empresa, estado: FILTRO_ESTADO_ACTIVO } }),
           this.prisma.orden_trabajo.count({
             where: { id_empresa: e.id_empresa, estado: { notIn: ['COMPLETADA', 'CANCELADA'] } },
           }),

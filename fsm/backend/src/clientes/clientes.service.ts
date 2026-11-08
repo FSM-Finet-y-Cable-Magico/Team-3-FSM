@@ -1,4 +1,5 @@
 import { normalizarPaginacion } from '../common/utils/paginacion.util.js';
+import { FILTRO_ESTADO_ACTIVO } from '../common/utils/estado-activo.util.js';
 import {
   Injectable,
   BadRequestException,
@@ -141,7 +142,8 @@ export class ClientesService {
           where: { es_principal: true },
         },
         contratos: {
-          where: { estado: 'ACTIVO', id_empresa },
+          // "Activo" en la base global, "ACTIVO" en la nuestra: ver estado-activo.util.ts.
+          where: { estado: FILTRO_ESTADO_ACTIVO, id_empresa },
           include: { plan: true },
           orderBy: { fecha_inicio: 'desc' },
           take: MAX_CONTRATOS_ACTIVOS,

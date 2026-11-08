@@ -55,7 +55,10 @@ describe('CU-34: consolidado de empresas', () => {
 
   it('cuenta clientes ACTIVOS y las completadas de los ultimos 30 dias', async () => {
     await service.consolidado(new Date('2026-09-29T15:00:00Z'));
-    expect(clienteCount.mock.calls[0][0]).toEqual({ where: { id_empresa: 2, estado: 'ACTIVO' } });
+    // Sin distinguir mayusculas: la base global guarda "Activo".
+    expect(clienteCount.mock.calls[0][0]).toEqual({
+      where: { id_empresa: 2, estado: { equals: 'ACTIVO', mode: 'insensitive' } },
+    });
     const completadas = otCount.mock.calls.map((c) => c[0] as any).find((a) => a.where.estado === 'COMPLETADA');
     expect(completadas.where.fecha_completada).toEqual({ gte: new Date('2026-08-30T15:00:00Z') });
   });
