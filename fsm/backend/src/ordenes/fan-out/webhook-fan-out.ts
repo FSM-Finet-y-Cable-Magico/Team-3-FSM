@@ -1,6 +1,9 @@
 import { Logger } from '@nestjs/common';
 import type { FanOutCierre, PayloadCierre } from './fan-out-cierre.js';
 
+/** Cuanto del cuerpo de un rechazo entra al log: alcanza para un mensaje de validacion. */
+const MAX_CUERPO_EN_LOG = 500;
+
 interface Destino {
   nombre: string;
   url: string;
@@ -57,8 +60,12 @@ export class WebhookFanOut implements FanOutCierre {
         }
         // 4xx = discrepancia de negocio, no se reintenta (G1 la registra como ajuste).
         if (res.status < 500) {
+          // Como no se reintenta, este log es lo unico que queda del rechazo:
+          // va con el cuerpo, que es donde el destino dice POR QUE rechazo.
+          const detalle = await this.cuerpoBreve(res);
           this.logger.warn(
-            `cierre ${payload.id_ot} → ${destino.nombre}: HTTP ${res.status}, no se reintenta`,
+            `cierre ${payload.id_ot} → ${destino.nombre}: HTTP ${res.status}, no se reintenta` +
+              (detalle ? ` · ${detalle}` : ''),
           );
           return;
         }
@@ -92,6 +99,19 @@ export class WebhookFanOut implements FanOutCierre {
    * Resuelve `{id_ot}` en la URL del destino. Se codifica el valor aunque hoy
    * sea siempre un entero: la URL viene de configuración y no de nosotros.
    */
+  /**
+   * El cuerpo de una respuesta de error, en una linea y recortado. Nunca
+   * lanza: si no se puede leer, el log queda con el codigo solo, como antes.
+   */
+  private async cuerpoBreve(res: Response): Promise<string> {
+    try {
+      const texto = (await res.text()).replace(/\s+/g, ' ').trim();
+      return texto.length > MAX_CUERPO_EN_LOG ? `${texto.slice(0, MAX_CUERPO_EN_LOG)}…` : texto;
+    } catch {
+      return '';
+    }
+  }
+
   private urlDe(destino: Destino, payload: PayloadCierre): string {
     return destino.url.replace(/\{id_ot\}/g, encodeURIComponent(String(payload.id_ot)));
   }

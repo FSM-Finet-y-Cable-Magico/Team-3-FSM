@@ -214,3 +214,54 @@ describe('fan-out del cierre · la URL del destino', () => {
     expect(init.method).toBe('POST');
   });
 });
+
+/**
+ * Un 4xx no se reintenta y antes el log decia solo "HTTP 400". El 8-nov-2026
+ * G8 rechazo todos los cierres y para saber por que hubo que reenviar el
+ * payload a mano: la causa ("property falla_reportada should not exist")
+ * estaba en el cuerpo de la respuesta, que nadie guardaba.
+ */
+describe('fan-out del cierre · cuerpo de un rechazo 4xx', () => {
+  let warn: string[];
+  const payload = { id_ot: 4, clave_idempotencia: '4:x' } as unknown as PayloadCierre;
+
+  const rechazar = (status: number, texto: () => Promise<string>) => {
+    global.fetch = jest.fn(async () => ({ ok: false, status, text: texto })) as unknown as typeof fetch;
+  };
+
+  beforeEach(() => {
+    warn = [];
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation((m: unknown) => { warn.push(String(m)); });
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+  });
+
+  it('registra el cuerpo de la respuesta junto al codigo', async () => {
+    rechazar(400, async () => '{"message":["property falla_reportada should not exist"],"statusCode":400}');
+
+    await new WebhookFanOut([{ nombre: 'G8', url: 'http://g8/cierre' }]).notificar(payload);
+
+    expect(warn).toHaveLength(1);
+    expect(warn[0]).toContain('cierre 4 → G8: HTTP 400, no se reintenta');
+    expect(warn[0]).toContain('property falla_reportada should not exist');
+  });
+
+  it('recorta un cuerpo largo para no inundar el log', async () => {
+    rechazar(422, async () => 'x'.repeat(5000));
+
+    await new WebhookFanOut([{ nombre: 'G1', url: 'http://g1/cierre' }]).notificar(payload);
+
+    expect(warn[0].length).toBeLessThan(700);
+    expect(warn[0]).toContain('…');
+  });
+
+  it('si el cuerpo no se puede leer, igual registra el codigo', async () => {
+    rechazar(400, async () => {
+      throw new Error('stream cortado');
+    });
+
+    await new WebhookFanOut([{ nombre: 'G8', url: 'http://g8/cierre' }]).notificar(payload);
+
+    expect(warn).toEqual(['cierre 4 → G8: HTTP 400, no se reintenta']);
+  });
+});
