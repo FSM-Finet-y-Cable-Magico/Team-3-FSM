@@ -14,6 +14,7 @@ import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 import type { PayloadCierre } from '../ordenes/fan-out/fan-out-cierre.js';
 import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from '../ordenes/fan-out/payload-cierre.js';
 import { MOMENTO_FAN_OUT, estadosAvisados, type MomentoFanOut } from '../ordenes/fan-out/momento-fan-out.js';
+import { conDireccionResuelta } from '../ordenes/direccion-ot.js';
 
 const MAX_RANGO_DIAS = 90;
 
@@ -135,12 +136,22 @@ export class IntegracionesService {
           cliente: { select: { rut: true, nombre_completo: true, telefono: true } },
           tecnico: { select: { id_usuario: true, nombre_completo: true } },
           direccion: { select: { direccion_completa: true, comuna: true } },
+          // Las OT que pide G8 no tienen fila en `direccion_servicio`: su
+          // direccion vive en la solicitud. Ver ordenes/direccion-ot.ts.
+          solicitud_integracion: { select: { direccion_completa: true, comuna: true } },
         },
       }),
       this.prisma.orden_trabajo.count({ where }),
     ]);
 
-    return { data: data.map(conClienteDeContrato), total, page, limit };
+    // conDireccionResuelta primero: la OT de G8 no tiene fila en
+    // `direccion_servicio` y su direccion vive en la solicitud.
+    return {
+      data: data.map((f) => conClienteDeContrato(conDireccionResuelta(f))),
+      total,
+      page,
+      limit,
+    };
   }
 
   /** Cierres (OT COMPLETADAS) en un rango ≤90 días, con materiales. Para T1-CU-90. */
