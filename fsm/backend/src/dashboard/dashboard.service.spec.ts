@@ -60,6 +60,16 @@ describe('dashboard · contador de clientes con reparaciones recurrentes', () =>
     return llamada.where;
   };
 
+  it('cuenta los clientes activos sin distinguir mayusculas (la base global guarda "Activo")', async () => {
+    await service.indicadoresDelDia(1);
+
+    // `count` lo comparten cliente y orden_trabajo: se busca la llamada entre todas.
+    const llamadas = (count.mock.calls as unknown[][]).map((c) => c[0]);
+    expect(llamadas).toContainEqual({
+      where: { id_empresa: 1, estado: { equals: 'ACTIVO', mode: 'insensitive' } },
+    });
+  });
+
   it('cuenta solo reparaciones CERRADAS, no las que siguen abiertas', async () => {
     await service.indicadoresDelDia(1);
 

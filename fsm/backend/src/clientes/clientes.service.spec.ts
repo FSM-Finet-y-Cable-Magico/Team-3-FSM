@@ -81,7 +81,8 @@ describe('servicios activos de la ficha de cliente', () => {
     await service.consultarPorRut(RUT, 7);
     const { contratos } = findFirst.mock.calls[0][0].include;
 
-    expect(contratos.where).toEqual({ estado: 'ACTIVO', id_empresa: 7 });
+    // Sin distinguir mayusculas: la base global guarda "Activo".
+    expect(contratos.where).toEqual({ estado: { equals: 'ACTIVO', mode: 'insensitive' }, id_empresa: 7 });
     expect(contratos.orderBy).toEqual({ fecha_inicio: 'desc' });
     expect(contratos.take).toBeGreaterThan(0);
   });

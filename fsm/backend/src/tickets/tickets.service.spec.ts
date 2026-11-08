@@ -42,6 +42,8 @@ describe('TicketsService', () => {
   const clientesEnBase = [
     { id_cliente: 10, rut: '123456785', estado: 'ACTIVO', nombre_completo: 'Ana Soto' },
     { id_cliente: 11, rut: '11111111-1', estado: 'SUSPENDIDO', nombre_completo: 'Luis Paz' },
+    // Como lo guarda la base global `finet_global_validacion`: "Activo", no "ACTIVO".
+    { id_cliente: 12, rut: '99999999-9', estado: 'Activo', nombre_completo: 'Cliente QA' },
   ];
 
   const prisma: any = {
@@ -145,6 +147,10 @@ describe('TicketsService', () => {
     it('sin servicio activo responde el mensaje del CU, tambien si el cliente esta suspendido', async () => {
       await expect(crear({ rut_cliente: '22222222-2' })).rejects.toThrow(MENSAJE_SIN_SERVICIO);
       await expect(crear({ rut_cliente: '11111111-1' })).rejects.toThrow(MENSAJE_SIN_SERVICIO);
+    });
+
+    it('acepta un cliente activo aunque el estado venga como "Activo" (base global)', async () => {
+      await expect(crear({ rut_cliente: '99999999-9' })).resolves.toMatchObject({ id_cliente: 12 });
     });
 
     it('encuentra al cliente aunque el RUT se haya guardado con otra grafia', async () => {

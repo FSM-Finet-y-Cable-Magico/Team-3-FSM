@@ -4,6 +4,7 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizarPaginacion } from '../common/utils/paginacion.util.js';
 import { validarRut, variantesRut } from '../common/utils/rut.util.js';
+import { esActivo } from '../common/utils/estado-activo.util.js';
 import {
   ESTADO_TICKET,
   ESTADOS_TICKET_ABIERTOS,
@@ -76,7 +77,8 @@ export class TicketsService {
     });
     // Precondicion del CU: "el cliente tiene servicio activo". Un cliente
     // suspendido o dado de baja recibe el mismo mensaje que uno inexistente.
-    if (!cliente || cliente.estado !== 'ACTIVO') throw new NotFoundException(MENSAJE_SIN_SERVICIO);
+    // "Activo" en la base global, "ACTIVO" en la nuestra: ver estado-activo.util.ts.
+    if (!cliente || !esActivo(cliente.estado)) throw new NotFoundException(MENSAJE_SIN_SERVICIO);
 
     const categoria = await this.categoria(dto.id_categoria);
 
