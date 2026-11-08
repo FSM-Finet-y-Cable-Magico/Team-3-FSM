@@ -60,7 +60,7 @@ const TRANSICIONES_VALIDAS: Record<string, string[]> = {
   PENDIENTE: ['ASIGNADA', 'CANCELADA'],
   ASIGNADA: ['EN_CURSO', 'PENDIENTE', 'PENDIENTE_CLIENTE_AUSENTE', 'CANCELADA'],
   // A COMPLETADA no se llega por aca: solo por el cierre del tecnico
-  // (cerrarOT, que exige fotos, llamada y potencia) y la aprobacion del jefe
+  // (cerrarOT, que exige fotos y potencia) y la aprobacion del jefe
   // tecnico (aprobarCierre). Antes EN_CURSO → COMPLETADA estaba abierto y
   // salteaba las dos cosas.
   EN_CURSO: ['PENDIENTE_CLIENTE_AUSENTE', 'CANCELADA'],
@@ -871,17 +871,8 @@ export class OrdenesService {
         });
       }
 
-      // CU-31: si el tecnico no llamo desde el domicilio, lo hace despues el
-      // jefe tecnico desde el panel de llamadas de cortesia.
-      if (dto.resultado_llamada) {
-        await tx.llamada_cortes.create({
-          data: {
-            id_ot,
-            resultado: dto.resultado_llamada,
-            observaciones: dto.obs_llamada ?? null,
-          },
-        });
-      }
+      // CU-31: la llamada de cortesia no se registra al cerrar. La hace siempre
+      // el jefe tecnico, con la OT completada, desde el panel de llamadas.
 
       await tx.orden_trabajo.update({
         where: { id_ot },

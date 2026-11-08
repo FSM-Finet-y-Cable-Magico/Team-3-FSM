@@ -150,18 +150,10 @@ export class CerrarOtDto {
   @IsNotEmpty()
   potencia_optica_dbm: number;
 
-  /**
-   * Opcional desde CU-31: la llamada de cortesia la hace el jefe tecnico con la
-   * OT ya completada. Si el tecnico la hizo en el domicilio, la registra aca.
-   */
-  @IsOptional()
-  @IsIn(['CONFORME', 'NO_CONFORME'])
-  resultado_llamada?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  obs_llamada?: string;
+  // La llamada de cortesia (CU-31) NO va en el cierre: la registra siempre el
+  // jefe tecnico, con la OT ya completada, desde `POST /ordenes/:id/llamada-cortesia`.
+  // Si un cliente viejo manda `resultado_llamada` aca, el ValidationPipe
+  // (whitelist) lo descarta.
 
   @IsOptional()
   @IsBoolean()

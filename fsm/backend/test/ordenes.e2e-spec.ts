@@ -365,7 +365,7 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-  it.each(['http', 'https'])('cierre con %s persiste evidencia, material, llamada, historial y auditoría', async protocolo => {
+  it.each(['http', 'https'])('cierre con %s persiste evidencia, material, historial y auditoría (sin llamada)', async protocolo => {
     const dto = cierre(); dto.fotos[0].url_cloudinary = protocolo + '://example.com/foto.jpg';
     const res = await cerrar(1, 'TECNICO', dto).expect(201);
     // MOD RF-04: el cierre del tecnico espera la aprobacion del jefe tecnico.
@@ -382,7 +382,10 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
     // G3 rompa la prueba en vez de duplicar el movimiento en el lado de G1.
     expect(prisma.stock_consumible.update).not.toHaveBeenCalled();
     expect(prisma.movimiento_inventario.create).not.toHaveBeenCalled();
-    expect(prisma.llamada_cortes.create).toHaveBeenCalled();
+    // CU-31: la llamada de cortesia la registra SIEMPRE el jefe tecnico, con la
+    // OT ya completada. El body de `cierre()` trae `resultado_llamada` a
+    // proposito: un frontend viejo puede seguir mandandolo y se ignora.
+    expect(prisma.llamada_cortes.create).not.toHaveBeenCalled();
     expect(prisma.historial_ot.create).toHaveBeenCalled();
     expect(prisma.log_auditoria.create).toHaveBeenCalled();
   });
