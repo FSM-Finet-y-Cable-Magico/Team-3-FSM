@@ -14,6 +14,7 @@ import { LoginDto } from './dto/login.dto.js';
 import { CambiarPasswordDto } from './dto/cambiar-password.dto.js';
 import { CrearUsuarioDto } from './dto/crear-usuario.dto.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
+import { codigoDeRol, nombresEnBase, type CodigoRol } from './roles.constants.js';
 
 @Injectable()
 export class AuthService {
@@ -65,7 +66,11 @@ export class AuthService {
       include: { rol: true },
     });
 
-    const nombreRol = usuarioRol?.rol?.nombre_rol ?? '';
+    // Se traduce aca, una sola vez: el codigo va al token y de ahi lo leen
+    // los 109 decoradores `@Roles`, que no se enteran de como lo nombra la
+    // base. Contra nuestra propia base no hace nada, porque ahi `nombre_rol`
+    // ya es el codigo.
+    const nombreRol = codigoDeRol(usuarioRol?.rol?.nombre_rol);
 
     const payload = {
       userId: usuario.id_usuario,
@@ -133,8 +138,11 @@ export class AuthService {
         },
       });
 
-      const rol = await tx.rol.findUnique({
-        where: { nombre_rol: dto.rol },
+      // `dto.rol` es el codigo interno (ADMIN, TECNICO...). En la base
+      // compartida la fila se llama distinto, asi que se buscan todos los
+      // nombres equivalentes. findFirst y no findUnique: `in` devuelve lista.
+      const rol = await tx.rol.findFirst({
+        where: { nombre_rol: { in: nombresEnBase(dto.rol as CodigoRol) } },
       });
 
       if (rol) {
@@ -184,7 +192,7 @@ export class AuthService {
       email: u.email,
       fecha_creacion: u.fecha_creacion,
       activo: u.activo,
-      rol: u.roles[0]?.rol?.nombre_rol ?? '',
+      rol: codigoDeRol(u.roles[0]?.rol?.nombre_rol),
     }));
   }
 
