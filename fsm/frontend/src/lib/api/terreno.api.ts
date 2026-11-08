@@ -84,6 +84,17 @@ export async function obtenerOpcionesEquipo(token: string): Promise<OpcionesEqui
   return fetchApi(token, `${API_URL}/api/ordenes/acciones-equipo`);
 }
 
+/** Un equipo que G1 le asigno al tecnico y que todavia lleva encima. */
+export interface EquipoAsignado {
+  numero_serie: string;
+  modelo: string | null;
+  tipo: string | null;
+}
+
+export async function obtenerMisEquipos(token: string): Promise<EquipoAsignado[]> {
+  return fetchApi(token, `${API_URL}/api/ordenes/mis-equipos`);
+}
+
 export async function cerrarOT(token: string, id_ot: number, dto: CerrarOTDto): Promise<Record<string, unknown>> {
   return fetchApi(token, `${API_URL}/api/ordenes/${id_ot}/cerrar`, {
     method: 'POST',

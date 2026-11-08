@@ -51,6 +51,9 @@
 
   // Paso 3 - Equipos individualizables (acuerdo con G1)
   let opcionesEquipo = $state<terrenoApi.OpcionesEquipo | null>(null);
+  // Lo que el tecnico lleva encima, para sugerirlo al escribir la serie. Solo
+  // sugiere: un equipo que se retira de la casa del cliente no esta aca.
+  let misEquipos = $state<terrenoApi.EquipoAsignado[]>([]);
   let equipos = $state<terrenoApi.EquipoOt[]>([]);
 
   // Paso 3 - Cierre
@@ -184,7 +187,7 @@
     userId = state.usuario?.userId ?? 0;
 
     try {
-      const [otData, matsData, catsData, opcEquipo] = await Promise.all([
+      const [otData, matsData, catsData, opcEquipo, asignados] = await Promise.all([
         ordenesApi.obtenerOT(token, idOT),
         terrenoApi.obtenerMateriales(token),
         ordenesApi.listarCategoriasFalla(token),
@@ -194,6 +197,8 @@
         // lista de opciones es peor que cerrar sin esa seccion. Es el mismo
         // criterio con el que el contrato con G1 no exige el diagnostico.
         terrenoApi.obtenerOpcionesEquipo(token).catch(() => null),
+        // Tampoco este: sin sugerencias se escribe la serie a mano, como antes.
+        terrenoApi.obtenerMisEquipos(token).catch(() => [] as terrenoApi.EquipoAsignado[]),
       ]);
       if (destruido) return;
       if (otData.id_tecnico !== userId) {
@@ -208,6 +213,7 @@
       materiales = matsData;
       categoriasFalla = catsData;
       opcionesEquipo = opcEquipo;
+      misEquipos = asignados;
     } catch (err) {
       errorInit = err instanceof Error ? err.message : 'Error al cargar datos';
     } finally {
@@ -589,6 +595,13 @@
             >+ Agregar</button>
           </div>
 
+          <!-- Una sola lista para todos los campos de serie (atributo `list`). -->
+          <datalist id="mis-equipos">
+            {#each misEquipos as e (e.numero_serie)}
+              <option value={e.numero_serie}>{[e.tipo, e.modelo].filter(Boolean).join(' · ')}</option>
+            {/each}
+          </datalist>
+
           {#each equipos as equipo, i (i)}
             <div class="border border-slate-200 rounded-xl p-3 space-y-3">
               <div class="flex items-center justify-between">
@@ -610,12 +623,18 @@
                   id="serie-{i}"
                   type="text"
                   autocapitalize="characters"
+                  list="mis-equipos"
                   value={equipo.numero_serie}
                   oninput={(e) => normalizarSerie(i, e.currentTarget.value)}
                   placeholder="Ej: ALTX1234ABCD"
                   class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base font-mono
                          focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                {#if misEquipos.length > 0}
+                  <p class="text-xs text-slate-500 mt-1">
+                    Al escribir le sugerimos los {misEquipos.length} equipos que lleva asignados.
+                  </p>
+                {/if}
               </div>
 
               <div>

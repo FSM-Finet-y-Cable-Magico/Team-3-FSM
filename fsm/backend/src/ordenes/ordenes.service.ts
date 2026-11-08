@@ -11,7 +11,8 @@ import { ReasignarTecnicoDto } from './dto/reasignar-tecnico.dto.js';
 import { CambiarPrioridadDto } from './dto/cambiar-prioridad.dto.js';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
-import { ACCION_A_ESTADO_G1 } from './estado-equipo.constants.js';
+import { ACCION_A_ESTADO_G1, ORIGENES_VALIDOS_G1 } from './estado-equipo.constants.js';
+import { problemaDeEquipo, type EquipoAValidar } from './validar-equipos.js';
 import type { ReparacionDeclarada } from './reparacion-cierre.constants.js';
 import { FAN_OUT_CIERRE, type FanOutCierre, type EquipoDeclarado } from './fan-out/fan-out-cierre.js';
 import { cierreGuardado, construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payload-cierre.js';
@@ -819,9 +820,15 @@ export class OrdenesService {
       };
     }
 
-    // ACUERDO G1↔G3: los equipos individualizables van sobre numero_serie (G3
-    // no lee unidad_equipo). Se mapean a la accion semantica + literal tentativo
-    // de G1 y viajan en el fan-out; G1 aplica la transicion.
+    // ACUERDO G1↔G3: los equipos individualizables van sobre numero_serie. Se
+    // mapean a la accion semantica + literal de G1 y viajan en el fan-out; G1
+    // aplica la transicion. Antes, la serie se valida aca contra el inventario
+    // (ver validar-equipos.ts): el tecnico se entera en el domicilio y no
+    // despues de que G1 procese el cierre.
+    await this.validarSeries([...(dto.equipos_instalados ?? []), ...(dto.equipos_retirados ?? [])], {
+      id_empresa,
+      id_tecnico: userId,
+    });
     const conEstadoG1 = (xs: CerrarOtDto['equipos_instalados']): EquipoDeclarado[] =>
       (xs ?? []).map((e) => ({
         numero_serie: e.numero_serie,
@@ -1499,6 +1506,45 @@ export class OrdenesService {
           }
         : null,
     }));
+  }
+
+  /**
+   * Los equipos que el tecnico lleva encima: los que G1 le asigno y siguen en
+   * "Asignado a técnico". El formulario de cierre los sugiere al escribir la
+   * serie de un equipo instalado.
+   */
+  async misEquipos(user: UsuarioAutenticado) {
+    const unidades = await this.prisma.unidad_equipo.findMany({
+      where: {
+        id_empresa: user.id_empresa,
+        id_tecnico_asignado: user.userId,
+        estado: ORIGENES_VALIDOS_G1.INSTALADO_EN_CLIENTE[0],
+      },
+      select: { numero_serie: true, modelo: true, tipo_equipo: { select: { nombre: true } } },
+      orderBy: { numero_serie: 'asc' },
+    });
+    return unidades.map((u) => ({ numero_serie: u.numero_serie, modelo: u.modelo, tipo: u.tipo_equipo?.nombre ?? null }));
+  }
+
+  /**
+   * Valida contra `unidad_equipo` las series declaradas al cerrar. Junta los
+   * problemas de todos los equipos en un solo 400, para que el tecnico los
+   * corrija de una vez desde el celular. Las reglas, en validar-equipos.ts.
+   */
+  private async validarSeries(equipos: EquipoAValidar[], ctx: { id_empresa: number; id_tecnico: number }) {
+    if (equipos.length === 0) return;
+
+    const series = [...new Set(equipos.map((e) => e.numero_serie))];
+    const unidades = await this.prisma.unidad_equipo.findMany({
+      where: { numero_serie: { in: series } },
+      select: { numero_serie: true, estado: true, id_empresa: true, id_tecnico_asignado: true },
+    });
+    const porSerie = new Map(unidades.map((u) => [u.numero_serie, u]));
+
+    const problemas = equipos
+      .map((e) => problemaDeEquipo(e, porSerie.get(e.numero_serie), ctx))
+      .filter((p): p is string => p !== null);
+    if (problemas.length > 0) throw new BadRequestException(problemas.join('. '));
   }
 
   async listarCategoriasFalla() {

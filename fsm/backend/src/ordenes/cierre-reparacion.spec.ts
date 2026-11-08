@@ -58,6 +58,9 @@ describe('datos de cierre de reparacion (G1)', () => {
       findUnique: jest.fn(async () => ({ id_categoria: 3, nombre: 'Internet lento', sla_horas: 4 })),
     },
     tipo_equipo: { count: jest.fn(async () => 0) },
+    // Inventario vacio: un retiro de una serie desconocida no bloquea el cierre
+    // (ver validar-equipos.ts), que es lo unico que estas pruebas necesitan.
+    unidad_equipo: { findMany: jest.fn(async () => []) },
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
 

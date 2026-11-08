@@ -126,6 +126,16 @@ export class OrdenesController {
     };
   }
 
+  /**
+   * Los equipos que el tecnico lleva encima, para sugerirlos al cerrar. Solo
+   * del tecnico: es "lo mio", no una consulta de inventario. Antes de :id.
+   */
+  @Roles('TECNICO')
+  @Get('mis-equipos')
+  misEquipos(@CurrentUser() user: UsuarioAutenticado) {
+    return this.ordenesService.misEquipos(user);
+  }
+
   /** CU-31: OT completadas que esperan la llamada de cortesia. Antes de :id. */
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Get('llamadas-cortesia')

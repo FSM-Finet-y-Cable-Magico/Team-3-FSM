@@ -112,6 +112,11 @@ const prisma = {
     create: jest.fn(async (_args: Prisma.llamada_cortesCreateArgs) => ({})),
     deleteMany: jest.fn(async (_args: Prisma.llamada_cortesDeleteManyArgs) => ({ count: 1 })),
   },
+  // Inventario de G1 en la base compartida: el cierre valida ahi la serie de
+  // cada equipo declarado, y el tecnico lista lo que lleva encima.
+  unidad_equipo: {
+    findMany: jest.fn(async (_args: Prisma.unidad_equipoFindManyArgs) => [] as unknown[]),
+  },
   tipo_equipo: {
     findFirst: jest.fn(async () => ({ nombre: 'Cable' })),
     // La rama de monitoreo agrego al cierre una validacion de que el material
@@ -256,6 +261,23 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
     const res = await request(app.getHttpServer())
       .get('/api/ordenes/acciones-equipo').auth(token(), { type: 'bearer' }).expect(200);
     expect(res.body.acciones).toBeDefined();
+  });
+
+  it('el tecnico lista los equipos que lleva encima; el jefe no tiene "mis equipos"', async () => {
+    prisma.unidad_equipo.findMany.mockResolvedValueOnce([
+      { numero_serie: 'ONT-1', modelo: 'HG8145', tipo_equipo: { nombre: 'ONT' } },
+    ]);
+    // Tambien prueba el orden de las rutas: no la toma `@Get(':id')`.
+    const res = await request(app.getHttpServer())
+      .get('/api/ordenes/mis-equipos').auth(token('TECNICO'), { type: 'bearer' }).expect(200);
+    expect(res.body).toEqual([{ numero_serie: 'ONT-1', modelo: 'HG8145', tipo: 'ONT' }]);
+    expect(prisma.unidad_equipo.findMany.mock.calls.at(-1)?.[0]?.where).toMatchObject({
+      id_empresa: 1,
+      id_tecnico_asignado: 7,
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/ordenes/mis-equipos').auth(token('JEFE_TECNICO'), { type: 'bearer' }).expect(403);
   });
 
   it('un handler sin @Roles permanece cerrado', async () => {
