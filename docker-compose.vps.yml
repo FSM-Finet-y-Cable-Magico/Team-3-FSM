@@ -112,6 +112,12 @@ services:
       TOMODAT_BASE_URL: ${TOMODAT_BASE_URL:-}
       TOMODAT_API_TOKEN: ${TOMODAT_API_TOKEN:-}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?Definí SEED_ADMIN_PASSWORD en el .env del servidor}
+      # Encendido salvo que valga exactamente "false". Apagarlo SOLO cuando
+      # DATABASE_URL apunte a una base que administra otro --por ejemplo
+      # `finet_global_validacion`, donde `g3_app` no tiene CREATE en public--:
+      # ahi `prisma migrate deploy` falla y el contenedor queda en crash-loop
+      # sin llegar nunca a arrancar. Contra la base `db` de aca va encendido.
+      MIGRAR_AL_ARRANCAR: ${MIGRAR_AL_ARRANCAR:-true}
       # En la red del host no hay mapeo que acote la escucha: la acota HOST.
       PORT: 8300
       HOST: 127.0.0.1

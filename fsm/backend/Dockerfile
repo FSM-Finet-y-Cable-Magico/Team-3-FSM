@@ -33,13 +33,22 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/generated ./generated
 COPY --from=builder /app/dist ./dist
 
+COPY --from=builder /app/docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+
 EXPOSE 3000
 
-# Aplica migraciones y siembra los datos base (empresas, roles, categorías,
-# planes, admin.finet) antes de levantar el server. El seed es idempotente
-# (upsert), así que correrlo en cada arranque no duplica ni pisa nada — pero
-# sí requiere SEED_ADMIN_PASSWORD definida (ver docker-compose.yml).
+# Por defecto aplica migraciones y siembra los datos base (empresas, roles,
+# categorías, planes, admin.finet) antes de levantar el server. El seed es
+# idempotente (upsert), así que correrlo en cada arranque no duplica ni pisa
+# nada — pero sí requiere SEED_ADMIN_PASSWORD definida (ver docker-compose.yml).
+#
+# Con MIGRAR_AL_ARRANCAR=false no hace ninguna de las dos y arranca directo.
+# Eso es para apuntar a una base que administra otro, donde no tenemos CREATE
+# y el `migrate deploy` dejaría el contenedor en crash-loop. El detalle está
+# en docker-entrypoint.sh.
+#
 # Pensado para una sola instancia (no hay lock entre réplicas) — si en el VPS
-# compartido se corre más de una copia del backend a la vez, sacar migración
-# y seed de aquí y correrlos aparte como paso de despliegue.
-CMD ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed && node dist/src/main"]
+# compartido se corre más de una copia del backend a la vez, apagar la
+# variable y correr migración y seed aparte como paso de despliegue.
+CMD ["./docker-entrypoint.sh"]
