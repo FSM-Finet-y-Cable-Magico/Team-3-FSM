@@ -21,6 +21,15 @@ import {
  * (decision del 8-nov-2026): un equipo que ya estaba en la casa del cliente
  * puede ser anterior al inventario o tener la etiqueta gastada, y bloquear
  * dejaria al tecnico sin poder cerrar. G1 registra la discrepancia.
+ *
+ * Dos criterios mas (revision del PR #131):
+ *   - Un equipo de OTRA empresa cuenta como desconocido, en las dos acciones.
+ *     Distinguir "es de otra empresa" de "no existe" dejaria sondear el
+ *     inventario ajeno serie a serie.
+ *   - `id_tecnico_asignado` en NULL es "no hay informacion", no "es de otro".
+ *     La llena G1; en la base propia y en desarrollo queda NULL en todas las
+ *     filas, y exigirla bloquearia toda instalacion. Se rechaza solo lo que el
+ *     dato contradice: un equipo asignado a OTRO tecnico.
  */
 
 export interface UnidadInventario {
@@ -42,23 +51,24 @@ export function problemaDeEquipo(
   ctx: { id_empresa: number; id_tecnico: number },
 ): string | null {
   const serie = equipo.numero_serie;
-  const estado = unidad?.estado.trim();
-  const deOtraEmpresa = unidad != null && unidad.id_empresa !== ctx.id_empresa;
+  // Lo de otra empresa no se distingue de lo que no existe.
+  const propia = unidad?.id_empresa === ctx.id_empresa ? unidad : undefined;
+  const estado = propia?.estado.trim();
 
   if (equipo.accion === ACCION_EQUIPO.INSTALADO_EN_CLIENTE) {
-    if (!unidad || deOtraEmpresa)
+    if (!propia)
       return `El equipo ${serie} no existe en el inventario de la empresa`;
     if (!ORIGENES_VALIDOS_G1.INSTALADO_EN_CLIENTE.includes(estado!)) {
       return `El equipo ${serie} no se puede instalar: está "${estado}"`;
     }
-    if (unidad.id_tecnico_asignado !== ctx.id_tecnico)
+    const asignadoA = propia.id_tecnico_asignado;
+    if (asignadoA != null && asignadoA !== ctx.id_tecnico)
       return `El equipo ${serie} no está asignado a usted`;
     return null;
   }
 
   // Retiro.
-  if (!unidad) return null;
-  if (deOtraEmpresa) return `El equipo ${serie} pertenece a otra empresa`;
+  if (!propia) return null;
   if (!ORIGENES_VALIDOS_G1[equipo.accion].includes(estado!)) {
     return `El equipo ${serie} no se puede retirar: está "${estado}"`;
   }

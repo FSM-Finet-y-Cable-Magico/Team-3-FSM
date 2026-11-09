@@ -67,9 +67,11 @@ export class MaterialDto {
 /**
  * Un equipo individualizable que el técnico instaló o retiró en la visita.
  *
- * Va sobre `numero_serie` y NO sobre `id_unidad`: G3 no lee `unidad_equipo`
- * (dominio de G1), así que no conoce el id — el técnico teclea la serie y G1 la
- * resuelve al procesar el cierre.
+ * Va sobre `numero_serie` y NO sobre `id_unidad`: `unidad_equipo` es dominio de
+ * G1 y el id no viaja entre sistemas. El técnico teclea la serie (el formulario
+ * le sugiere las que lleva asignadas); el FSM la valida contra el inventario
+ * antes de cerrar (ordenes/validar-equipos.ts) y G1 aplica la transición al
+ * procesar el cierre.
  */
 export class EquipoOtDto {
   @IsString()

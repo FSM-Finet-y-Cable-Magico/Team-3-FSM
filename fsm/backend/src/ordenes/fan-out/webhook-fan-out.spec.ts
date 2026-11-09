@@ -251,8 +251,31 @@ describe('fan-out del cierre · cuerpo de un rechazo 4xx', () => {
 
     await new WebhookFanOut([{ nombre: 'G1', url: 'http://g1/cierre' }]).notificar(payload);
 
-    expect(warn[0].length).toBeLessThan(700);
+    // 300 del cuerpo + el prefijo: alcanza para un mensaje de validacion.
+    expect(warn[0].length).toBeLessThan(400);
     expect(warn[0]).toContain('…');
+  });
+
+  it('enmascara los RUT: un destino puede devolver el payload rechazado con datos del cliente', async () => {
+    rechazar(
+      400,
+      async () =>
+        '{"message":"cliente invalido","cliente":{"rut":"12.345.678-5","nombre":"Ana"},"otro":"123456785","tecnico":"21116770-k"}',
+    );
+
+    await new WebhookFanOut([{ nombre: 'G8', url: 'http://g8/cierre' }]).notificar(payload);
+
+    expect(warn[0]).toContain('cliente invalido');
+    expect(warn[0]).not.toMatch(/12\.345\.678-5|123456785|21116770-k/);
+    expect(warn[0].match(/\[RUT\]/g)).toHaveLength(3);
+  });
+
+  it('no enmascara numeros cortos como el id de la OT o un codigo HTTP', async () => {
+    rechazar(400, async () => '{"statusCode":400,"id_ot":4,"id_contrato":92}');
+
+    await new WebhookFanOut([{ nombre: 'G8', url: 'http://g8/cierre' }]).notificar(payload);
+
+    expect(warn[0]).toContain('"statusCode":400,"id_ot":4,"id_contrato":92');
   });
 
   it('si el cuerpo no se puede leer, igual registra el codigo', async () => {

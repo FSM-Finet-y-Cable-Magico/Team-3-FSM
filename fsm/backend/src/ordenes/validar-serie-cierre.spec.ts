@@ -138,9 +138,27 @@ describe('cierre · validacion de la serie contra el inventario', () => {
       tecnico,
     );
 
+    // Solo el inventario de SU empresa (lo de otra cuenta como desconocido) y
+    // sin distinguir mayusculas: el formulario sube todo a mayusculas.
     expect(findMany.mock.calls[0][0].where).toEqual({
-      numero_serie: { in: ['ONT-1', 'ONT-VIEJA'] },
+      numero_serie: { in: ['ONT-1', 'ONT-VIEJA'], mode: 'insensitive' },
+      id_empresa: 1,
     });
+    expect(tx.orden_trabajo.update).toHaveBeenCalled();
+  });
+
+  it('encuentra la serie aunque el inventario la tenga en minusculas', async () => {
+    inventario = [
+      {
+        numero_serie: 'ont-1',
+        estado: 'Asignado a técnico',
+        id_empresa: 1,
+        id_tecnico_asignado: 5,
+      },
+    ];
+
+    await service.cerrarOT(40, cierre(instalar('ONT-1')), tecnico);
+
     expect(tx.orden_trabajo.update).toHaveBeenCalled();
   });
 
@@ -216,7 +234,9 @@ describe('cierre · validacion de la serie contra el inventario', () => {
       expect(findMany.mock.calls[0][0].where).toEqual({
         id_empresa: 1,
         id_tecnico_asignado: 5,
-        estado: 'Asignado a técnico',
+        // La lista entera de origenes validos, no su primer elemento: si G1
+        // agrega un origen, la sugerencia y la validacion siguen alineadas.
+        estado: { in: ['Asignado a técnico'] },
       });
       expect(r).toEqual([
         { numero_serie: 'ONT-1', modelo: 'HG8145', tipo: 'ONT' },

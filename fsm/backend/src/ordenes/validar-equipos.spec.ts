@@ -65,6 +65,15 @@ describe('problemaDeEquipo', () => {
         problemaDeEquipo(instalar, unidad({ id_tecnico_asignado: 6 }), ctx),
       ).toBe('El equipo ONT-1 no está asignado a usted');
     });
+
+    it('sin tecnico registrado deja pasar: NULL es "no hay informacion", no "es de otro"', () => {
+      // `id_tecnico_asignado` la llena G1. En la base propia y en desarrollo
+      // queda NULL en todas las filas; rechazar ahi bloquearia toda
+      // instalacion. Se rechaza solo lo que el dato contradice.
+      expect(
+        problemaDeEquipo(instalar, unidad({ id_tecnico_asignado: null }), ctx),
+      ).toBeNull();
+    });
   });
 
   describe('retirar', () => {
@@ -96,10 +105,10 @@ describe('problemaDeEquipo', () => {
       ).toBe('El equipo ONT-1 no se puede retirar: está "En bodega"');
     });
 
-    it('rechaza un equipo de otra empresa', () => {
-      expect(problemaDeEquipo(retirar, unidad({ id_empresa: 2 }), ctx)).toBe(
-        'El equipo ONT-1 pertenece a otra empresa',
-      );
+    it('un equipo de otra empresa cuenta como desconocido: no revela que existe', () => {
+      // Distinguir "es de otra empresa" de "no existe" le permitiria a un
+      // tecnico de FiNet sondear el inventario de Cable Magico serie a serie.
+      expect(problemaDeEquipo(retirar, unidad({ id_empresa: 2 }), ctx)).toBeNull();
     });
   });
 });

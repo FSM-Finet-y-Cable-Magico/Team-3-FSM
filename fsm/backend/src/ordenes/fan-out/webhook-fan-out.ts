@@ -2,7 +2,14 @@ import { Logger } from '@nestjs/common';
 import type { FanOutCierre, PayloadCierre } from './fan-out-cierre.js';
 
 /** Cuanto del cuerpo de un rechazo entra al log: alcanza para un mensaje de validacion. */
-const MAX_CUERPO_EN_LOG = 500;
+const MAX_CUERPO_EN_LOG = 300;
+
+/**
+ * Un RUT chileno en cualquiera de sus grafias: "12.345.678-5", "12345678-5" o
+ * "123456785", con DV numerico o K. Pide 7 u 8 digitos de cuerpo, asi que un
+ * id, un codigo HTTP o una cantidad no calzan.
+ */
+const PATRON_RUT = /\b\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK]\b/g;
 
 interface Destino {
   nombre: string;
@@ -88,6 +95,33 @@ export class WebhookFanOut implements FanOutCierre {
   }
 
   /**
+   * El cuerpo de una respuesta de error, en una linea, con los RUT
+   * enmascarados y recortado. Nunca lanza: si no se puede leer, el log queda
+   * con el codigo solo, como antes.
+   *
+   * Los RUT se enmascaran porque el cuerpo lo arma OTRO sistema y puede
+   * devolver el payload rechazado, con el RUT del cliente; el log no es lugar
+   * para eso. El recorte acota lo demas (nombre, direccion) a lo justo para un
+   * mensaje de validacion.
+   */
+  private async cuerpoBreve(res: Response): Promise<string> {
+    try {
+      const texto = (await res.text()).replace(/\s+/g, ' ').trim().replace(PATRON_RUT, '[RUT]');
+      return texto.length > MAX_CUERPO_EN_LOG ? `${texto.slice(0, MAX_CUERPO_EN_LOG)}…` : texto;
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Resuelve `{id_ot}` en la URL del destino. Se codifica el valor aunque hoy
+   * sea siempre un entero: la URL viene de configuración y no de nosotros.
+   */
+  private urlDe(destino: Destino, payload: PayloadCierre): string {
+    return destino.url.replace(/\{id_ot\}/g, encodeURIComponent(String(payload.id_ot)));
+  }
+
+  /**
    * Lee la respuesta de un destino y registra lo que informe.
    *
    * Es best-effort a proposito: el cierre ya esta guardado y el fan-out no lo
@@ -95,27 +129,6 @@ export class WebhookFanOut implements FanOutCierre {
    * registra el exito y se sigue; fallar aca convertiria un cierre correcto en
    * un error por culpa de un formato de respuesta.
    */
-  /**
-   * Resuelve `{id_ot}` en la URL del destino. Se codifica el valor aunque hoy
-   * sea siempre un entero: la URL viene de configuración y no de nosotros.
-   */
-  /**
-   * El cuerpo de una respuesta de error, en una linea y recortado. Nunca
-   * lanza: si no se puede leer, el log queda con el codigo solo, como antes.
-   */
-  private async cuerpoBreve(res: Response): Promise<string> {
-    try {
-      const texto = (await res.text()).replace(/\s+/g, ' ').trim();
-      return texto.length > MAX_CUERPO_EN_LOG ? `${texto.slice(0, MAX_CUERPO_EN_LOG)}…` : texto;
-    } catch {
-      return '';
-    }
-  }
-
-  private urlDe(destino: Destino, payload: PayloadCierre): string {
-    return destino.url.replace(/\{id_ot\}/g, encodeURIComponent(String(payload.id_ot)));
-  }
-
   private async registrarRespuesta(
     destino: Destino,
     payload: PayloadCierre,

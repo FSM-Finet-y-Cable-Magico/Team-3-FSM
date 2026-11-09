@@ -1518,7 +1518,9 @@ export class OrdenesService {
       where: {
         id_empresa: user.id_empresa,
         id_tecnico_asignado: user.userId,
-        estado: ORIGENES_VALIDOS_G1.INSTALADO_EN_CLIENTE[0],
+        // Los mismos origenes que valida el cierre, enteros: lo que se sugiere
+        // es exactamente lo que despues se acepta.
+        estado: { in: ORIGENES_VALIDOS_G1.INSTALADO_EN_CLIENTE },
       },
       select: { numero_serie: true, modelo: true, tipo_equipo: { select: { nombre: true } } },
       orderBy: { numero_serie: 'asc' },
@@ -1535,14 +1537,18 @@ export class OrdenesService {
     if (equipos.length === 0) return;
 
     const series = [...new Set(equipos.map((e) => e.numero_serie))];
+    // Solo la empresa del tecnico: lo de otra cuenta como desconocido. Y sin
+    // distinguir mayusculas, porque el formulario sube la serie a mayusculas
+    // y el inventario de G1 no promete guardarla asi.
     const unidades = await this.prisma.unidad_equipo.findMany({
-      where: { numero_serie: { in: series } },
+      where: { numero_serie: { in: series, mode: 'insensitive' }, id_empresa: ctx.id_empresa },
       select: { numero_serie: true, estado: true, id_empresa: true, id_tecnico_asignado: true },
     });
-    const porSerie = new Map(unidades.map((u) => [u.numero_serie, u]));
+    const clave = (serie: string) => serie.toUpperCase();
+    const porSerie = new Map(unidades.map((u) => [clave(u.numero_serie), u]));
 
     const problemas = equipos
-      .map((e) => problemaDeEquipo(e, porSerie.get(e.numero_serie), ctx))
+      .map((e) => problemaDeEquipo(e, porSerie.get(clave(e.numero_serie)), ctx))
       .filter((p): p is string => p !== null);
     if (problemas.length > 0) throw new BadRequestException(problemas.join('. '));
   }
