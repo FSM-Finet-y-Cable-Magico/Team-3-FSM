@@ -117,12 +117,48 @@ describe('ClaveWifiService', () => {
       return Promise.resolve(fila);
     });
 
+    type DondeMuchos = {
+      where: { id_empresa: number; id_ticket: { in: string[] } };
+    };
+    const findMany = jest.fn((args: unknown) => {
+      const { where } = args as DondeMuchos;
+      return Promise.resolve(
+        filas.filter(
+          (f) =>
+            f.id_empresa === where.id_empresa &&
+            where.id_ticket.in.includes(f.id_ticket),
+        ),
+      );
+    });
+
+    // Dos tickets nuestros, uno por empresa. G2 manda como `id_ticket` el
+    // codigo de seguimiento, pero se acepta tambien el id numerico.
+    const tickets = [
+      { id_ticket: 7, id_empresa: 1, codigo_seguimiento: 'TK-ABCDEFG' },
+      { id_ticket: 8, id_empresa: 2, codigo_seguimiento: 'TK-OTRAEMP' },
+    ];
+    const ticketFindFirst = jest.fn((args: unknown) => {
+      const { where } = args as {
+        where: { id_ticket: number; id_empresa: number };
+      };
+      return Promise.resolve(
+        tickets.find(
+          (t) =>
+            t.id_ticket === where.id_ticket &&
+            t.id_empresa === where.id_empresa,
+        ) ?? null,
+      );
+    });
+
     const mod = await Test.createTestingModule({
       providers: [
         ClaveWifiService,
         {
           provide: PrismaService,
-          useValue: { solicitud_clave_wifi: { findUnique, create, update } },
+          useValue: {
+            solicitud_clave_wifi: { findUnique, findMany, create, update },
+            ticket: { findFirst: ticketFindFirst },
+          },
         },
         { provide: ConfigService, useValue: { get: () => pem ?? undefined } },
       ],
@@ -242,5 +278,46 @@ describe('ClaveWifiService', () => {
     const entregada = await service.entregar(r.id_solicitud, 1);
 
     expect(entregada.clave).toBe('clave-del-cliente-123');
+  });
+
+  describe('porTicket', () => {
+    it('lista las solicitudes del ticket por codigo o por id, sin la clave', async () => {
+      await service.recibir(dto({ id_ticket: 'TK-ABCDEFG' }), scope);
+      await service.recibir(dto({ id_ticket: '7' }), scope);
+      await service.recibir(dto({ id_ticket: 'TK-DE-OTRO' }), scope);
+
+      const lista = await service.porTicket(7, 1);
+
+      expect(lista).toHaveLength(2);
+      for (const s of lista) {
+        expect(s).not.toHaveProperty('clave_cifrada');
+        expect(s).not.toHaveProperty('huella');
+        expect(s.estado).toBe('PENDIENTE');
+      }
+    });
+
+    it('muestra como entregada la que ya se leyo', async () => {
+      const r = await service.recibir(dto(), scope);
+      await service.entregar(r.id_solicitud, 1);
+
+      const [s] = await service.porTicket(7, 1);
+
+      expect(s.estado).toBe('ENTREGADA');
+      expect(s.leida_en).toBeInstanceOf(Date);
+    });
+
+    it('no mezcla solicitudes de otra empresa con el mismo codigo', async () => {
+      await service.recibir(dto({ id_empresa: 2 }), scope);
+      expect(await service.porTicket(7, 1)).toEqual([]);
+    });
+
+    it('un ticket de otra empresa es 404, igual que uno que no existe', async () => {
+      await expect(service.porTicket(8, 1)).rejects.toThrow(
+        'Ticket no encontrado',
+      );
+      await expect(service.porTicket(999, 1)).rejects.toThrow(
+        'Ticket no encontrado',
+      );
+    });
   });
 });

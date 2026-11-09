@@ -1221,6 +1221,45 @@ test('CU-30: un ticket se deriva a una OT y queda el enlace a la OT', async ({ p
   expect(registro.acciones.at(-1)).toEqual({ ruta: '/api/tickets/7/escalar', cuerpo: { tipo_ot: 'REPARACION', observaciones: 'Revisar roseta' } });
 });
 
+// Acuerdo §6.4: la clave WiFi que el cliente pidio en el portal se ve una vez.
+test('clave WiFi: el detalle del ticket la muestra una sola vez y despues queda entregada', async ({ page }) => {
+  await preparar(page);
+  await prepararTickets(page);
+  const entregas: string[] = [];
+  let solicitud = { id_solicitud: 3, id_contrato: 5, estado: 'PENDIENTE', fecha_creacion: '2026-11-09T01:27:50.000Z', leida_en: null as string | null };
+  await page.route('http://127.0.0.1:3000/api/clave-wifi/ticket/7', route => route.fulfill({ json: [solicitud] }));
+  await page.route('http://127.0.0.1:3000/api/clave-wifi/3/entregar', route => {
+    entregas.push(route.request().method());
+    solicitud = { ...solicitud, estado: 'ENTREGADA', leida_en: '2026-11-09T02:00:00.000Z' };
+    return route.fulfill({ json: { id_solicitud: 3, id_ticket: 'TK-ABCDEFG', id_contrato: 5, clave: 'MiClaveNueva2026' } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/tickets/7');
+
+  await page.getByRole('button', { name: 'Ver clave WiFi (una sola vez)' }).click();
+  // Primero pide confirmacion: un clic suelto no debe quemar la unica lectura.
+  expect(entregas).toEqual([]);
+  await page.getByRole('button', { name: 'Mostrar clave' }).click();
+
+  await expect(page.getByLabel('Clave WiFi')).toHaveText('MiClaveNueva2026');
+  expect(entregas).toEqual(['POST']);
+
+  // Al volver a entrar ya no esta la clave, solo la constancia de entrega.
+  await page.reload();
+  await expect(page.getByText(/Ya se entregó el/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ver clave WiFi (una sola vez)' })).toHaveCount(0);
+  await expect(page.getByText('MiClaveNueva2026')).toHaveCount(0);
+});
+
+test('clave WiFi: un ticket sin solicitudes no muestra la seccion', async ({ page }) => {
+  await preparar(page);
+  await prepararTickets(page);
+  await page.route('http://127.0.0.1:3000/api/clave-wifi/ticket/7', route => route.fulfill({ json: [] }));
+  await login(page, 'admin'); await page.goto('/admin/tickets/7');
+
+  await expect(page.getByRole('heading', { name: /TK-ABCDEFG/ })).toBeVisible();
+  await expect(page.getByText('Clave WiFi pedida por el cliente')).toHaveCount(0);
+});
+
 // MOD RF-32: semaforo de riesgo del cliente, en la ficha y en terreno.
 test('MOD RF-32: la ficha muestra el semaforo y pide justificacion para subir el nivel', async ({ page }) => {
   await preparar(page);
