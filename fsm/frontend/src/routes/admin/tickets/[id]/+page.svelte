@@ -37,8 +37,14 @@
   let confirmandoWifi = $state<number | null>(null);
   let claveVisible = $state<{ id_solicitud: number; clave: string } | null>(null);
   let copiada = $state(false);
+  let idUsuario = $state<number | null>(null);
 
   const abierto = $derived(ticket !== null && ticket.estado !== 'RESUELTO');
+  // La misma regla que aplica el backend: la clave solo la ve quien tomo el
+  // ticket. Aca es para no ofrecer un boton que va a responder 409.
+  const tomadoPorMi = $derived(
+    ticket?.estado === 'EN_PROGRESO' && ticket.usuario_asignado?.id_usuario === idUsuario,
+  );
 
   onMount(() => {
     authStore.checkAuth();
@@ -48,6 +54,7 @@
       return;
     }
     token = s.token ?? '';
+    idUsuario = s.usuario?.userId ?? null;
     cargar();
     listarCategoriasFalla(token).then((c) => (categorias = c)).catch(() => {});
     listarTecnicos(token).then((t) => (tecnicos = t)).catch(() => {});
@@ -65,6 +72,9 @@
       const r = await entregarClaveWifi(token, idSolicitud);
       claveVisible = { id_solicitud: r.id_solicitud, clave: r.clave };
       copiada = false;
+      // La entrega queda en el historial: se refresca sin pasar por `cargar`,
+      // que pondria la pantalla en "Cargando" con la clave recien mostrada.
+      api.obtenerTicket(token, id).then((t) => (ticket = t)).catch(() => {});
     } catch (e) {
       error = e instanceof Error ? e.message : 'No se pudo obtener la clave';
     } finally {
@@ -144,9 +154,11 @@
     CAMBIAR_ESTADO_TICKET: 'Cambio de estado',
     RECLASIFICAR_TICKET: 'Reclasificado',
     ASIGNAR_TICKET: 'Asignado',
+    ENTREGAR_CLAVE_WIFI: 'Clave WiFi entregada',
   };
   function detalle(e: api.EntradaHistorial): string {
     const n = e.valor_nuevo ?? {};
+    if (e.accion === 'ENTREGAR_CLAVE_WIFI') return `solicitud #${n.id_solicitud}`;
     if (e.accion === 'RECLASIFICAR_TICKET') return `${e.valor_anterior?.categoria} → ${n.categoria}`;
     if (e.accion === 'CAMBIAR_ESTADO_TICKET') {
       return [`${e.valor_anterior?.estado} → ${n.estado}`, n.observacion, n.id_ot ? `OT #${n.id_ot}` : null]
@@ -241,7 +253,13 @@
                   <button onclick={copiarClave} class="btn btn-secundario text-sm">{copiada ? 'Copiada' : 'Copiar'}</button>
                 </div>
               {:else if s.estado === 'PENDIENTE'}
-                {#if confirmandoWifi === s.id_solicitud}
+                {#if !tomadoPorMi}
+                  <p class="text-sm text-slate-600">
+                    {ticket.estado === 'EN_PROGRESO'
+                      ? `Solo la puede ver quien tiene el ticket a cargo: ${ticket.usuario_asignado?.nombre_completo ?? 'otra persona'}.`
+                      : 'Toma el ticket para poder ver la clave.'}
+                  </p>
+                {:else if confirmandoWifi === s.id_solicitud}
                   <div class="flex flex-wrap items-center gap-2 text-sm">
                     <span class="text-slate-700">Solo se puede ver una vez. ¿Mostrarla ahora?</span>
                     <button onclick={() => (confirmandoWifi = null)} disabled={ocupado} class="btn btn-secundario text-sm">Cancelar</button>
@@ -253,7 +271,7 @@
                   </button>
                 {/if}
               {:else}
-                <p class="text-xs text-slate-500">Ya se entregó el {fecha(s.leida_en)}. No se puede volver a ver.</p>
+                <p class="text-xs text-slate-500">No se puede volver a ver (se entregó el {fecha(s.leida_en)}).</p>
               {/if}
             </li>
           {/each}

@@ -10,7 +10,12 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { ClaveWifiService } from './clave-wifi.service.js';
+import {
+  ClaveWifiService,
+  MENSAJE_SIN_TICKET,
+  MENSAJE_TOMAR_TICKET,
+  MENSAJE_YA_LEIDA,
+} from './clave-wifi.service.js';
 import { RELLENO_OAEP } from './clave-wifi.crypto.js';
 import type { SolicitudClaveWifiDto } from './dto/solicitud-clave-wifi.dto.js';
 
@@ -54,7 +59,20 @@ describe('ClaveWifiService', () => {
     fecha_creacion: Date;
   };
 
+  type TicketDoble = {
+    id_ticket: number;
+    id_empresa: number;
+    codigo_seguimiento: string;
+    estado: string;
+    id_usuario_asignado: number | null;
+  };
+
+  /** Quien pide la clave: el usuario 10 de la empresa 1, que tomo el ticket 7. */
+  const actor = { userId: 10, id_empresa: 1 };
+
   let filas: Fila[];
+  let tickets: TicketDoble[];
+  let auditoria: Record<string, unknown>[];
   let findUnique: jest.Mock<(...a: unknown[]) => Promise<unknown>>;
   let create: jest.Mock<(...a: unknown[]) => Promise<unknown>>;
   let update: jest.Mock<(...a: unknown[]) => Promise<unknown>>;
@@ -131,24 +149,53 @@ describe('ClaveWifiService', () => {
       );
     });
 
-    // Dos tickets nuestros, uno por empresa. G2 manda como `id_ticket` el
-    // codigo de seguimiento, pero se acepta tambien el id numerico.
-    const tickets = [
-      { id_ticket: 7, id_empresa: 1, codigo_seguimiento: 'TK-ABCDEFG' },
-      { id_ticket: 8, id_empresa: 2, codigo_seguimiento: 'TK-OTRAEMP' },
+    // Dos tickets nuestros, uno por empresa. G2 manda como `id_ticket` el id
+    // numerico, pero se acepta tambien el codigo de seguimiento. El 7 esta
+    // tomado por el usuario 10, que es el `actor` de las pruebas.
+    tickets = [
+      {
+        id_ticket: 7,
+        id_empresa: 1,
+        codigo_seguimiento: 'TK-ABCDEFG',
+        estado: 'EN_PROGRESO',
+        id_usuario_asignado: 10,
+      },
+      {
+        id_ticket: 8,
+        id_empresa: 2,
+        codigo_seguimiento: 'TK-OTRAEMP',
+        estado: 'EN_PROGRESO',
+        id_usuario_asignado: 10,
+      },
     ];
+    type Criterio = { id_ticket?: number; codigo_seguimiento?: string };
+    const cumple = (t: TicketDoble, c: Criterio) =>
+      (c.id_ticket === undefined || t.id_ticket === c.id_ticket) &&
+      (c.codigo_seguimiento === undefined ||
+        t.codigo_seguimiento === c.codigo_seguimiento);
     const ticketFindFirst = jest.fn((args: unknown) => {
       const { where } = args as {
-        where: { id_ticket: number; id_empresa: number };
+        where: Criterio & { id_empresa: number; OR?: Criterio[] };
       };
       return Promise.resolve(
         tickets.find(
           (t) =>
-            t.id_ticket === where.id_ticket &&
-            t.id_empresa === where.id_empresa,
+            t.id_empresa === where.id_empresa &&
+            cumple(t, where) &&
+            (!where.OR || where.OR.some((c) => cumple(t, c))),
         ) ?? null,
       );
     });
+
+    auditoria = [];
+    const auditoriaCreate = jest.fn((args: unknown) => {
+      auditoria.push((args as { data: Record<string, unknown> }).data);
+      return Promise.resolve({});
+    });
+    const tx = {
+      solicitud_clave_wifi: { update },
+      log_auditoria: { create: auditoriaCreate },
+    };
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -158,6 +205,7 @@ describe('ClaveWifiService', () => {
           useValue: {
             solicitud_clave_wifi: { findUnique, findMany, create, update },
             ticket: { findFirst: ticketFindFirst },
+            $transaction: (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
           },
         },
         { provide: ConfigService, useValue: { get: () => pem ?? undefined } },
@@ -241,24 +289,82 @@ describe('ClaveWifiService', () => {
 
   it('entrega la clave en claro al tecnico', async () => {
     const r = await service.recibir(dto(), scope);
-    const entregada = await service.entregar(r.id_solicitud, 1);
+    const entregada = await service.entregar(r.id_solicitud, actor);
     expect(entregada.clave).toBe('clave-del-cliente-123');
   });
 
   it('la segunda lectura se niega', async () => {
     const r = await service.recibir(dto(), scope);
-    await service.entregar(r.id_solicitud, 1);
+    await service.entregar(r.id_solicitud, actor);
 
-    await expect(service.entregar(r.id_solicitud, 1)).rejects.toThrow(
-      ConflictException,
+    // El mensaje y no solo el 409: hay otros 409 (ticket sin tomar) que no son
+    // este caso.
+    await expect(service.entregar(r.id_solicitud, actor)).rejects.toThrow(
+      MENSAJE_YA_LEIDA,
     );
+  });
+
+  describe('exige el ticket tomado', () => {
+    it('niega la clave si el ticket sigue ABIERTO, y no gasta la lectura', async () => {
+      tickets[0].estado = 'ABIERTO';
+      tickets[0].id_usuario_asignado = null;
+      const r = await service.recibir(dto(), scope);
+
+      await expect(service.entregar(r.id_solicitud, actor)).rejects.toThrow(
+        MENSAJE_TOMAR_TICKET,
+      );
+      expect(filas[0].leida_en).toBeNull();
+      expect(auditoria).toEqual([]);
+    });
+
+    it('niega la clave si el ticket lo tomo otra persona', async () => {
+      tickets[0].id_usuario_asignado = 99;
+      const r = await service.recibir(dto(), scope);
+
+      await expect(service.entregar(r.id_solicitud, actor)).rejects.toThrow(
+        MENSAJE_TOMAR_TICKET,
+      );
+      expect(filas[0].leida_en).toBeNull();
+    });
+
+    it('niega la clave de una solicitud que no corresponde a ningun ticket', async () => {
+      const r = await service.recibir(dto({ id_ticket: 'NO-EXISTE' }), scope);
+
+      await expect(service.entregar(r.id_solicitud, actor)).rejects.toThrow(
+        MENSAJE_SIN_TICKET,
+      );
+      expect(filas[0].leida_en).toBeNull();
+    });
+
+    it('encuentra el ticket por el id numerico, que es lo que manda G2', async () => {
+      const r = await service.recibir(dto({ id_ticket: '7' }), scope);
+      const entregada = await service.entregar(r.id_solicitud, actor);
+      expect(entregada.clave).toBe('clave-del-cliente-123');
+    });
+
+    it('deja la entrega en el historial del ticket, con quien la vio', async () => {
+      const r = await service.recibir(dto(), scope);
+      await service.entregar(r.id_solicitud, actor);
+
+      expect(auditoria).toEqual([
+        {
+          id_usuario: 10,
+          accion: 'ENTREGAR_CLAVE_WIFI',
+          entidad_afectada: 'ticket',
+          id_entidad_afectada: 7,
+          valor_nuevo: { id_solicitud: r.id_solicitud },
+        },
+      ]);
+      // Nunca la clave: el historial lo ve cualquiera que abra el ticket.
+      expect(JSON.stringify(auditoria)).not.toContain('clave-del-cliente');
+    });
   });
 
   it('no entrega una solicitud de otra empresa', async () => {
     const r = await service.recibir(dto({ id_empresa: 2 }), scope);
     // Empresa 1 pidiendo una de la 2: mismo 404 que si no existiera, para no
     // revelar que solicitudes tiene la otra empresa.
-    await expect(service.entregar(r.id_solicitud, 1)).rejects.toThrow(
+    await expect(service.entregar(r.id_solicitud, actor)).rejects.toThrow(
       'Solicitud no encontrada',
     );
   });
@@ -275,7 +381,7 @@ describe('ClaveWifiService', () => {
 
     await montar(comoEnEnv);
     const r = await service.recibir(dto(), scope);
-    const entregada = await service.entregar(r.id_solicitud, 1);
+    const entregada = await service.entregar(r.id_solicitud, actor);
 
     expect(entregada.clave).toBe('clave-del-cliente-123');
   });
@@ -298,7 +404,7 @@ describe('ClaveWifiService', () => {
 
     it('muestra como entregada la que ya se leyo', async () => {
       const r = await service.recibir(dto(), scope);
-      await service.entregar(r.id_solicitud, 1);
+      await service.entregar(r.id_solicitud, actor);
 
       const [s] = await service.porTicket(7, 1);
 

@@ -4,6 +4,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { ClaveWifiService } from './clave-wifi.service.js';
 
 interface UsuarioActual {
+  userId: number;
   id_empresa: number;
 }
 
@@ -43,6 +44,6 @@ export class ClaveWifiController {
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: UsuarioActual,
   ) {
-    return this.claveWifi.entregar(id, user.id_empresa);
+    return this.claveWifi.entregar(id, user);
   }
 }
