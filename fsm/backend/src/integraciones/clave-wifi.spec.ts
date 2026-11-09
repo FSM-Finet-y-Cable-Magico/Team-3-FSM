@@ -317,6 +317,15 @@ describe('ClaveWifiService', () => {
       expect(auditoria).toEqual([]);
     });
 
+    it('entrega la clave si G2 escribió el ticket "Escalado" ya asignado a quien la pide', async () => {
+      // Con alguien asignado, "Escalado" es EN_PROGRESO (estadoCanonicoTicket):
+      // el panel ofrece la clave y la entrega tiene que coincidir.
+      tickets[0].estado = 'Escalado';
+      const r = await service.recibir(dto(), scope);
+
+      await expect(service.entregar(r.id_solicitud, actor)).resolves.toMatchObject({ clave: expect.any(String) });
+    });
+
     it('niega la clave si el ticket lo tomo otra persona', async () => {
       tickets[0].id_usuario_asignado = 99;
       const r = await service.recibir(dto(), scope);

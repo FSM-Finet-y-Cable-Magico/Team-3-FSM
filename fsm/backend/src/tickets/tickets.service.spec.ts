@@ -248,6 +248,58 @@ describe('TicketsService', () => {
     });
   });
 
+  describe('tickets que otro grupo escribe directo en la base global', () => {
+    // Asi llego el FIN-2026-000006 de G2 el 09-11-2026: su codigo, su estado
+    // "Escalado" y sin nadie asignado. Antes quedaba inerte en el panel.
+    const deG2 = (extra: Record<string, unknown> = {}) =>
+      tickets.push({
+        id_ticket: siguienteId++,
+        id_empresa: 1,
+        id_cliente: 10,
+        id_categoria: 1,
+        codigo_seguimiento: 'FIN-2026-000006',
+        estado: 'Escalado',
+        prioridad: 'MEDIA',
+        descripcion: 'Cambio de clave WiFi',
+        fecha_creacion: ahora,
+        fecha_cierre: null,
+        resuelto_remotamente: false,
+        id_usuario_asignado: null,
+        ...extra,
+      });
+
+    it('un "Escalado" sin asignar se muestra ABIERTO', async () => {
+      deG2();
+      const t = await service.obtener(1, 1, ahora);
+      expect(t.estado).toBe('ABIERTO');
+    });
+
+    it('se puede tomar, y la auditoría guarda el estado tal como venía', async () => {
+      deG2();
+      const t = await service.tomar(1, jefe);
+      expect(t).toMatchObject({ estado: 'EN_PROGRESO', id_usuario_asignado: 3 });
+      expect(auditoria.at(-1)).toMatchObject({ valor_anterior: { estado: 'Escalado' }, valor_nuevo: { estado: 'EN_PROGRESO' } });
+    });
+
+    it('se puede reclasificar', async () => {
+      deG2();
+      const t = await service.reclasificar(1, 2, jefe, ahora);
+      expect(t.categoria.id_categoria).toBe(2);
+    });
+
+    it('cuenta para el SLA como abierto', async () => {
+      deG2();
+      const t = await service.obtener(1, 1, new Date('2026-09-30T00:00:00Z'));
+      expect(t.sla_vencido).toBe(true);
+    });
+
+    it('un "Cerrado" se muestra RESUELTO y no se vuelve a tomar', async () => {
+      deG2({ estado: 'Cerrado' });
+      expect((await service.obtener(1, 1, ahora)).estado).toBe('RESUELTO');
+      await expect(service.tomar(1, jefe)).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
   describe('CU-32: reclasificar', () => {
     it('cambia la categoria, recalcula SLA y prioridad, y audita antes y despues', async () => {
       await crear();
