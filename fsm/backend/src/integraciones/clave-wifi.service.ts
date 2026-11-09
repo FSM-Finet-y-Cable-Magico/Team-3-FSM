@@ -18,6 +18,13 @@ export const MENSAJE_NO_DESCIFRABLE =
   'ciphertext: no se pudo descifrar con la llave publica vigente';
 export const MENSAJE_YA_LEIDA =
   'La clave ya fue entregada una vez y no se puede volver a ver';
+export const MENSAJE_TOMAR_TICKET =
+  'Toma el ticket antes de ver la clave: tiene que estar EN_PROGRESO y a tu cargo';
+export const MENSAJE_SIN_TICKET =
+  'La solicitud no corresponde a ningun ticket de la empresa';
+
+/** El tope de un `Int` de Postgres: un id mas grande que esto no es un ticket. */
+const MAX_INT4 = 2_147_483_647;
 
 /**
  * Cambio de clave WiFi pedido desde el portal de G2 (acuerdo §6.4).
@@ -168,23 +175,52 @@ export class ClaveWifiService {
   }
 
   /**
+   * El ticket nuestro al que apunta una solicitud. G2 manda el id numerico
+   * como texto; se acepta tambien el codigo de seguimiento.
+   */
+  private ticketDeSolicitud(id_ticket_g2: string, id_empresa: number) {
+    const porCodigo = { codigo_seguimiento: id_ticket_g2 };
+    const n = /^\d+$/.test(id_ticket_g2) ? Number(id_ticket_g2) : null;
+    const OR =
+      n !== null && n <= MAX_INT4 ? [{ id_ticket: n }, porCodigo] : [porCodigo];
+    return this.prisma.ticket.findFirst({
+      where: { id_empresa, OR },
+      select: { id_ticket: true, estado: true, id_usuario_asignado: true },
+    });
+  }
+
+  /**
    * Entrega la clave en claro al tecnico, una sola vez.
    *
    * La lectura unica es a proposito: una clave de cliente que se puede volver a
    * mirar indefinidamente desde un panel es una clave filtrada con pasos
    * extra. Si el tecnico la pierde, el cliente la vuelve a pedir desde el
    * portal, que es mas barato que dejarla legible para siempre.
+   *
+   * Solo la ve quien tomo el ticket. Si cualquiera con acceso pudiera
+   * consumirla, dos personas mirando el mismo ticket podrian gastarse la unica
+   * lectura sin saber quien fue. Por eso la entrega queda tambien en el
+   * historial del ticket, con el usuario.
    */
-  async entregar(id_solicitud: number, id_empresa: number) {
+  async entregar(
+    id_solicitud: number,
+    actor: { userId: number; id_empresa: number },
+  ) {
     const s = await this.prisma.solicitud_clave_wifi.findUnique({
       where: { id_solicitud },
     });
-    if (!s || s.id_empresa !== id_empresa) {
+    if (!s || s.id_empresa !== actor.id_empresa) {
       // Mismo 404 para "no existe" y "es de otra empresa": distinguirlos deja
       // averiguar que solicitudes tiene la otra empresa.
       throw new NotFoundException('Solicitud no encontrada');
     }
     if (s.leida_en) throw new ConflictException(MENSAJE_YA_LEIDA);
+
+    const t = await this.ticketDeSolicitud(s.id_ticket, actor.id_empresa);
+    if (!t) throw new ConflictException(MENSAJE_SIN_TICKET);
+    if (t.estado !== 'EN_PROGRESO' || t.id_usuario_asignado !== actor.userId) {
+      throw new ConflictException(MENSAJE_TOMAR_TICKET);
+    }
 
     const pem = this.llavePrivada();
     if (!pem) throw new ServiceUnavailableException(MENSAJE_SIN_LLAVE);
@@ -202,9 +238,23 @@ export class ClaveWifiService {
     // Se marca leida ANTES de devolverla: si el update falla, el tecnico no ve
     // la clave y puede reintentar. Al reves, un fallo aca la dejaria legible
     // otra vez despues de haberla mostrado.
-    await this.prisma.solicitud_clave_wifi.update({
-      where: { id_solicitud },
-      data: { leida_en: new Date(), estado: 'ENTREGADA' },
+    // La marca y la auditoria van juntas: una entrega sin rastro de quien la
+    // vio es justo lo que esta regla quiere evitar.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.solicitud_clave_wifi.update({
+        where: { id_solicitud },
+        data: { leida_en: new Date(), estado: 'ENTREGADA' },
+      });
+      await tx.log_auditoria.create({
+        data: {
+          id_usuario: actor.userId,
+          accion: 'ENTREGAR_CLAVE_WIFI',
+          entidad_afectada: 'ticket',
+          id_entidad_afectada: t.id_ticket,
+          // Nunca la clave: el historial lo ve cualquiera que abra el ticket.
+          valor_nuevo: { id_solicitud },
+        },
+      });
     });
 
     return {

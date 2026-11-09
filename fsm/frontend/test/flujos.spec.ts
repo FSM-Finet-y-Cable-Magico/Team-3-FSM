@@ -1152,7 +1152,8 @@ async function prepararTickets(page: Page) {
     if (route.request().method() !== 'GET') {
       const cuerpo = route.request().postData() ? route.request().postDataJSON() : null;
       registro.acciones.push({ ruta, cuerpo });
-      if (ruta.endsWith('/tomar')) registro.ticket.estado = 'EN_PROGRESO';
+      // Tomar lo deja a cargo de quien lo toma: el usuario 7 del login de prueba.
+      if (ruta.endsWith('/tomar')) Object.assign(registro.ticket, { estado: 'EN_PROGRESO', id_usuario_asignado: 7, usuario_asignado: { id_usuario: 7, nombre_completo: 'Usuario Prueba' } });
       if (ruta.endsWith('/resolver')) registro.ticket.estado = 'RESUELTO';
       if (ruta.endsWith('/reclasificar')) Object.assign(registro.ticket, { id_categoria: 2, categoria: categoriasTicket[1], prioridad: 'MEDIA', sla_horas: 24 });
       if (ruta.endsWith('/escalar')) Object.assign(registro.ticket, { estado: 'DERIVADO_OT', orden_trabajo: { id_ot: 500, estado: 'PENDIENTE' } });
@@ -1224,16 +1225,22 @@ test('CU-30: un ticket se deriva a una OT y queda el enlace a la OT', async ({ p
 // Acuerdo §6.4: la clave WiFi que el cliente pidio en el portal se ve una vez.
 test('clave WiFi: el detalle del ticket la muestra una sola vez y despues queda entregada', async ({ page }) => {
   await preparar(page);
-  await prepararTickets(page);
+  const registro = await prepararTickets(page);
   const entregas: string[] = [];
   let solicitud = { id_solicitud: 3, id_contrato: 5, estado: 'PENDIENTE', fecha_creacion: '2026-11-09T01:27:50.000Z', leida_en: null as string | null };
   await page.route('http://127.0.0.1:3000/api/clave-wifi/ticket/7', route => route.fulfill({ json: [solicitud] }));
   await page.route('http://127.0.0.1:3000/api/clave-wifi/3/entregar', route => {
     entregas.push(route.request().method());
     solicitud = { ...solicitud, estado: 'ENTREGADA', leida_en: '2026-11-09T02:00:00.000Z' };
+    registro.ticket.historial = [{ accion: 'ENTREGAR_CLAVE_WIFI', valor_anterior: null, valor_nuevo: { id_solicitud: 3 }, fecha_hora: '2026-11-09T02:00:00.000Z', usuario: { nombre_completo: 'Usuario Prueba' } }];
     return route.fulfill({ json: { id_solicitud: 3, id_ticket: 'TK-ABCDEFG', id_contrato: 5, clave: 'MiClaveNueva2026' } });
   });
   await login(page, 'admin'); await page.goto('/admin/tickets/7');
+
+  // Con el ticket sin tomar no hay boton: primero hay que hacerse cargo.
+  await expect(page.getByText('Toma el ticket para poder ver la clave.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ver clave WiFi (una sola vez)' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Tomar para resolver a distancia' }).click();
 
   await page.getByRole('button', { name: 'Ver clave WiFi (una sola vez)' }).click();
   // Primero pide confirmacion: un clic suelto no debe quemar la unica lectura.
@@ -1242,12 +1249,27 @@ test('clave WiFi: el detalle del ticket la muestra una sola vez y despues queda 
 
   await expect(page.getByLabel('Clave WiFi')).toHaveText('MiClaveNueva2026');
   expect(entregas).toEqual(['POST']);
+  // La entrega queda en el historial con quien la vio, sin la clave.
+  await expect(page.getByRole('listitem').filter({ hasText: 'Clave WiFi entregada' })).toContainText('solicitud #3');
 
   // Al volver a entrar ya no esta la clave, solo la constancia de entrega.
   await page.reload();
-  await expect(page.getByText(/Ya se entregó el/)).toBeVisible();
+  await expect(page.getByText(/No se puede volver a ver \(se entregó el/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Ver clave WiFi (una sola vez)' })).toHaveCount(0);
   await expect(page.getByText('MiClaveNueva2026')).toHaveCount(0);
+});
+
+test('clave WiFi: si el ticket lo tomo otra persona, no se ofrece la clave', async ({ page }) => {
+  await preparar(page);
+  const registro = await prepararTickets(page);
+  Object.assign(registro.ticket, { estado: 'EN_PROGRESO', id_usuario_asignado: 99, usuario_asignado: { id_usuario: 99, nombre_completo: 'Otra Jefa' } });
+  await page.route('http://127.0.0.1:3000/api/clave-wifi/ticket/7', route => route.fulfill({ json: [
+    { id_solicitud: 3, id_contrato: 5, estado: 'PENDIENTE', fecha_creacion: '2026-11-09T01:27:50.000Z', leida_en: null },
+  ] }));
+  await login(page, 'admin'); await page.goto('/admin/tickets/7');
+
+  await expect(page.getByText('Solo la puede ver quien tiene el ticket a cargo: Otra Jefa.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ver clave WiFi (una sola vez)' })).toHaveCount(0);
 });
 
 test('clave WiFi: un ticket sin solicitudes no muestra la seccion', async ({ page }) => {
