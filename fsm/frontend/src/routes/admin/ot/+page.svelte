@@ -216,8 +216,15 @@
           <tr class="hover:bg-slate-50 transition-colors">
             <td class="px-5 py-4 text-sm font-mono font-semibold text-slate-500">#{ot.id_ot}</td>
             <td class="px-5 py-4">
-              <p class="text-sm font-medium text-slate-800">{ot.cliente?.nombre_completo ?? '—'}</p>
-              <p class="text-xs font-mono text-slate-400">{formatearRut(ot.cliente?.rut)}</p>
+              {#if ot.cliente || !ot.solicitud_integracion}
+                <p class="text-sm font-medium text-slate-800">{ot.cliente?.nombre_completo ?? '—'}</p>
+                <p class="text-xs font-mono text-slate-400">{formatearRut(ot.cliente?.rut)}</p>
+              {:else}
+                <!-- P0-d: la OT de instalacion de G8 no tiene cliente todavia; la
+                     persona viene en la solicitud, igual que en el detalle. -->
+                <p class="text-sm font-medium text-slate-800">{ot.solicitud_integracion.nombre_completo ?? '—'}</p>
+                <p class="text-xs text-slate-400">Solicitud CRM</p>
+              {/if}
             </td>
             <td class="px-5 py-4 text-sm text-slate-600 font-medium">{ot.tipo_ot}</td>
             <td class="px-5 py-4"><EstadoBadge estado={ot.prioridad} size="sm" /></td>

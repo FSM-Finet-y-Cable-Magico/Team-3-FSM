@@ -887,6 +887,19 @@ test('P0-d: el detalle de la OT de G8 muestra nombre y telefono de la persona', 
   await expect(page.getByRole('link', { name: '+56912345678' })).toHaveAttribute('href', 'tel:+56912345678');
 });
 
+test('P0-d: el listado de OT muestra a la persona de la solicitud de G8', async ({ page }) => {
+  // Antes la columna Cliente decia "—": la OT no tiene cliente todavia y el
+  // listado no miraba la solicitud, aunque el detalle si (OT #5, 09-11-2026).
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes?*', route =>
+    route.fulfill({ json: { data: [otDeG8], page: 1, limit: 20, total: 1 } }));
+  await login(page, 'admin'); await page.goto('/admin/ot');
+
+  const fila = page.getByRole('row', { name: /#781/ });
+  await expect(fila.getByText('Juan Pérez Soto')).toBeVisible();
+  await expect(fila.getByText('Solicitud CRM')).toBeVisible();
+});
+
 // CU-33: el ADMIN elige con que empresa trabaja y TODA pantalla lo respeta. La
 // empresa viaja en un header que resuelve el backend en un solo lugar, asi que
 // basta con que la Vista lo mande en cada peticion.
