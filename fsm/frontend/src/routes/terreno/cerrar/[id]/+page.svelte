@@ -51,14 +51,15 @@
 
   // Paso 3 - Equipos individualizables (acuerdo con G1)
   let opcionesEquipo = $state<terrenoApi.OpcionesEquipo | null>(null);
+  // Lo que el tecnico lleva encima, para sugerirlo al escribir la serie. Solo
+  // sugiere: un equipo que se retira de la casa del cliente no esta aca.
+  let misEquipos = $state<terrenoApi.EquipoAsignado[]>([]);
   let equipos = $state<terrenoApi.EquipoOt[]>([]);
 
   // Paso 3 - Cierre
   let potencia = $state<string>('');
-  // CU-31: la llamada de cortesia la hace el jefe técnico con la OT completada.
-  // Si el tecnico hablo con el cliente en el domicilio, la puede dejar aca.
-  let resultadoLlamada = $state<'CONFORME' | 'NO_CONFORME' | null>(null);
-  let obsLlamada = $state('');
+  // CU-31: la llamada de cortesia NO se registra aca. La hace siempre el jefe
+  // tecnico, con la OT completada, desde su panel de llamadas.
   // CU-56: modalidad de resolucion. PRESENCIAL exige fotos; REMOTA no, pero
   // si hay fotos pide confirmar que no hubo visita (excepcion 1 del CU).
   let resueltoRemotamente = $state(false);
@@ -186,7 +187,7 @@
     userId = state.usuario?.userId ?? 0;
 
     try {
-      const [otData, matsData, catsData, opcEquipo] = await Promise.all([
+      const [otData, matsData, catsData, opcEquipo, asignados] = await Promise.all([
         ordenesApi.obtenerOT(token, idOT),
         terrenoApi.obtenerMateriales(token),
         ordenesApi.listarCategoriasFalla(token),
@@ -196,6 +197,8 @@
         // lista de opciones es peor que cerrar sin esa seccion. Es el mismo
         // criterio con el que el contrato con G1 no exige el diagnostico.
         terrenoApi.obtenerOpcionesEquipo(token).catch(() => null),
+        // Tampoco este: sin sugerencias se escribe la serie a mano, como antes.
+        terrenoApi.obtenerMisEquipos(token).catch(() => [] as terrenoApi.EquipoAsignado[]),
       ]);
       if (destruido) return;
       if (otData.id_tecnico !== userId) {
@@ -210,6 +213,7 @@
       materiales = matsData;
       categoriasFalla = catsData;
       opcionesEquipo = opcEquipo;
+      misEquipos = asignados;
     } catch (err) {
       errorInit = err instanceof Error ? err.message : 'Error al cargar datos';
     } finally {
@@ -277,7 +281,6 @@
         cantidad: cantidades[m.id_tipo_equipo],
       })),
       potencia_optica_dbm: parseFloat(potencia),
-      ...(resultadoLlamada && { resultado_llamada: resultadoLlamada, obs_llamada: obsLlamada || undefined }),
       resuelto_remotamente: resueltoRemotamente,
       id_categoria_falla: idCategoriaFalla ? Number(idCategoriaFalla) : undefined,
       categoria_falla_otro: categoriaFallaOtro.trim() || undefined,
@@ -566,7 +569,7 @@
       {#if paso === 3}
         <!-- Equipos individualizables (acuerdo con G1). Va ANTES de los datos de
              cierre porque es lo que el tecnico tiene en la mano en ese momento;
-             la potencia y la llamada de cortesia vienen despues.
+             la potencia viene despues.
              Si no se pudieron leer las opciones, la seccion no se dibuja y el
              cierre sigue disponible: se avisa, no se bloquea. -->
         {#if !opcionesEquipo}
@@ -592,6 +595,13 @@
             >+ Agregar</button>
           </div>
 
+          <!-- Una sola lista para todos los campos de serie (atributo `list`). -->
+          <datalist id="mis-equipos">
+            {#each misEquipos as e (e.numero_serie)}
+              <option value={e.numero_serie}>{[e.tipo, e.modelo].filter(Boolean).join(' · ')}</option>
+            {/each}
+          </datalist>
+
           {#each equipos as equipo, i (i)}
             <div class="border border-slate-200 rounded-xl p-3 space-y-3">
               <div class="flex items-center justify-between">
@@ -613,12 +623,18 @@
                   id="serie-{i}"
                   type="text"
                   autocapitalize="characters"
+                  list="mis-equipos"
                   value={equipo.numero_serie}
                   oninput={(e) => normalizarSerie(i, e.currentTarget.value)}
                   placeholder="Ej: ALTX1234ABCD"
                   class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base font-mono
                          focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                {#if misEquipos.length > 0}
+                  <p class="text-xs text-slate-500 mt-1">
+                    Al escribir le sugerimos los {misEquipos.length} equipos que lleva asignados.
+                  </p>
+                {/if}
               </div>
 
               <div>
@@ -803,44 +819,6 @@
             {/if}
           </div>
 
-          <!-- Resultado llamada -->
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-2">
-              Llamada de cortesía <span class="text-slate-400 text-xs">(opcional: si no, la hace el jefe técnico)</span>
-            </label>
-            <div class="grid grid-cols-2 gap-3">
-              <button
-                onclick={() => (resultadoLlamada = resultadoLlamada === 'CONFORME' ? null : 'CONFORME')}
-                aria-pressed={resultadoLlamada === 'CONFORME'}
-                class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
-                  {resultadoLlamada === 'CONFORME' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 text-slate-500'}"
-              >
-                Conforme
-              </button>
-              <button
-                onclick={() => (resultadoLlamada = resultadoLlamada === 'NO_CONFORME' ? null : 'NO_CONFORME')}
-                aria-pressed={resultadoLlamada === 'NO_CONFORME'}
-                class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
-                  {resultadoLlamada === 'NO_CONFORME' ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-200 text-slate-500'}"
-              >
-                No conforme
-              </button>
-            </div>
-          </div>
-
-          <!-- Observaciones llamada -->
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">
-              Observaciones de llamada <span class="text-slate-400 text-xs">(opcional)</span>
-            </label>
-            <textarea
-              bind:value={obsLlamada}
-              rows={3}
-              maxlength={500}
-              placeholder="Comentarios del cliente..."
-              class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            ></textarea>
-          </div>
 
           <!-- La modalidad (CU-56) se elige en el paso 1: de ella depende si las
                fotos son obligatorias. -->

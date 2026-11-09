@@ -112,6 +112,11 @@ const prisma = {
     create: jest.fn(async (_args: Prisma.llamada_cortesCreateArgs) => ({})),
     deleteMany: jest.fn(async (_args: Prisma.llamada_cortesDeleteManyArgs) => ({ count: 1 })),
   },
+  // Inventario de G1 en la base compartida: el cierre valida ahi la serie de
+  // cada equipo declarado, y el tecnico lista lo que lleva encima.
+  unidad_equipo: {
+    findMany: jest.fn(async (_args: Prisma.unidad_equipoFindManyArgs) => [] as unknown[]),
+  },
   tipo_equipo: {
     findFirst: jest.fn(async () => ({ nombre: 'Cable' })),
     // La rama de monitoreo agrego al cierre una validacion de que el material
@@ -258,6 +263,23 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
     expect(res.body.acciones).toBeDefined();
   });
 
+  it('el tecnico lista los equipos que lleva encima; el jefe no tiene "mis equipos"', async () => {
+    prisma.unidad_equipo.findMany.mockResolvedValueOnce([
+      { numero_serie: 'ONT-1', modelo: 'HG8145', tipo_equipo: { nombre: 'ONT' } },
+    ]);
+    // Tambien prueba el orden de las rutas: no la toma `@Get(':id')`.
+    const res = await request(app.getHttpServer())
+      .get('/api/ordenes/mis-equipos').auth(token('TECNICO'), { type: 'bearer' }).expect(200);
+    expect(res.body).toEqual([{ numero_serie: 'ONT-1', modelo: 'HG8145', tipo: 'ONT' }]);
+    expect(prisma.unidad_equipo.findMany.mock.calls.at(-1)?.[0]?.where).toMatchObject({
+      id_empresa: 1,
+      id_tecnico_asignado: 7,
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/ordenes/mis-equipos').auth(token('JEFE_TECNICO'), { type: 'bearer' }).expect(403);
+  });
+
   it('un handler sin @Roles permanece cerrado', async () => {
     await request(app.getHttpServer()).get('/api/test-denegado').auth(token('ADMIN'), { type: 'bearer' }).expect(403);
   });
@@ -365,7 +387,7 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-  it.each(['http', 'https'])('cierre con %s persiste evidencia, material, llamada, historial y auditoría', async protocolo => {
+  it.each(['http', 'https'])('cierre con %s persiste evidencia, material, historial y auditoría (sin llamada)', async protocolo => {
     const dto = cierre(); dto.fotos[0].url_cloudinary = protocolo + '://example.com/foto.jpg';
     const res = await cerrar(1, 'TECNICO', dto).expect(201);
     // MOD RF-04: el cierre del tecnico espera la aprobacion del jefe tecnico.
@@ -382,7 +404,10 @@ describe('API real: autenticación, permisos, evidencias y consultas', () => {
     // G3 rompa la prueba en vez de duplicar el movimiento en el lado de G1.
     expect(prisma.stock_consumible.update).not.toHaveBeenCalled();
     expect(prisma.movimiento_inventario.create).not.toHaveBeenCalled();
-    expect(prisma.llamada_cortes.create).toHaveBeenCalled();
+    // CU-31: la llamada de cortesia la registra SIEMPRE el jefe tecnico, con la
+    // OT ya completada. El body de `cierre()` trae `resultado_llamada` a
+    // proposito: un frontend viejo puede seguir mandandolo y se ignora.
+    expect(prisma.llamada_cortes.create).not.toHaveBeenCalled();
     expect(prisma.historial_ot.create).toHaveBeenCalled();
     expect(prisma.log_auditoria.create).toHaveBeenCalled();
   });

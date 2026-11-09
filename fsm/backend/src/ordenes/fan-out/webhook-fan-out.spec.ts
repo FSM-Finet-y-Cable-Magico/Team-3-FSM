@@ -214,3 +214,77 @@ describe('fan-out del cierre · la URL del destino', () => {
     expect(init.method).toBe('POST');
   });
 });
+
+/**
+ * Un 4xx no se reintenta y antes el log decia solo "HTTP 400". El 8-nov-2026
+ * G8 rechazo todos los cierres y para saber por que hubo que reenviar el
+ * payload a mano: la causa ("property falla_reportada should not exist")
+ * estaba en el cuerpo de la respuesta, que nadie guardaba.
+ */
+describe('fan-out del cierre · cuerpo de un rechazo 4xx', () => {
+  let warn: string[];
+  const payload = { id_ot: 4, clave_idempotencia: '4:x' } as unknown as PayloadCierre;
+
+  const rechazar = (status: number, texto: () => Promise<string>) => {
+    global.fetch = jest.fn(async () => ({ ok: false, status, text: texto })) as unknown as typeof fetch;
+  };
+
+  beforeEach(() => {
+    warn = [];
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation((m: unknown) => { warn.push(String(m)); });
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+  });
+
+  it('registra el cuerpo de la respuesta junto al codigo', async () => {
+    rechazar(400, async () => '{"message":["property falla_reportada should not exist"],"statusCode":400}');
+
+    await new WebhookFanOut([{ nombre: 'G8', url: 'http://g8/cierre' }]).notificar(payload);
+
+    expect(warn).toHaveLength(1);
+    expect(warn[0]).toContain('cierre 4 → G8: HTTP 400, no se reintenta');
+    expect(warn[0]).toContain('property falla_reportada should not exist');
+  });
+
+  it('recorta un cuerpo largo para no inundar el log', async () => {
+    rechazar(422, async () => 'x'.repeat(5000));
+
+    await new WebhookFanOut([{ nombre: 'G1', url: 'http://g1/cierre' }]).notificar(payload);
+
+    // 300 del cuerpo + el prefijo: alcanza para un mensaje de validacion.
+    expect(warn[0].length).toBeLessThan(400);
+    expect(warn[0]).toContain('…');
+  });
+
+  it('enmascara los RUT: un destino puede devolver el payload rechazado con datos del cliente', async () => {
+    rechazar(
+      400,
+      async () =>
+        '{"message":"cliente invalido","cliente":{"rut":"12.345.678-5","nombre":"Ana"},"otro":"123456785","tecnico":"21116770-k"}',
+    );
+
+    await new WebhookFanOut([{ nombre: 'G8', url: 'http://g8/cierre' }]).notificar(payload);
+
+    expect(warn[0]).toContain('cliente invalido');
+    expect(warn[0]).not.toMatch(/12\.345\.678-5|123456785|21116770-k/);
+    expect(warn[0].match(/\[RUT\]/g)).toHaveLength(3);
+  });
+
+  it('no enmascara numeros cortos como el id de la OT o un codigo HTTP', async () => {
+    rechazar(400, async () => '{"statusCode":400,"id_ot":4,"id_contrato":92}');
+
+    await new WebhookFanOut([{ nombre: 'G8', url: 'http://g8/cierre' }]).notificar(payload);
+
+    expect(warn[0]).toContain('"statusCode":400,"id_ot":4,"id_contrato":92');
+  });
+
+  it('si el cuerpo no se puede leer, igual registra el codigo', async () => {
+    rechazar(400, async () => {
+      throw new Error('stream cortado');
+    });
+
+    await new WebhookFanOut([{ nombre: 'G8', url: 'http://g8/cierre' }]).notificar(payload);
+
+    expect(warn).toEqual(['cierre 4 → G8: HTTP 400, no se reintenta']);
+  });
+});

@@ -44,7 +44,7 @@ describe('autorización de OT desde el servicio', () => {
   it.each(['ADMIN', 'JEFE_TECNICO', 'DESCONOCIDO'])('no permite subir/cerrar a %s aunque coincida el usuario asignado', async rol => {
     const user = { userId: 7, id_empresa: 1, rol };
     await expect(service.subirFoto(1, undefined, user)).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(service.cerrarOT(1, { fotos: [], materiales: [], potencia_optica_dbm: -21, resultado_llamada: 'CONFORME' }, user))
+    await expect(service.cerrarOT(1, { fotos: [], materiales: [], potencia_optica_dbm: -21 }, user))
       .rejects.toBeInstanceOf(ForbiddenException);
     expect(subirEvidencia).not.toHaveBeenCalled();
     expect(notificar).not.toHaveBeenCalled();

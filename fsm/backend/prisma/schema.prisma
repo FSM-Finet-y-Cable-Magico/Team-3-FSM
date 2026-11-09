@@ -333,6 +333,10 @@ model unidad_equipo {
   id_bodega_actual     Int?
   numero_poste         String?                   @db.VarChar(30)
   id_caja_nap          Int?
+  /// Tecnico que lleva el equipo encima. La escribe G1 al asignarlo; el FSM
+  /// solo la lee, para validar la serie al cerrar. Sin relacion a `usuario` a
+  /// proposito: es un dato de G1 y no se navega desde aca.
+  id_tecnico_asignado  Int?
   tipo_equipo          tipo_equipo?              @relation(fields: [id_tipo_equipo], references: [id_tipo_equipo])
   empresa              empresa?                  @relation(fields: [id_empresa], references: [id_empresa])
   cliente_instalado    cliente?                  @relation(fields: [id_cliente_instalado], references: [id_cliente])

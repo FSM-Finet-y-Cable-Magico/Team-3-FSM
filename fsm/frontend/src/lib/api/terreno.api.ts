@@ -54,9 +54,6 @@ export interface CerrarOTDto {
   fotos: { url_cloudinary: string; formato: string; tamano_kb: number }[];
   materiales: { id_tipo_equipo: number; cantidad: number; numero_serie?: string }[];
   potencia_optica_dbm: number;
-  /** CU-31: opcional; si no, la llamada la hace despues el jefe tecnico. */
-  resultado_llamada?: 'CONFORME' | 'NO_CONFORME';
-  obs_llamada?: string;
   resuelto_remotamente?: boolean;
   id_categoria_falla?: number;
   categoria_falla_otro?: string;
@@ -85,6 +82,17 @@ export async function obtenerMateriales(token: string): Promise<MaterialDisponib
 
 export async function obtenerOpcionesEquipo(token: string): Promise<OpcionesEquipo> {
   return fetchApi(token, `${API_URL}/api/ordenes/acciones-equipo`);
+}
+
+/** Un equipo que G1 le asigno al tecnico y que todavia lleva encima. */
+export interface EquipoAsignado {
+  numero_serie: string;
+  modelo: string | null;
+  tipo: string | null;
+}
+
+export async function obtenerMisEquipos(token: string): Promise<EquipoAsignado[]> {
+  return fetchApi(token, `${API_URL}/api/ordenes/mis-equipos`);
 }
 
 export async function cerrarOT(token: string, id_ot: number, dto: CerrarOTDto): Promise<Record<string, unknown>> {
