@@ -11,6 +11,10 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SolicitudClaveWifiDto } from './dto/solicitud-clave-wifi.dto.js';
 import { descifrarClave, huellaSolicitud } from './clave-wifi.crypto.js';
+import {
+  ESTADO_TICKET,
+  estadoCanonicoTicket,
+} from '../tickets/tickets.constants.js';
 
 export const MENSAJE_SIN_LLAVE =
   'El canal de claves WiFi no esta configurado. Reintente mas tarde.';
@@ -185,7 +189,12 @@ export class ClaveWifiService {
       n !== null && n <= MAX_INT4 ? [{ id_ticket: n }, porCodigo] : [porCodigo];
     return this.prisma.ticket.findFirst({
       where: { id_empresa, OR },
-      select: { id_ticket: true, estado: true, id_usuario_asignado: true },
+      select: {
+        id_ticket: true,
+        estado: true,
+        id_usuario_asignado: true,
+        orden_trabajo: { select: { id_ot: true } },
+      },
     });
   }
 
@@ -218,7 +227,17 @@ export class ClaveWifiService {
 
     const t = await this.ticketDeSolicitud(s.id_ticket, actor.id_empresa);
     if (!t) throw new ConflictException(MENSAJE_SIN_TICKET);
-    if (t.estado !== 'EN_PROGRESO' || t.id_usuario_asignado !== actor.userId) {
+    // El estado del FSM, no el literal: G2 escribe "Escalado" directo en la
+    // base global (ver estadoCanonicoTicket), y el panel decide con el mismo.
+    const estado = estadoCanonicoTicket({
+      estado: t.estado,
+      id_usuario_asignado: t.id_usuario_asignado,
+      tieneOt: t.orden_trabajo != null,
+    });
+    if (
+      estado !== ESTADO_TICKET.EN_PROGRESO ||
+      t.id_usuario_asignado !== actor.userId
+    ) {
       throw new ConflictException(MENSAJE_TOMAR_TICKET);
     }
 

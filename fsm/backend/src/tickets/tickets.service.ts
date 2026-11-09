@@ -9,6 +9,8 @@ import {
   ESTADO_TICKET,
   ESTADOS_TICKET_ABIERTOS,
   TRANSICIONES_TICKET,
+  estadoCanonicoTicket,
+  filtroEstadoTicket,
   generarCodigoSeguimiento,
   prioridadPorSla,
   type EstadoTicket,
@@ -35,6 +37,17 @@ const INCLUDE_TICKET = {
 } satisfies Prisma.ticketInclude;
 
 type TicketConRelaciones = Prisma.ticketGetPayload<{ include: typeof INCLUDE_TICKET }>;
+
+/**
+ * El estado en el vocabulario del FSM aunque la fila la haya escrito otro grupo
+ * (ver estadoCanonicoTicket). Toda decision sobre el estado pasa por aca.
+ */
+const estadoDe = (t: TicketConRelaciones) =>
+  estadoCanonicoTicket({
+    estado: t.estado,
+    id_usuario_asignado: t.id_usuario_asignado,
+    tieneOt: t.orden_trabajo != null,
+  });
 
 const INTENTOS_CODIGO = 5;
 const HORA_MS = 3_600_000;
@@ -128,13 +141,12 @@ export class TicketsService {
   ) {
     const { page, limit, skip } = normalizarPaginacion(filtros.page, filtros.limit);
     const where: Prisma.ticketWhereInput = { id_empresa };
-    // `insensitive` es red de seguridad, no el arreglo. Los tickets escritos
-    // antes de este modulo tenian la caja mezclada --"Abierto", "cerrado"-- y
-    // con la comparacion exacta no aparecian en ningun filtro: se veian en el
-    // listado completo y desaparecian al filtrar, que es la peor forma de
-    // fallar. La migracion `normalizar_tickets_legado` los deja canonicos; esto
-    // cubre un ambiente donde todavia no haya corrido.
-    if (filtros.estado) where.estado = { equals: filtros.estado, mode: 'insensitive' };
+    // Los tickets con otro vocabulario --"Abierto", "Escalado", "cerrado"-- se
+    // veian en el listado completo y desaparecian al filtrar, que es la peor
+    // forma de fallar. En la base propia los arreglo la migracion
+    // `normalizar_tickets_legado`; en la global G2 los sigue escribiendo, asi
+    // que el filtro aplica la misma regla (ver filtroEstadoTicket).
+    if (filtros.estado) Object.assign(where, filtroEstadoTicket(filtros.estado));
     if (filtros.prioridad) where.prioridad = { equals: filtros.prioridad, mode: 'insensitive' };
 
     const [filas, total] = await Promise.all([
@@ -191,7 +203,7 @@ export class TicketsService {
 
   async asignar(id_ticket: number, id_usuario: number, actor: Actor) {
     const t = await this.buscar(id_ticket, actor.id_empresa);
-    if (t.estado === ESTADO_TICKET.RESUELTO) throw new BadRequestException('El ticket ya está resuelto');
+    if (estadoDe(t) === ESTADO_TICKET.RESUELTO) throw new BadRequestException('El ticket ya está resuelto');
     const usuario = await this.prisma.usuario.findFirst({
       where: { id_usuario, id_empresa: actor.id_empresa, activo: true },
       select: { id_usuario: true },
@@ -258,7 +270,11 @@ export class TicketsService {
     if (t.orden_trabajo) {
       throw new BadRequestException(`El ticket ya está derivado a la OT ${t.orden_trabajo.id_ot}`);
     }
-    if (!(TRANSICIONES_TICKET[t.estado as EstadoTicket] ?? []).includes(ESTADO_TICKET.DERIVADO_OT)) {
+    const estado = estadoDe(t);
+    if (
+      !estado ||
+      !TRANSICIONES_TICKET[estado].includes(ESTADO_TICKET.DERIVADO_OT)
+    ) {
       throw new BadRequestException(`Un ticket ${t.estado} no se puede derivar a una OT`);
     }
     if (!t.cliente?.rut) {
@@ -290,7 +306,8 @@ export class TicketsService {
 
   async reclasificar(id_ticket: number, id_categoria: number, actor: Actor, ahora = new Date()) {
     const t = await this.buscar(id_ticket, actor.id_empresa);
-    if (!ESTADOS_TICKET_ABIERTOS.includes(t.estado as EstadoTicket)) {
+    const estado = estadoDe(t);
+    if (!estado || !ESTADOS_TICKET_ABIERTOS.includes(estado)) {
       throw new BadRequestException('Un ticket resuelto no se puede reclasificar');
     }
     if (t.id_categoria === id_categoria) {
@@ -345,7 +362,8 @@ export class TicketsService {
     extra: Prisma.ticketUncheckedUpdateInput = {},
     detalle: Record<string, string | number> = {},
   ) {
-    const permitidas = TRANSICIONES_TICKET[t.estado as EstadoTicket] ?? [];
+    const desde = estadoDe(t);
+    const permitidas = desde ? TRANSICIONES_TICKET[desde] : [];
     if (!permitidas.includes(destino)) {
       throw new BadRequestException(`Transición de ticket no permitida: ${t.estado} → ${destino}`);
     }
@@ -368,9 +386,12 @@ export class TicketsService {
   private aVista(t: TicketConRelaciones, ahora: Date) {
     const sla_horas = t.categoria?.sla_horas ?? null;
     const vence = sla_horas == null ? null : new Date(t.fecha_creacion.getTime() + sla_horas * HORA_MS);
-    const abierto = ESTADOS_TICKET_ABIERTOS.includes(t.estado as EstadoTicket);
+    const estado = estadoDe(t);
+    const abierto = estado !== null && ESTADOS_TICKET_ABIERTOS.includes(estado);
     return {
       ...t,
+      // El de la Vista es siempre el del FSM; la fila guardada no se toca al leer.
+      estado: estado ?? t.estado,
       sla_horas,
       vence_en: vence?.toISOString() ?? null,
       // CU-30, excepcion 1: SLA vencido sin accion → marcado en rojo.

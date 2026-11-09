@@ -35,6 +35,93 @@ export const TRANSICIONES_TICKET: Record<EstadoTicket, EstadoTicket[]> = {
   RESUELTO: [],
 };
 
+/**
+ * El estado de un ticket en el vocabulario del FSM, aunque la fila la haya
+ * escrito otro grupo con el suyo.
+ *
+ * G2 escribe tickets directo en la tabla `ticket` de la base global con
+ * "Escalado", "Cerrado", etc. Es la MISMA regla de la migracion
+ * `20260930020000_normalizar_tickets_legado`, pero aplicada al leer: en la
+ * global el FSM no migra y G2 sigue escribiendo filas nuevas.
+ *
+ *  - "Escalado" se decide por el dato: con OT es DERIVADO_OT, con alguien
+ *    asignado EN_PROGRESO, sin nadie ABIERTO (vuelve a la cola).
+ *  - "Cerrado" es RESUELTO, el unico terminal.
+ *  - Un estado que nadie definio devuelve null: no se adivina.
+ *
+ * El FSM no reescribe la fila al leerla. La reescribe recien cuando alguien la
+ * mueve, y entonces escribe su propio vocabulario.
+ */
+export function estadoCanonicoTicket(t: {
+  estado: string;
+  id_usuario_asignado: number | null;
+  tieneOt: boolean;
+}): EstadoTicket | null {
+  const e = t.estado.trim().toUpperCase();
+  if ((Object.values(ESTADO_TICKET) as string[]).includes(e))
+    return e as EstadoTicket;
+  if (e === 'CERRADO') return ESTADO_TICKET.RESUELTO;
+  if (e === 'ESCALADO') {
+    if (t.tieneOt) return ESTADO_TICKET.DERIVADO_OT;
+    return t.id_usuario_asignado != null
+      ? ESTADO_TICKET.EN_PROGRESO
+      : ESTADO_TICKET.ABIERTO;
+  }
+  return null;
+}
+
+const igual = (valor: string) => ({
+  equals: valor,
+  mode: 'insensitive' as const,
+});
+
+/**
+ * El `where` del filtro por estado, con la misma regla que
+ * `estadoCanonicoTicket`: filtrar por ABIERTO tambien trae el "Escalado" que
+ * nadie tomo. Sin esto, esas filas se ven en el listado completo y
+ * desaparecen al filtrar.
+ */
+export function filtroEstadoTicket(estado: string) {
+  const escalado = igual('ESCALADO');
+  switch (estado.trim().toUpperCase()) {
+    case ESTADO_TICKET.ABIERTO:
+      return {
+        OR: [
+          { estado: igual('ABIERTO') },
+          {
+            estado: escalado,
+            id_usuario_asignado: null,
+            orden_trabajo: { is: null },
+          },
+        ],
+      };
+    case ESTADO_TICKET.EN_PROGRESO:
+      return {
+        OR: [
+          { estado: igual('EN_PROGRESO') },
+          {
+            estado: escalado,
+            id_usuario_asignado: { not: null },
+            orden_trabajo: { is: null },
+          },
+        ],
+      };
+    case ESTADO_TICKET.DERIVADO_OT:
+      return {
+        OR: [
+          { estado: igual('DERIVADO_OT') },
+          { estado: escalado, orden_trabajo: { isNot: null } },
+        ],
+      };
+    case ESTADO_TICKET.RESUELTO:
+      return {
+        OR: [{ estado: igual('RESUELTO') }, { estado: igual('CERRADO') }],
+      };
+    default:
+      return { estado: igual(estado) };
+  }
+}
+
 /** Mismos valores y mismo orden que la prioridad de las OT. */
 export const PRIORIDAD_TICKET = {
   CRITICA: 'CRITICA',
