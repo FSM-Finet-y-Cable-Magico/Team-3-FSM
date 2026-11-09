@@ -11,6 +11,7 @@
   import { authStore } from '$lib/stores/auth.store';
   import * as api from '$lib/api/tickets.api';
   import { listarCategoriasFalla, listarTecnicos, type CategoriaFalla, type Tecnico } from '$lib/api/ordenes.api';
+  import { entregarClaveWifi, listarSolicitudesWifi, type SolicitudClaveWifi } from '$lib/api/clave-wifi.api';
 
   const id = $derived(Number($page.params.id ?? 0));
   let token = '';
@@ -29,6 +30,14 @@
   let idTecnico = $state('');
   let indicaciones = $state('');
 
+  // Clave WiFi pedida desde el portal (acuerdo §6.4). La clave en claro vive
+  // solo en esta variable: no se guarda en ningun store ni en el navegador, y
+  // al salir de la pantalla se pierde, igual que en el servidor.
+  let solicitudesWifi = $state<SolicitudClaveWifi[]>([]);
+  let confirmandoWifi = $state<number | null>(null);
+  let claveVisible = $state<{ id_solicitud: number; clave: string } | null>(null);
+  let copiada = $state(false);
+
   const abierto = $derived(ticket !== null && ticket.estado !== 'RESUELTO');
 
   onMount(() => {
@@ -42,7 +51,39 @@
     cargar();
     listarCategoriasFalla(token).then((c) => (categorias = c)).catch(() => {});
     listarTecnicos(token).then((t) => (tecnicos = t)).catch(() => {});
+    cargarSolicitudesWifi();
   });
+
+  function cargarSolicitudesWifi() {
+    return listarSolicitudesWifi(token, id).then((s) => (solicitudesWifi = s)).catch(() => {});
+  }
+
+  async function verClaveWifi(idSolicitud: number) {
+    ocupado = true;
+    error = '';
+    try {
+      const r = await entregarClaveWifi(token, idSolicitud);
+      claveVisible = { id_solicitud: r.id_solicitud, clave: r.clave };
+      copiada = false;
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'No se pudo obtener la clave';
+    } finally {
+      confirmandoWifi = null;
+      ocupado = false;
+      // Haya salido bien o no, el estado cambio o pudo cambiar en el servidor.
+      await cargarSolicitudesWifi();
+    }
+  }
+
+  async function copiarClave() {
+    if (!claveVisible) return;
+    try {
+      await navigator.clipboard.writeText(claveVisible.clave);
+      copiada = true;
+    } catch {
+      // Sin permiso de portapapeles queda la clave a la vista para copiarla a mano.
+    }
+  }
 
   async function cargar() {
     cargando = true;
@@ -177,6 +218,48 @@
         {/if}
       </div>
     </div>
+
+    {#if solicitudesWifi.length > 0}
+      <div class="bg-white rounded-xl shadow p-6 space-y-3">
+        <h2 class="font-semibold text-slate-700">Clave WiFi pedida por el cliente</h2>
+        <p class="text-sm text-slate-600">
+          La clave se puede ver una sola vez. Cópiala antes de salir de esta pantalla: después ya no se puede volver a mostrar y el cliente tendría que pedirla de nuevo desde el portal.
+        </p>
+        <ul class="space-y-3">
+          {#each solicitudesWifi as s (s.id_solicitud)}
+            <li class="border rounded-lg p-3 space-y-2">
+              <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span class="text-slate-800">
+                  Solicitud #{s.id_solicitud} · contrato {s.id_contrato} · {fecha(s.fecha_creacion)}
+                </span>
+                <EstadoBadge estado={s.estado} />
+              </div>
+
+              {#if claveVisible?.id_solicitud === s.id_solicitud}
+                <div class="flex flex-wrap items-center gap-2">
+                  <code class="font-mono text-lg bg-slate-100 text-slate-900 rounded px-3 py-1 select-all" aria-label="Clave WiFi">{claveVisible.clave}</code>
+                  <button onclick={copiarClave} class="btn btn-secundario text-sm">{copiada ? 'Copiada' : 'Copiar'}</button>
+                </div>
+              {:else if s.estado === 'PENDIENTE'}
+                {#if confirmandoWifi === s.id_solicitud}
+                  <div class="flex flex-wrap items-center gap-2 text-sm">
+                    <span class="text-slate-700">Solo se puede ver una vez. ¿Mostrarla ahora?</span>
+                    <button onclick={() => (confirmandoWifi = null)} disabled={ocupado} class="btn btn-secundario text-sm">Cancelar</button>
+                    <button onclick={() => verClaveWifi(s.id_solicitud)} disabled={ocupado} class="btn btn-primario text-sm">Mostrar clave</button>
+                  </div>
+                {:else}
+                  <button onclick={() => (confirmandoWifi = s.id_solicitud)} disabled={ocupado} class="btn btn-primario text-sm">
+                    Ver clave WiFi (una sola vez)
+                  </button>
+                {/if}
+              {:else}
+                <p class="text-xs text-slate-500">Ya se entregó el {fecha(s.leida_en)}. No se puede volver a ver.</p>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
 
     {#if abierto}
       <div class="bg-white rounded-xl shadow p-6 space-y-5">

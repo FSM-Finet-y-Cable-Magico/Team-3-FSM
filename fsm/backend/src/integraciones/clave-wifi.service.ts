@@ -125,6 +125,49 @@ export class ClaveWifiService {
   }
 
   /**
+   * Las solicitudes de clave WiFi de uno de nuestros tickets, para el panel.
+   *
+   * La solicitud no apunta al ticket por llave foranea: trae el `id_ticket`
+   * que manda G2 como texto. Se busca por el codigo de seguimiento, que es lo
+   * que ve el cliente en el portal, y tambien por el id numerico, por si G2
+   * manda ese.
+   *
+   * Solo metadatos. Ni el ciphertext ni la huella salen de aca: la clave se
+   * pide aparte con `entregar`, que es la que la consume.
+   */
+  async porTicket(id_ticket: number, id_empresa: number) {
+    const t = await this.prisma.ticket.findFirst({
+      where: { id_ticket, id_empresa },
+      select: { id_ticket: true, codigo_seguimiento: true },
+    });
+    if (!t) throw new NotFoundException('Ticket no encontrado');
+
+    const claves = [String(t.id_ticket)];
+    if (t.codigo_seguimiento) claves.push(t.codigo_seguimiento);
+
+    const filas = await this.prisma.solicitud_clave_wifi.findMany({
+      where: { id_empresa, id_ticket: { in: claves } },
+      orderBy: { fecha_creacion: 'desc' },
+      select: {
+        id_solicitud: true,
+        id_contrato: true,
+        estado: true,
+        fecha_creacion: true,
+        leida_en: true,
+      },
+    });
+    // Se arma a mano y no se devuelve la fila tal cual: si alguien amplia el
+    // `select`, la clave cifrada no se cuela en la respuesta por accidente.
+    return filas.map((f) => ({
+      id_solicitud: f.id_solicitud,
+      id_contrato: f.id_contrato,
+      estado: f.estado,
+      fecha_creacion: f.fecha_creacion,
+      leida_en: f.leida_en,
+    }));
+  }
+
+  /**
    * Entrega la clave en claro al tecnico, una sola vez.
    *
    * La lectura unica es a proposito: una clave de cliente que se puede volver a
