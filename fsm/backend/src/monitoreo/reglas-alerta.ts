@@ -61,6 +61,11 @@ export interface EstadoOnt {
   odb_puerto?: number | null;
   zona?: string | null;
   nombre_cliente?: string | null;
+  /**
+   * El cliente esta suspendido por deuda (contrato de G8 suspendido y ninguno
+   * activo). Su ONT caida es esperada: no es incidente. Ver `clientesSuspendidos`.
+   */
+  suspendido?: boolean;
 }
 
 export interface AlertaPropuesta {
@@ -124,7 +129,12 @@ export function afectaAlGrupo(o: EstadoOnt): boolean {
  * Equipo de un cliente dado de baja: sigue en SmartOLT, OFFLINE para siempre.
  * No es un incidente y no participa de ningún cálculo — ver `DIAS_MAX_INCIDENTE`.
  */
-export function esInactiva(o: Pick<EstadoOnt, 'estado_conexion' | 'sin_senal_desde'>, ahora: Date): boolean {
+export function esInactiva(
+  o: Pick<EstadoOnt, 'estado_conexion' | 'sin_senal_desde' | 'suspendido'>,
+  ahora: Date,
+): boolean {
+  // Suspendido por deuda: fuera del padron igual que una baja, este o no en linea.
+  if (o.suspendido) return true;
   if (!estaCaida(o)) return false;
   if (!o.sin_senal_desde) return false;
   return (ahora.getTime() - o.sin_senal_desde.getTime()) / 86_400_000 > DIAS_MAX_INCIDENTE;
