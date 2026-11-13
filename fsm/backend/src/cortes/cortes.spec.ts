@@ -36,6 +36,12 @@ describe('clasificarContrato', () => {
     expect(diaEnZona(new Date('2026-11-13T02:30:00Z'))).toBe('2026-11-12');
   });
 
+  it('un corte de noche cuenta aunque G8 haya fechado la suspension en UTC (ya el dia siguiente)', () => {
+    // 2026-11-13 22:30 en Santiago = 2026-11-14 01:30 UTC; G8 guardo fecha_suspension = 2026-11-14.
+    const deNoche = { ...corte('2026-11-14T01:30:00Z'), fecha_suspension: '2026-11-14' };
+    expect(clasificarContrato({ estado: 'Suspendido', fecha_suspension: new Date('2026-11-14T00:00:00Z') }, deNoche)).toBe('AL_DIA');
+  });
+
   it('suspendido cuyo ultimo registro es una reactivacion: por cortar', () => {
     expect(clasificarContrato({ estado: 'Suspendido', fecha_suspension: SUSP }, reactivacion('2026-11-14T10:00:00Z'))).toBe('POR_CORTAR');
   });

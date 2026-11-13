@@ -35,6 +35,13 @@ export interface ContratoParaCorte {
 export interface RegistroCorte {
   accion: string;
   fecha_hora: Date;
+  /**
+   * La `fecha_suspension` del contrato cuando se registro el corte (se guarda en
+   * `valor_nuevo`). Si es la misma de hoy, el corte es de ESTA suspension, sin
+   * importar la hora: G8 puede fechar en UTC y, de noche, eso ya es el dia
+   * siguiente en Chile.
+   */
+  fecha_suspension?: string | null;
 }
 
 /**
@@ -48,8 +55,10 @@ export interface RegistroCorte {
 export function clasificarContrato(c: ContratoParaCorte, ultimo: RegistroCorte | null): EstadoCorte {
   if (esSuspendido(c.estado)) {
     if (!ultimo || ultimo.accion !== ACCION_CORTE) return 'POR_CORTAR';
-    if (c.fecha_suspension && diaEnZona(ultimo.fecha_hora) < diaDeFecha(c.fecha_suspension)) return 'POR_CORTAR';
-    return 'AL_DIA';
+    if (!c.fecha_suspension) return 'AL_DIA';
+    const suspension = diaDeFecha(c.fecha_suspension);
+    if (ultimo.fecha_suspension === suspension) return 'AL_DIA';
+    return diaEnZona(ultimo.fecha_hora) < suspension ? 'POR_CORTAR' : 'AL_DIA';
   }
   if (esActivo(c.estado) && ultimo?.accion === ACCION_CORTE) return 'POR_REACTIVAR';
   return 'AL_DIA';

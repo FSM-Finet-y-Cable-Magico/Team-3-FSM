@@ -1,9 +1,18 @@
 import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { ACCION_CORTE, ACCION_REACTIVACION, clasificarContrato, diaDeFecha } from './cortes.js';
+import { ACCION_CORTE, ACCION_REACTIVACION, clasificarContrato, diaDeFecha, type RegistroCorte } from './cortes.js';
 import { esFaltaDePermiso } from './suspendidos.js';
 
 const ACCIONES = [ACCION_CORTE, ACCION_REACTIVACION];
+
+/** Fila de `log_auditoria` → lo que necesita la regla, incluida la fecha de suspension guardada. */
+function comoRegistro(
+  r: { accion: string; fecha_hora: Date; valor_nuevo?: unknown } | null | undefined,
+): RegistroCorte | null {
+  if (!r) return null;
+  const fecha = (r.valor_nuevo as { fecha_suspension?: string | null } | null)?.fecha_suspension;
+  return { accion: r.accion, fecha_hora: r.fecha_hora, fecha_suspension: fecha };
+}
 const MAX_HISTORIAL = 50;
 
 const SELECT_CONTRATO = {
@@ -100,7 +109,7 @@ export class CortesService {
       };
     };
 
-    const clasificados = contratos.map((c) => ({ c, estado: clasificarContrato(c, ultimo.get(c.id_contrato) ?? null) }));
+    const clasificados = contratos.map((c) => ({ c, estado: clasificarContrato(c, comoRegistro(ultimo.get(c.id_contrato))) }));
     const nombre = new Map(contratos.map((c) => [c.id_contrato, c.cliente?.nombre_completo ?? null]));
 
     return {
@@ -143,10 +152,10 @@ export class CortesService {
     const ultimo = await this.prisma.log_auditoria.findFirst({
       where: { entidad_afectada: 'contrato', id_entidad_afectada: id_contrato, accion: { in: ACCIONES } },
       orderBy: [{ fecha_hora: 'desc' }, { id_log: 'desc' }],
-      select: { accion: true, fecha_hora: true },
+      select: { accion: true, fecha_hora: true, valor_nuevo: true },
     });
     const esperado = accion === 'CORTE' ? 'POR_CORTAR' : 'POR_REACTIVAR';
-    if (clasificarContrato(c, ultimo) !== esperado) {
+    if (clasificarContrato(c, comoRegistro(ultimo)) !== esperado) {
       throw new ConflictException({
         codigo: 'NO_PENDIENTE',
         message:

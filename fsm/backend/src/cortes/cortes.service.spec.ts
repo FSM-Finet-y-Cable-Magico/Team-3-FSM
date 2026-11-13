@@ -79,6 +79,14 @@ describe('CortesService', () => {
     expect(prisma.log_auditoria.create).not.toHaveBeenCalled();
   });
 
+  it('409 tambien para un corte registrado de noche, con la suspension fechada en UTC', async () => {
+    contratos = [contrato(1, 'Suspendido', { fecha_suspension: new Date('2026-11-14T00:00:00Z') })];
+    registros = [{ accion: ACCION_CORTE, fecha_hora: new Date('2026-11-14T01:30:00Z'), id_entidad_afectada: 1, valor_nuevo: { fecha_suspension: '2026-11-14' } }];
+    await expect(service.registrar(1, 1, 'CORTE', undefined, 4)).rejects.toBeInstanceOf(ConflictException);
+    const r = await service.listar(1);
+    expect(r.por_cortar).toHaveLength(0);
+  });
+
   it('404 por un contrato de otra empresa', async () => {
     contratos = [contrato(1, 'Suspendido')];
     await expect(service.registrar(2, 1, 'CORTE', undefined, 4)).rejects.toBeInstanceOf(NotFoundException);

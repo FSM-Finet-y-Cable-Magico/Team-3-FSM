@@ -10,6 +10,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '../generated/prisma/client.js';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { diaEnZona } from '../src/cortes/cortes.js';
 
 const ACCION = 'DEMO_CORTES_SUSPENDER';
 const url = process.env.DATABASE_URL ?? '';
@@ -30,7 +31,8 @@ async function suspender() {
     console.log('No hay contratos activos con cliente en la empresa 1.');
     return;
   }
-  const hoy = new Date(new Date().toISOString().slice(0, 10));
+  // El dia de hoy en Chile, no en UTC: de noche UTC ya es manana.
+  const hoy = new Date(diaEnZona(new Date()));
   for (const c of activos) {
     await prisma.contrato.update({ where: { id_contrato: c.id_contrato }, data: { estado: 'Suspendido', fecha_suspension: hoy } });
   }
