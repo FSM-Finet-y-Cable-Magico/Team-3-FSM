@@ -52,3 +52,20 @@ describe('fechaDeFuente', () => {
     }
   });
 });
+
+/**
+ * El formato real de SmartOLT, medido el 13-11 sobre las 946 ONT: 883 traen
+ * "AAAA-MM-DD HH:MM:SS.ffffff" (microsegundos) y 63 traen null. La primera
+ * version solo aceptaba hasta 3 decimales y rechazaba las 883: todas las
+ * lecturas quedaban fechadas en la primera vez que se vio la ONT.
+ */
+describe('fechaDeFuente · formato real de SmartOLT', () => {
+  it('acepta microsegundos y los recorta a milisegundos', () => {
+    expect(fechaDeFuente('2026-11-13 10:28:24.756123')).toEqual(new Date('2026-11-13T13:28:24.756Z'));
+  });
+
+  it('acepta cualquier cantidad de decimales', () => {
+    expect(fechaDeFuente('2026-11-13 10:28:24.7')).toEqual(new Date('2026-11-13T13:28:24.700Z'));
+    expect(fechaDeFuente('2026-11-13 10:28:24.123456789')).toEqual(new Date('2026-11-13T13:28:24.123Z'));
+  });
+});

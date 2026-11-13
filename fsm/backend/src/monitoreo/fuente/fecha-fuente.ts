@@ -1,7 +1,11 @@
 import { instanteDesdePared, ZONA_OPERACION } from '../../common/utils/dia-habil.util.js';
 
-/** "2026-11-13 10:28:24.756": fecha y hora de pared, sin zona. */
-const PARED = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/;
+/**
+ * "2026-11-13 10:28:24.756123": fecha y hora de pared, sin zona. SmartOLT manda
+ * MICROSEGUNDOS (6 decimales): se aceptan los decimales que vengan y se recortan
+ * a milisegundos. Con un tope de 3, las 883 fechas reales quedaban rechazadas.
+ */
+const PARED = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?$/;
 /** Termina en Z o en un offset (+00:00, -0300): la fecha ya dice su zona. */
 const CON_ZONA = /(?:[zZ]|[+-]\d{2}:?\d{2})$/;
 
@@ -37,7 +41,7 @@ export function fechaDeFuente(v: string | null | undefined, zona: string = ZONA_
   if (n(mes) < 1 || n(mes) > 12 || n(d) < 1 || n(d) > 31 || n(h) > 23 || n(min) > 59 || n(seg) > 59) {
     return null;
   }
-  // ".7" son 700 ms, no 7.
-  const ms = n(frac.padEnd(3, '0'));
+  // ".7" son 700 ms, no 7; ".756123" son 756 ms (se recorta, no se redondea).
+  const ms = n(frac.slice(0, 3).padEnd(3, '0'));
   return instanteDesdePared(zona, n(y), n(mes), n(d), n(h), n(min), n(seg), ms);
 }

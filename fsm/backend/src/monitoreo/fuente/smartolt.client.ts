@@ -174,16 +174,31 @@ export class SmartOltClient implements FuenteMonitoreo {
 
   async listarLecturas(filtro?: FiltroConsulta): Promise<LecturaOnt[]> {
     const onus = await this.obtenerOnus(filtro);
-    return onus
+    const ilegibles: string[] = [];
+    const lecturas = onus
       .filter((o) => o.sn)
-      .map((o) => ({
-        sn: String(o.sn),
-        // 1490nm es la que "ve" la ONT (downstream) — la relevante para el
-        // cliente. 1310nm (upstream) es fallback si falta la primera.
-        potencia_rx_dbm: this.num(o.signal_1490 ?? o.signal_1310),
-        estado: this.mapearEstado(o.status),
-        medido_en: this.fecha(o.last_status_change),
-      }));
+      .map((o) => {
+        const medido_en = this.fecha(o.last_status_change);
+        if (medido_en == null && o.last_status_change?.trim()) ilegibles.push(o.last_status_change);
+        return {
+          sn: String(o.sn),
+          // 1490nm es la que "ve" la ONT (downstream) — la relevante para el
+          // cliente. 1310nm (upstream) es fallback si falta la primera.
+          potencia_rx_dbm: this.num(o.signal_1490 ?? o.signal_1310),
+          estado: this.mapearEstado(o.status),
+          medido_en,
+        };
+      });
+    // Una fecha que SmartOLT manda y no se puede leer termina fechada en la
+    // primera vez que se vio la ONT. Se avisa: el 13-11 un cambio de formato
+    // (microsegundos) dejo asi a las 883 ONT y nada lo dijo.
+    if (ilegibles.length > 0) {
+      this.logger.warn(
+        `SmartOLT: ${ilegibles.length} ONT con last_status_change en un formato que no se pudo leer ` +
+          `(ej. "${ilegibles[0]}"). Quedan fechadas en su primera vez.`,
+      );
+    }
+    return lecturas;
   }
 
   // ---- internos ----
