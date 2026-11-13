@@ -18,6 +18,7 @@ import { FUENTE_MONITOREO, type FuenteMonitoreo } from './fuente/fuente-monitore
 import { MockMonitoreo } from './fuente/mock-monitoreo.js';
 import { SmartOltClient } from './fuente/smartolt.client.js';
 import { CsvSmartOltFuente } from './fuente/csv-smartolt.js';
+import { ZONA_OPERACION } from '../common/utils/dia-habil.util.js';
 
 /**
  * Elige la implementación de la fuente según `MONITOREO_FUENTE`:
@@ -33,17 +34,21 @@ const fuenteProvider = {
     const log = new Logger('MonitoreoModule');
     const cual = config.get<string>('MONITOREO_FUENTE');
 
+    // Zona en la que SmartOLT escribe sus fechas (las manda sin zona). No se
+    // hereda del servidor: en Railway (UTC) eso las corria 3 h.
+    const zona = config.get<string>('SMARTOLT_ZONA_HORARIA') || ZONA_OPERACION;
     if (cual === 'smartolt') {
-      log.log('Fuente de monitoreo: SmartOLT (API real)');
+      log.log(`Fuente de monitoreo: SmartOLT (API real), fechas en ${zona}`);
       return new SmartOltClient(
         config.get<string>('SMARTOLT_BASE_URL') ?? '',
         config.get<string>('SMARTOLT_API_TOKEN') ?? '',
+        zona,
       );
     }
     if (cual === 'csv') {
       const ruta = config.get<string>('SMARTOLT_CSV_PATH') ?? '';
-      log.log(`Fuente de monitoreo: CSV de SmartOLT (${ruta})`);
-      return new CsvSmartOltFuente(ruta);
+      log.log(`Fuente de monitoreo: CSV de SmartOLT (${ruta}), fechas en ${zona}`);
+      return new CsvSmartOltFuente(ruta, zona);
     }
     log.log('Fuente de monitoreo: mock (payload de ejemplo)');
     return new MockMonitoreo();

@@ -95,7 +95,8 @@ describe('SmartOltClient · desde cuando esta la ONT en su estado', () => {
 
     const l = await new SmartOltClient('https://smartolt.test', 'tok').listarLecturas();
 
-    expect(l[0].medido_en).toEqual(new Date('2026-11-01T10:00:00'));
+    // Hora de pared de Chile (verano, UTC-3), sin importar la zona del servidor.
+    expect(l[0].medido_en).toEqual(new Date('2026-11-01T13:00:00.000Z'));
     expect(l.slice(1).map((x) => x.medido_en)).toEqual([null, null, null]);
   });
 });
