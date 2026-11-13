@@ -48,8 +48,12 @@ aplica el admin con el SQL de la migración más los `GRANT` a `g3_app`.
 
 ## 2. Ingesta
 
-- `OntDetalle` gana `odb_puerto: number | null`. `SmartOltClient` lo lee de
-  `odb_port`; las fuentes CSV y mock lo devuelven en null.
+- `OntDetalle` gana `odb_puerto?: number | null`. `SmartOltClient` lo lee de
+  `odb_port` (null si no es un entero positivo). CSV y mock no lo informan
+  (`undefined`): "la fuente no lo sabe" no borra un puerto conocido, mientras
+  que `null` de SmartOLT sí lo borra.
+- El censo se pide en paralelo con las lecturas (`Promise.all`), así
+  `SmartOltClient` responde ambos con una sola llamada aunque la base tarde.
 - **Ubicación de todas las ONT en cada sondeo.** Hoy el censo solo se escribe
   para las ONT sin `id_unidad`, así que una ONT ya enriquecida nunca recibiría
   su puerto. Se agrega un paso que, con el censo del mismo sondeo, actualiza
@@ -60,7 +64,8 @@ aplica el admin con el SQL de la migración más los `GRANT` a `g3_app`.
   no hay filas). Si la fuente no implementa `listarOdbs`, no hace nada. Un fallo
   del catálogo se registra en el log y no corta el sondeo.
 - Endpoint manual `POST /api/monitoreo/catalogo-odb` (solo ADMIN) que fuerza el
-  refresco y devuelve cuántas cajas se crearon o actualizaron.
+  refresco y devuelve cuántas cajas trajo. El catálogo siempre se guarda bajo la
+  empresa dueña de la fuente (`MONITOREO_ID_EMPRESA`), nunca la del usuario.
 
 ## 3. La grilla de una caja
 
@@ -73,7 +78,8 @@ Una función pura `armarGrilla(onts, catalogo)` arma:
   espacios colapsados, el mismo criterio de `capacidad-cajas.service.ts`),
   probando primero la grafía más usada en la caja y después las demás. Si
   ninguna calza, o calzan entradas con capacidades distintas: capacidad
-  estimada = máx(8, puerto más alto ocupado) y `capacidad_estimada: true`.
+  estimada = 8 si el puerto más alto ocupado es ≤ 8, 16 si es ≤ 16, y si no ese
+  puerto y `capacidad_estimada: true`.
 - **Puertos 1..capacidad.** Cada uno queda `OCUPADO` (con sus ONT: serie,
   cliente, estado, potencia, `posible_baja`) o `SIN_REGISTRO`.
   `posible_baja` es `esInactiva`, la misma regla del panel.
@@ -88,7 +94,8 @@ Una función pura `armarGrilla(onts, catalogo)` arma:
   `clave, nombre, olt_externo, board, puerto_pon, zona, capacidad,
   capacidad_estimada, ocupados, ont_total, sin_puerto`. Ordenada por zona y
   nombre.
-- `GET /api/monitoreo/cajas-smartolt/:clave` (clave con `encodeURIComponent`)
+- `GET /api/monitoreo/cajas-smartolt/detalle?clave=` (la clave va en la query:
+  lleva espacios, `/` y `|`, que no sobreviven como segmento de ruta)
   → la caja con `puertos[]`, `fuera_de_rango[]`, `sin_puerto[]`. 404 si la
   clave no existe en la empresa.
 - `POST /api/monitoreo/catalogo-odb` → ver ingesta.
@@ -99,11 +106,28 @@ Una función pura `armarGrilla(onts, catalogo)` arma:
   con nombre, OLT · placa/puerto, zona, ocupación `ocupados / capacidad` (con
   `~` si es estimada) y ONT sin puerto. Busca por nombre y usa el filtro de zona
   existente. Cada fila enlaza a la caja.
-- Página `/admin/monitoreo/cajas/[clave]`: cabecera con nombre, zona, OLT y
+- Página `/admin/monitoreo/caja?clave=`: cabecera con nombre, zona, OLT y
   totales; grilla de puertos como la de topología (ocupado / sin registro /
   conflicto), con el aviso "sin registro no es libre"; debajo, las listas de
   fuera de rango y sin puerto.
 - En el panel de críticos, cada fila suma un enlace "Puertos" a esa página.
+
+## Relación con G1 (`unidad_equipo`)
+
+No se agrega ninguna tabla con la serie de la ONT. `odb_smartolt` es un
+catálogo de cajas, y `odb_puerto` va en `registro_ont`, que ya existe.
+
+`registro_ont` (G3) y `unidad_equipo` (G1) comparten la serie a propósito:
+`unidad_equipo` es el inventario físico (bodega, garantía, cliente instalado,
+técnico), lo escribe G1 y el FSM solo lo lee; `registro_ont` es lo que reporta
+SmartOLT (OLT, placa, puerto PON, zona, caja y ahora puerto del divisor), y
+existe porque SmartOLT ve ONT que todavía no están en el inventario. Se enlazan
+por `registro_ont.id_unidad` cuando la serie coincide.
+
+El puerto del divisor es un dato que dice SmartOLT, como `odb` y `zona`, así
+que va con ellos. Escribirlo en `unidad_equipo` sería que el FSM escriba en una
+tabla de G1. Si algún día G1 registra el puerto de instalación, habrá dos
+fuentes del mismo dato y habrá que acordar cuál manda.
 
 ## Fuera de alcance
 
