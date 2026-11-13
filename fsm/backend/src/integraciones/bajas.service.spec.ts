@@ -252,6 +252,12 @@ describe('la OT de retiro lleva la caja del cliente', () => {
     expect(creado.ot[0]).toMatchObject({ id_caja_nap: 12 });
   });
 
+  it('si tiene puerto ocupado, usa esa caja aunque SmartOLT diga otra: es la que se libera al aprobar', async () => {
+    const { prisma, creado } = prismaFalso({ ontsCliente: [{ id_caja_nap: 30 }], puertoCliente: { id_caja_nap: 44 } });
+    await new BajasService(prisma).crear(SCOPE, dto());
+    expect(creado.ot[0]).toMatchObject({ id_caja_nap: 44 });
+  });
+
   it('a falta de ONT, la de su puerto ocupado', async () => {
     const { prisma, creado } = prismaFalso({ puertoCliente: { id_caja_nap: 44 } });
     await new BajasService(prisma).crear(SCOPE, dto());

@@ -351,26 +351,26 @@ export class BajasService {
   }
 
   /**
-   * La caja del cliente: la que mas se repite entre sus ONT (lo que dice
-   * SmartOLT) y, si no tiene ninguna ligada, la de su puerto OCUPADO. Null si
-   * no se sabe; la OT sale igual, como antes.
+   * La caja del cliente. Primero la de su puerto OCUPADO: es la que
+   * `moverPuerto('desconectar')` libera al aprobar el retiro, y si SmartOLT dice
+   * otra caja, usar esa dejaria el puerto ocupado. Si no tiene puerto, la que
+   * mas se repite entre sus ONT. Null si no se sabe; la OT sale igual, como antes.
    */
   private async cajaDelCliente(id_cliente: number, id_empresa: number): Promise<number | null> {
-    const onts = await this.prisma.registro_ont.findMany({
-      where: { id_cliente, id_empresa, id_caja_nap: { not: null } },
-      select: { id_caja_nap: true },
-    });
-    if (onts.length > 0) {
-      const veces = new Map<number, number>();
-      for (const o of onts) veces.set(o.id_caja_nap!, (veces.get(o.id_caja_nap!) ?? 0) + 1);
-      return [...veces].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
-    }
     const puerto = await this.prisma.puerto_nap.findFirst({
       where: { id_cliente_asociado: id_cliente, estado: ESTADO_PUERTO.OCUPADO, id_caja_nap: { not: null } },
       orderBy: { id_puerto: 'asc' },
       select: { id_caja_nap: true },
     });
-    return puerto?.id_caja_nap ?? null;
+    if (puerto?.id_caja_nap != null) return puerto.id_caja_nap;
+    const onts = await this.prisma.registro_ont.findMany({
+      where: { id_cliente, id_empresa, id_caja_nap: { not: null } },
+      select: { id_caja_nap: true },
+    });
+    if (onts.length === 0) return null;
+    const veces = new Map<number, number>();
+    for (const o of onts) veces.set(o.id_caja_nap!, (veces.get(o.id_caja_nap!) ?? 0) + 1);
+    return [...veces].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
   }
 
   private buscar(request_id: string) {
