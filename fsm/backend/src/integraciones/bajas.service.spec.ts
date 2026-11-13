@@ -36,6 +36,8 @@ function prismaFalso(opciones: {
   solicitudPrevia?: unknown;
   cliente?: unknown;
   otActiva?: unknown;
+  ontsCliente?: { id_caja_nap: number | null }[];
+  puertoCliente?: { id_caja_nap: number | null } | null;
 } = {}) {
   const creado: Record<string, unknown[]> = { ot: [], solicitud: [], historial: [], auditoria: [] };
   const tx = {
@@ -66,6 +68,8 @@ function prismaFalso(opciones: {
       ),
     },
     orden_trabajo: { findFirst: jest.fn(async () => opciones.otActiva ?? null) },
+    registro_ont: { findMany: jest.fn(async () => opciones.ontsCliente ?? []) },
+    puerto_nap: { findFirst: jest.fn(async () => opciones.puertoCliente ?? null) },
     $transaction: jest.fn(async (fn: any) => fn(tx)),
   };
   return { prisma: prisma as unknown as PrismaService, creado, tx };
@@ -238,5 +242,25 @@ describe('POST /integraciones/ordenes-baja/:request_id/cancelacion', () => {
     await expect(
       new BajasService(prisma).cancelar(SCOPE, 'g8-retiro-1-123', { motivo: 'x' }),
     ).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe('la OT de retiro lleva la caja del cliente', () => {
+  it('toma la caja mas frecuente de sus ONT', async () => {
+    const { prisma, creado } = prismaFalso({ ontsCliente: [{ id_caja_nap: 30 }, { id_caja_nap: 12 }, { id_caja_nap: 12 }] });
+    await new BajasService(prisma).crear(SCOPE, dto());
+    expect(creado.ot[0]).toMatchObject({ id_caja_nap: 12 });
+  });
+
+  it('a falta de ONT, la de su puerto ocupado', async () => {
+    const { prisma, creado } = prismaFalso({ puertoCliente: { id_caja_nap: 44 } });
+    await new BajasService(prisma).crear(SCOPE, dto());
+    expect(creado.ot[0]).toMatchObject({ id_caja_nap: 44 });
+  });
+
+  it('sin ninguna de las dos, queda en null como antes', async () => {
+    const { prisma, creado } = prismaFalso();
+    await new BajasService(prisma).crear(SCOPE, dto());
+    expect(creado.ot[0]).toMatchObject({ id_caja_nap: null });
   });
 });

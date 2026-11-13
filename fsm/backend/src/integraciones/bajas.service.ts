@@ -12,6 +12,7 @@ import type { ApiScope } from '../common/guards/api-key.guard.js';
 import { variantesRut } from '../common/utils/rut.util.js';
 import { TIPO_OT_BAJA } from '../ordenes/fan-out/momento-fan-out.js';
 import { hashSolicitud } from './instalaciones.service.js';
+import { ESTADO_PUERTO } from '../planta-externa/dto/editar-topologia.dto.js';
 import type { CancelarBajaDto, SolicitudBajaDto } from './dto/solicitud-baja.dto.js';
 
 /** Unico grupo que puede pedir retiros: el CRM (acuerdo G8↔G3). */
@@ -151,6 +152,9 @@ export class BajasService {
       });
     }
 
+    // Sin la caja, aprobar el retiro no libera el puerto: `moverPuerto` la necesita.
+    const id_caja_nap = await this.cajaDelCliente(cliente.id_cliente, dto.id_empresa);
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         const ot = await tx.orden_trabajo.create({
@@ -158,6 +162,7 @@ export class BajasService {
             id_empresa: dto.id_empresa,
             id_cliente: cliente.id_cliente,
             id_direccion: direccion?.id_direccion ?? null,
+            id_caja_nap,
             tipo_ot: TIPO_OT_BAJA,
             // Un retiro no compite con una reparacion sin servicio: el cliente
             // ya esta suspendido y nadie se queda sin internet por esperar.
@@ -343,6 +348,29 @@ export class BajasService {
           `("${direccion.comuna}"). Verificar que el servicio sea el correcto.`,
       });
     }
+  }
+
+  /**
+   * La caja del cliente: la que mas se repite entre sus ONT (lo que dice
+   * SmartOLT) y, si no tiene ninguna ligada, la de su puerto OCUPADO. Null si
+   * no se sabe; la OT sale igual, como antes.
+   */
+  private async cajaDelCliente(id_cliente: number, id_empresa: number): Promise<number | null> {
+    const onts = await this.prisma.registro_ont.findMany({
+      where: { id_cliente, id_empresa, id_caja_nap: { not: null } },
+      select: { id_caja_nap: true },
+    });
+    if (onts.length > 0) {
+      const veces = new Map<number, number>();
+      for (const o of onts) veces.set(o.id_caja_nap!, (veces.get(o.id_caja_nap!) ?? 0) + 1);
+      return [...veces].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+    }
+    const puerto = await this.prisma.puerto_nap.findFirst({
+      where: { id_cliente_asociado: id_cliente, estado: ESTADO_PUERTO.OCUPADO, id_caja_nap: { not: null } },
+      orderBy: { id_puerto: 'asc' },
+      select: { id_caja_nap: true },
+    });
+    return puerto?.id_caja_nap ?? null;
   }
 
   private buscar(request_id: string) {
