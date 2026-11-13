@@ -19,6 +19,9 @@ import {
  * y la detección de transición de estado (la 1ª lectura de una ONT no
  * historiza; el cambio posterior sí).
  */
+/** Cuando la ingesta vio la ONT por primera vez. */
+const PRIMERA_VEZ = new Date('2026-09-08T19:39:44.000Z');
+
 describe('MonitoreoService.ingestarLecturas', () => {
   let service: MonitoreoService;
   let monitoreoCreateMany: jest.Mock;
@@ -64,8 +67,8 @@ describe('MonitoreoService.ingestarLecturas', () => {
           m.set(
             sn,
             sn === 'SN-0001'
-              ? { id_registro_ont: 1, id_unidad: 10, id_cliente: 5, id_caja_nap: 2 }
-              : { id_registro_ont: 2, id_unidad: null, id_cliente: null, id_caja_nap: null },
+              ? { id_registro_ont: 1, id_unidad: 10, id_cliente: 5, id_caja_nap: 2, primera_vez: PRIMERA_VEZ }
+              : { id_registro_ont: 2, id_unidad: null, id_cliente: null, id_caja_nap: null, primera_vez: PRIMERA_VEZ },
           );
         }
         return m;
@@ -201,6 +204,50 @@ describe('MonitoreoService.ingestarLecturas', () => {
       expect(historialCreateMany).toHaveBeenCalledWith({
         data: [expect.objectContaining({ id_registro_ont: 1, evento: 'LOS' })],
       });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // La fuente no siempre dice desde cuando la ONT esta en su estado. Antes se
+  // rellenaba con "ahora": un equipo dado de baja en 2021 parecia recien caido
+  // en cada sondeo, nunca llegaba a la regla de baja de 7 dias, inundaba el
+  // panel por caja y la topologia, y escribia una fila nueva cada 5 minutos.
+  // -------------------------------------------------------------------------
+
+  describe('lectura sin fecha de la fuente', () => {
+    it('queda fechada en la primera vez que se vio la ONT: lleva asi al menos desde entonces', async () => {
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: null, estado: 'OFFLINE', medido_en: null }];
+
+      await service.ingestarLecturas();
+
+      expect(monitoreoCreateMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({ estado_conexion: 'OFFLINE', timestamp_medicion: PRIMERA_VEZ })],
+      });
+    });
+
+    it('no se reescribe en cada sondeo', async () => {
+      yaGuardado = [
+        { id_registro_ont: 1, estado_conexion: 'OFFLINE', potencia: null, timestamp_medicion: PRIMERA_VEZ },
+      ];
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: null, estado: 'OFFLINE', medido_en: null }];
+
+      const r = await service.ingestarLecturas();
+
+      expect(r.omitidas).toBe(1);
+      expect(monitoreoCreateMany).toHaveBeenCalledWith({ data: [] });
+    });
+
+    it('un cambio de estado sin fecha se historiza con la hora del sondeo, no en el pasado', async () => {
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21, estado: 'ONLINE', medido_en: null }];
+      await service.ingestarLecturas();
+
+      const antes = Date.now();
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: null, estado: 'LOS', medido_en: null }];
+      await service.ingestarLecturas();
+
+      const evento = (historialCreateMany.mock.calls[0][0] as any).data[0];
+      expect(evento.evento).toBe('LOS');
+      expect(evento.timestamp.getTime()).toBeGreaterThanOrEqual(antes);
     });
   });
 

@@ -64,3 +64,38 @@ describe('SmartOltClient · puerto de la ONT en su caja', () => {
     expect(d.map((o) => o.odb_puerto)).toEqual([null, null, 64]);
   });
 });
+
+/**
+ * `last_status_change` dice DESDE CUANDO la ONT esta en su estado. Hay ONT que
+ * SmartOLT manda sin el dato (en la base de FiNet, equipos dados de baja en
+ * 2021 y 2023). Rellenarlo con "ahora" las hacia parecer recien caidas en cada
+ * sondeo, para siempre: nunca llegaban a la regla de baja de 7 dias.
+ */
+describe('SmartOltClient · desde cuando esta la ONT en su estado', () => {
+  const fetchOriginal = globalThis.fetch;
+  let onus: unknown[];
+
+  beforeEach(() => {
+    globalThis.fetch = jest.fn(
+      async () => new Response(JSON.stringify({ status: true, onus }), { status: 200 }),
+    ) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = fetchOriginal;
+  });
+
+  it('lee last_status_change y, si no viene, deja la fecha en null en vez de inventar "ahora"', async () => {
+    onus = [
+      { sn: 'A', status: 'Offline', last_status_change: '2026-11-01 10:00:00' },
+      { sn: 'B', status: 'Offline', last_status_change: '' },
+      { sn: 'C', status: 'Offline' },
+      { sn: 'D', status: 'Offline', last_status_change: 'no es fecha' },
+    ];
+
+    const l = await new SmartOltClient('https://smartolt.test', 'tok').listarLecturas();
+
+    expect(l[0].medido_en).toEqual(new Date('2026-11-01T10:00:00'));
+    expect(l.slice(1).map((x) => x.medido_en)).toEqual([null, null, null]);
+  });
+});

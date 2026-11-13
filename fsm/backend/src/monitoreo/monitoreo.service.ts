@@ -8,9 +8,20 @@ import {
   type FiltroConsulta,
   type EstadoConexion,
 } from './fuente/fuente-monitoreo.js';
-import { potenciaFueraDeRango } from './monitoreo.constants.js';
+import { ESTADO_CONEXION, potenciaFueraDeRango } from './monitoreo.constants.js';
 import { analizarInterrupciones } from './interrupciones.js';
+import { esInactiva } from './reglas-alerta.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
+
+/**
+ * El ultimo evento de caida de una ONT, para saber desde cuando esta sin
+ * servicio. Mismo criterio que la CTE `transicion` de `cargarEstado`.
+ */
+const ULTIMA_CAIDA = {
+  where: { evento: { not: ESTADO_CONEXION.ONLINE } },
+  orderBy: { timestamp: 'desc' as const },
+  take: 1,
+};
 
 /** CU-14: la vista inicial comprende los ultimos 30 dias. */
 const DIAS_HISTORIAL_POR_DEFECTO = 30;
@@ -166,6 +177,7 @@ export class MonitoreoService {
       this.logger.error(`No se pudo actualizar la ubicacion de las ONT: ${(e as Error).message}`);
     }
 
+    const ahora = new Date();
     const filasMonitoreo = lecturas.map((l) => {
       const r = registros.get(l.sn);
       return {
@@ -175,7 +187,15 @@ export class MonitoreoService {
         id_caja_nap: r?.id_caja_nap ?? null,
         potencia_actual_dbm: l.potencia_rx_dbm,
         estado_conexion: l.estado,
-        timestamp_medicion: l.medido_en,
+        // Si la fuente no dice desde cuando esta asi, se usa la primera vez que
+        // la vimos: si SmartOLT nunca le registro un cambio, lleva en este
+        // estado AL MENOS desde entonces. Con "ahora" (lo de antes), un equipo
+        // dado de baja en 2021 parecia recien caido en cada sondeo y nunca
+        // llegaba a la regla de baja de 7 dias (`esInactiva`): en la base de
+        // FiNet eran 63 de las 85 "caidas recientes". Ademas, como la fecha
+        // cambiaba, el dedupe no la reconocia y se escribia una fila nueva cada
+        // 5 minutos por ONT.
+        timestamp_medicion: l.medido_en ?? r?.primera_vez ?? ahora,
       };
     });
 
@@ -195,7 +215,9 @@ export class MonitoreoService {
         id_registro_ont: r?.id_registro_ont ?? null,
         id_unidad: r?.id_unidad ?? null,
         evento: l.estado,
-        timestamp: l.medido_en,
+        // Aca NO va la primera vez: el cambio se acaba de ver, y fecharlo en
+        // el pasado haria que una caida de hoy pareciera una baja vieja.
+        timestamp: l.medido_en ?? ahora,
       });
     }
 
@@ -281,15 +303,16 @@ export class MonitoreoService {
       skip: (page - 1) * limit,
       take: limit,
       include: {
-        // Desempate por id_monitoreo: `timestamp_medicion` guarda desde cuando
-        // la ONT esta en ese estado, no cuando se leyo, asi que una ONT estable
-        // repite el mismo valor en cada sondeo. Sin desempatar, "la ultima
-        // lectura" salia arbitraria entre las empatadas.
-        monitoreos: { orderBy: [{ timestamp_medicion: 'desc' }, { id_monitoreo: 'desc' }], take: 1 },
+        // La ultima lectura es la ultima ESCRITA, no la de fecha mayor:
+        // `timestamp_medicion` guarda desde cuando la ONT esta en ese estado y
+        // no siempre crece. Ver la nota de `AlertasService.cargarEstado`.
+        monitoreos: { orderBy: { id_monitoreo: 'desc' }, take: 1 },
+        historial: ULTIMA_CAIDA,
       },
     });
 
-    return registros.map((r) => this.aVista(r));
+    const ahora = new Date();
+    return registros.map((r) => this.aVista(r, ahora));
   }
 
   /** Detalle de una ONT por número de serie: última lectura + historial. */
@@ -297,7 +320,7 @@ export class MonitoreoService {
     const registro = await this.prisma.registro_ont.findUnique({
       where: { numero_serie: sn },
       include: {
-        monitoreos: { orderBy: [{ timestamp_medicion: 'desc' }, { id_monitoreo: 'desc' }], take: 1 },
+        monitoreos: { orderBy: { id_monitoreo: 'desc' }, take: 1 },
         historial: { orderBy: { timestamp: 'desc' }, take: 50 },
       },
     });
@@ -307,7 +330,7 @@ export class MonitoreoService {
       throw new NotFoundException(`ONT ${sn} no vista por el monitoreo`);
     }
 
-    return { ...this.aVista(registro), historial_conexion: registro.historial };
+    return { ...this.aVista(registro, new Date()), historial_conexion: registro.historial };
   }
 
   /**
@@ -384,18 +407,31 @@ export class MonitoreoService {
 
     const registros = await this.prisma.registro_ont.findMany({
       where: { id_cliente },
-      include: { monitoreos: { orderBy: [{ timestamp_medicion: 'desc' }, { id_monitoreo: 'desc' }], take: 1 } },
+      include: { monitoreos: { orderBy: { id_monitoreo: 'desc' }, take: 1 }, historial: ULTIMA_CAIDA },
     });
-    return { id_cliente, onts: registros.map((r) => this.aVista(r)) };
+    const ahora = new Date();
+    return { id_cliente, onts: registros.map((r) => this.aVista(r, ahora)) };
   }
 
-  /** Contadores para el dashboard de monitoreo. */
+  /**
+   * Contadores para el dashboard de monitoreo.
+   *
+   * `por_estado` cuenta solo las ONT activas. Las posibles bajas (caidas hace
+   * mas de 7 dias: equipos de clientes que se fueron y siguen en SmartOLT) van
+   * aparte en `posibles_bajas`: sumadas a "fuera de linea" eran ~200 de ~970 y
+   * tapaban las caidas que si hay que atender.
+   */
   async resumen(id_empresa: number) {
     const vistas = await this.lecturasRecientes(id_empresa, 1, 5000);
     const por_estado: Record<string, number> = { ONLINE: 0, OFFLINE: 0, LOS: 0, DESCONOCIDO: 0 };
     let potencia_fuera_de_rango = 0;
+    let posibles_bajas = 0;
 
     for (const v of vistas) {
+      if (v.posible_baja) {
+        posibles_bajas++;
+        continue;
+      }
       const e = v.estado_conexion ?? 'DESCONOCIDO';
       por_estado[e] = (por_estado[e] ?? 0) + 1;
       if (v.potencia_fuera_de_rango) potencia_fuera_de_rango++;
@@ -404,6 +440,7 @@ export class MonitoreoService {
     return {
       total_ont: vistas.length,
       por_estado,
+      posibles_bajas,
       potencia_fuera_de_rango,
       fecha_actualizacion: new Date(),
     };
@@ -423,10 +460,18 @@ export class MonitoreoService {
       estado_conexion: string | null;
       timestamp_medicion: Date;
     }[];
-  }) {
+    /** Eventos de conexion, del mas nuevo al mas viejo. */
+    historial?: { evento: string | null; timestamp: Date }[];
+  }, ahora: Date) {
     const ultima = r.monitoreos[0] ?? null;
     const potencia =
       ultima?.potencia_actual_dbm == null ? null : Number(ultima.potencia_actual_dbm);
+    const estado = ultima?.estado_conexion ?? null;
+    // Desde cuando esta caida: el ultimo evento de caida y, si no hay, la
+    // fecha de la lectura. Es el mismo criterio de `AlertasService.cargarEstado`.
+    const caida = r.historial?.find((h) => h.evento != null && h.evento !== ESTADO_CONEXION.ONLINE)?.timestamp ?? null;
+    const sin_senal_desde =
+      estado != null && estado !== ESTADO_CONEXION.ONLINE ? (caida ?? ultima?.timestamp_medicion ?? null) : null;
     return {
       numero_serie: r.numero_serie,
       id_unidad: r.id_unidad,
@@ -434,10 +479,12 @@ export class MonitoreoService {
       zona: r.zona,
       olt_externo: r.olt_externo,
       nombre_cliente_ext: r.nombre_cliente_ext,
-      estado_conexion: ultima?.estado_conexion ?? null,
+      estado_conexion: estado,
       potencia_actual_dbm: potencia,
       potencia_fuera_de_rango: potenciaFueraDeRango(potencia),
       medido_en: ultima?.timestamp_medicion ?? null,
+      /** Caida hace mas de 7 dias: equipo de un cliente que se fue. Ver `esInactiva`. */
+      posible_baja: esInactiva({ estado_conexion: estado, sin_senal_desde }, ahora),
     };
   }
 }

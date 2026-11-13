@@ -67,8 +67,13 @@ export interface LecturaOnt {
   /** Potencia óptica RX que ve la ONT, en dBm. `null` si la ONT está caída. */
   potencia_rx_dbm: number | null;
   estado: EstadoConexion;
-  /** Instante de la medición reportado por la fuente. */
-  medido_en: Date;
+  /**
+   * Desde cuándo la ONT está en este estado, según la fuente. `null` si la
+   * fuente no lo informa: NO se rellena con "ahora", porque eso hace que un
+   * equipo caído hace años parezca recién caído en cada sondeo. La ingesta
+   * decide qué fecha usar (ver `MonitoreoService.ingestarLecturas`).
+   */
+  medido_en: Date | null;
 }
 
 /** Filtro opcional para no traer todas las ONTs de todos los OLTs a la vez. */

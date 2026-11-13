@@ -42,6 +42,9 @@
   let filtroZona = $state('');
   let busqueda = $state('');
   let soloConProblema = $state(false);
+  // Las posibles bajas (caidas hace mas de 7 dias) son ~200 equipos de clientes
+  // que se fueron: mostradas por defecto tapaban las caidas reales.
+  let mostrarBajas = $state(false);
   // Cajas desplegadas en la vista por caja, por su `clave`. Sobrevive a las
   // recargas en vivo: la clave de SmartOLT no cambia entre sondeos.
   let abiertas = $state<Set<string>>(new Set());
@@ -170,6 +173,8 @@
   }
 
   function prioridad(o: LecturaOnt) {
+    // Una baja vieja no es lo primero que hay que mirar, aunque este caida.
+    if (o.posible_baja) return 4;
     if ((o.estado_conexion ?? 'ONLINE') !== 'ONLINE') return 0;
     if (o.potencia_fuera_de_rango) return 1;
     if (potenciaDegradandose(o.potencia_actual_dbm)) return 2;
@@ -179,6 +184,7 @@
   const ontsFiltradas = $derived.by(() => {
     const q = busqueda.trim().toLowerCase();
     return lecturas
+      .filter((o) => mostrarBajas || !o.posible_baja)
       .filter((o) => !soloConProblema || conProblema(o))
       .filter((o) => !filtroZona || o.zona === filtroZona)
       .filter(
@@ -317,6 +323,13 @@
             · {resumen.por_estado.DESCONOCIDO} sin lectura
           {/if}
         </p>
+        {#if resumen.posibles_bajas > 0}
+          <!-- Se dicen aparte para que el total cierre: caidas hace mas de 7
+               dias son equipos de clientes que se fueron, no un incidente. -->
+          <p class="text-xs text-slate-500 mt-0.5">
+            No incluye {resumen.posibles_bajas} posibles bajas (caídas hace más de 7 días)
+          </p>
+        {/if}
       </div>
       <div class="bg-white rounded-xl border p-4">
         <p class="text-xs uppercase tracking-wide text-slate-600 font-semibold">Potencia fuera de rango</p>
@@ -398,6 +411,10 @@
       <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer py-1.5">
         <input type="checkbox" bind:checked={soloConProblema} class="cursor-pointer h-4 w-4" />
         Solo con problema
+      </label>
+      <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer py-1.5">
+        <input type="checkbox" bind:checked={mostrarBajas} class="cursor-pointer h-4 w-4" />
+        Mostrar posibles bajas{resumen?.posibles_bajas ? ` (${resumen.posibles_bajas})` : ''}
       </label>
     {/if}
   </div>
@@ -611,14 +628,19 @@
         </thead>
         <tbody class="divide-y divide-slate-100">
           {#each ontsVisibles as o (o.numero_serie)}
-            <tr class="hover:bg-slate-50 transition-colors duration-200">
+            <tr class="hover:bg-slate-50 transition-colors duration-200 {o.posible_baja ? 'text-slate-500' : ''}">
               <td class="px-3 py-2">
                 <span
                   class="px-2 py-0.5 rounded-md text-xs font-semibold border
-                         {estadoClase[o.estado_conexion ?? 'DESCONOCIDO'] ?? estadoClase.DESCONOCIDO}"
+                         {o.posible_baja
+                           ? 'bg-slate-100 text-slate-600 border-slate-200'
+                           : (estadoClase[o.estado_conexion ?? 'DESCONOCIDO'] ?? estadoClase.DESCONOCIDO)}"
                 >
                   {o.estado_conexion ?? 'DESCONOCIDO'}
                 </span>
+                {#if o.posible_baja}
+                  <span class="block text-xs text-slate-500 mt-0.5">Posible baja</span>
+                {/if}
               </td>
               <td class="px-3 py-2 text-right tabular-nums {clasePotencia(o.potencia_actual_dbm)}">
                 {o.potencia_actual_dbm == null ? '--' : `${o.potencia_actual_dbm} dBm`}

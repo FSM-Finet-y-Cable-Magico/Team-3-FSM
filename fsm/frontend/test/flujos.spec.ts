@@ -1062,6 +1062,33 @@ const historialOnt = (interrupciones: unknown[]) => ({
   },
 });
 
+test('Monitoreo: las posibles bajas no cuentan como fuera de linea y se ocultan del listado por defecto', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/monitoreo/resumen', route => route.fulfill({ json: {
+    total_ont: 3, por_estado: { ONLINE: 1, OFFLINE: 1 }, posibles_bajas: 1, potencia_fuera_de_rango: 0, fecha_actualizacion: '2026-11-13T15:00:00Z',
+  } }));
+  const lectura = (sn: string, estado: string, posible_baja: boolean) => ({
+    numero_serie: sn, id_unidad: null, id_cliente: null, zona: 'ZONA 3', olt_externo: '2', nombre_cliente_ext: null,
+    estado_conexion: estado, potencia_actual_dbm: estado === 'ONLINE' ? -21 : null, potencia_fuera_de_rango: false,
+    medido_en: '2026-11-13T15:00:00Z', posible_baja,
+  });
+  await page.route('http://127.0.0.1:3000/api/monitoreo/ont?*', route => route.fulfill({ json: [
+    lectura('ACTIVA1', 'ONLINE', false), lectura('CAIDA1', 'OFFLINE', false), lectura('BAJA2021', 'OFFLINE', true),
+  ] }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/criticos-por-caja*', route => route.fulfill({ json: { cajas: [], totales: { cajas_afectadas: 0, clientes_criticos: 0, criticos_sin_caja: 0 } } }));
+  await login(page, 'admin'); await page.goto('/admin/monitoreo');
+
+  await expect(page.getByText('No incluye 1 posibles bajas (caídas hace más de 7 días)')).toBeVisible();
+
+  await page.getByRole('tab', { name: 'Todas las ONT' }).click();
+  await expect(page.getByRole('link', { name: 'CAIDA1' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'BAJA2021' })).toHaveCount(0);
+
+  await page.getByLabel('Mostrar posibles bajas (1)').check();
+  await expect(page.getByRole('link', { name: 'BAJA2021' })).toBeVisible();
+  await expect(page.getByRole('row', { name: /BAJA2021/ })).toContainText('Posible baja');
+});
+
 test('CU-14: desde el monitoreo se abre el historial de interrupciones de una ONT', async ({ page }) => {
   await preparar(page);
   const periodos: (string | null)[] = [];
