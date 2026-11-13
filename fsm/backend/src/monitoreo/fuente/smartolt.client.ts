@@ -47,6 +47,7 @@ interface RawOnu {
   port?: number | string;
   zone_name?: string;
   odb_name?: string;
+  odb_port?: number | string | null;
   name?: string;
   address?: string;
   onu_type_name?: string;
@@ -154,6 +155,7 @@ export class SmartOltClient implements FuenteMonitoreo {
         puerto_pon: this.num(o.port),
         zona: o.zone_name ?? null,
         odb: o.odb_name ?? null,
+        odb_puerto: this.puertoDeCaja(o.odb_port),
         nombre_cliente: o.name ?? null,
         direccion_cliente: o.address ?? null,
         modelo: o.onu_type_name ?? null,
@@ -252,6 +254,12 @@ export class SmartOltClient implements FuenteMonitoreo {
     if (s === 'los' || s === 'dying gasp') return 'LOS';
     if (s === 'offline') return 'OFFLINE';
     return 'DESCONOCIDO';
+  }
+
+  /** Un puerto de caja es un entero positivo; cualquier otra cosa no se sabe. */
+  private puertoDeCaja(v: unknown): number | null {
+    const n = this.num(v);
+    return n != null && Number.isInteger(n) && n > 0 ? n : null;
   }
 
   private num(v: unknown): number | null {

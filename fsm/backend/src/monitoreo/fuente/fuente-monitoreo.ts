@@ -47,6 +47,14 @@ export interface OntDetalle {
   zona: string | null;
   /** SmartOLT "ODB" (optical distribution box) ≈ caja NAP / splitter. */
   odb: string | null;
+  /**
+   * Posición de la ONT dentro de su caja (SmartOLT `odb_port`).
+   *
+   * Opcional a propósito, y la diferencia importa: `undefined` es "esta fuente
+   * no lo sabe" (CSV, mock) y no debe borrar un puerto ya guardado; `null` es
+   * "SmartOLT dice que no tiene" y sí lo borra.
+   */
+  odb_puerto?: number | null;
   nombre_cliente: string | null;
   direccion_cliente: string | null;
   modelo: string | null;
