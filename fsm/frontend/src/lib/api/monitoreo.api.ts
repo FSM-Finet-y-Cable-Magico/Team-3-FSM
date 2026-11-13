@@ -57,6 +57,10 @@ export interface CajaCritica {
    * a declararla caida.
    */
   padron_chico: boolean;
+  /** Puertos de la caja según el catálogo de SmartOLT. */
+  capacidad: number;
+  /** No estaba en el catálogo: se estimó por el puerto más alto ocupado. */
+  capacidad_estimada: boolean;
   criticos: number;
   sin_senal: number;
   potencia_fuera_de_rango: number;

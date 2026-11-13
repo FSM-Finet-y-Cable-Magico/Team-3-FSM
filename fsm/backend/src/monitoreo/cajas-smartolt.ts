@@ -137,6 +137,20 @@ export function resolverCapacidad(grafias: string[], catalogo: EntradaCatalogo[]
 const tienePuerto = (o: EstadoOnt): o is EstadoOnt & { odb_puerto: number } =>
   o.odb_puerto != null && o.odb_puerto > 0;
 
+/**
+ * Capacidad de una caja: la del catalogo de SmartOLT y, si no esta o es ambigua,
+ * una estimacion por el puerto mas alto ocupado (`capacidad_estimada`). La usan
+ * la grilla de puertos y el panel de criticos, para que digan lo mismo.
+ */
+export function capacidadDeCaja(
+  onts: EstadoOnt[],
+  catalogo: EntradaCatalogo[],
+): { capacidad: number; capacidad_estimada: boolean } {
+  const maxPuerto = onts.filter(tienePuerto).reduce((m, o) => Math.max(m, o.odb_puerto), 0);
+  const delCatalogo = resolverCapacidad(porFrecuencia(onts.map((o) => o.odb?.trim() || null)), catalogo);
+  return { capacidad: delCatalogo ?? capacidadEstimada(maxPuerto), capacidad_estimada: delCatalogo == null };
+}
+
 /** Grilla de puertos de una caja a partir de sus ONT y del catalogo. */
 export function armarGrilla(onts: EstadoOnt[], catalogo: EntradaCatalogo[], ahora: Date): GrillaDeCaja {
   const aPuerto = (o: EstadoOnt): OntDePuerto => ({
@@ -148,9 +162,7 @@ export function armarGrilla(onts: EstadoOnt[], catalogo: EntradaCatalogo[], ahor
   });
 
   const conPuerto = onts.filter(tienePuerto);
-  const maxPuerto = conPuerto.reduce((m, o) => Math.max(m, o.odb_puerto), 0);
-  const delCatalogo = resolverCapacidad(porFrecuencia(onts.map((o) => o.odb?.trim() || null)), catalogo);
-  const capacidad = delCatalogo ?? capacidadEstimada(maxPuerto);
+  const { capacidad, capacidad_estimada } = capacidadDeCaja(onts, catalogo);
 
   const porNumero = new Map<number, OntDePuerto[]>();
   const fuera_de_rango: (OntDePuerto & { odb_puerto: number })[] = [];
@@ -176,7 +188,7 @@ export function armarGrilla(onts: EstadoOnt[], catalogo: EntradaCatalogo[], ahor
 
   return {
     capacidad,
-    capacidad_estimada: delCatalogo == null,
+    capacidad_estimada,
     ocupados: puertos.filter((p) => p.estado === 'OCUPADO').length,
     puertos,
     fuera_de_rango,
