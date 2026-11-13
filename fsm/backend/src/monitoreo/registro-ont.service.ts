@@ -140,6 +140,7 @@ export class RegistroOntService {
           puerto_pon: d.puerto_pon,
           zona: d.zona,
           odb: d.odb,
+          ...(d.odb_puerto !== undefined ? { odb_puerto: d.odb_puerto } : {}),
           modelo: d.modelo,
           nombre_cliente_ext: d.nombre_cliente,
           direccion_cliente_ext: d.direccion_cliente,
@@ -154,6 +155,7 @@ export class RegistroOntService {
           puerto_pon: d.puerto_pon,
           zona: d.zona,
           odb: d.odb,
+          ...(d.odb_puerto !== undefined ? { odb_puerto: d.odb_puerto } : {}),
           modelo: d.modelo,
           nombre_cliente_ext: d.nombre_cliente,
           direccion_cliente_ext: d.direccion_cliente,
@@ -170,5 +172,44 @@ export class RegistroOntService {
     }
     this.logger.log(`registro_ont: ${tocados} enriquecidas desde el censo`);
     return tocados;
+  }
+
+  /**
+   * Mantiene al dia DONDE esta cada ONT segun la fuente: su caja (`odb`) y su
+   * puerto en la caja (`odb_puerto`).
+   *
+   * Corre en cada sondeo y sobre TODAS las ONT del censo, no solo las que no
+   * tienen unidad como `enriquecer`: si no, una ONT ya enlazada a G1 nunca se
+   * enteraria de que la movieron de caja ni recibiria su puerto. Escribe solo
+   * las filas que cambiaron, asi que en un sondeo normal no escribe nada.
+   *
+   * `odb_puerto` undefined es "la fuente no lo sabe" y no se toca; null es
+   * "SmartOLT dice que no tiene" y se escribe.
+   *
+   * @returns cuantas ONT cambiaron.
+   */
+  async sincronizarUbicacion(detalles: OntDetalle[]): Promise<number> {
+    if (detalles.length === 0) return 0;
+
+    const actuales = await this.prisma.registro_ont.findMany({
+      where: { numero_serie: { in: detalles.map((d) => d.sn) }, id_empresa: this.idEmpresaFuente },
+      select: { numero_serie: true, odb: true, odb_puerto: true },
+    });
+    const porSn = new Map(actuales.map((r) => [r.numero_serie, r]));
+
+    const cambios: ReturnType<PrismaService['registro_ont']['update']>[] = [];
+    for (const d of detalles) {
+      const r = porSn.get(d.sn);
+      if (!r) continue;
+      const data: { odb?: string | null; odb_puerto?: number | null } = {};
+      if (r.odb !== d.odb) data.odb = d.odb;
+      if (d.odb_puerto !== undefined && r.odb_puerto !== d.odb_puerto) data.odb_puerto = d.odb_puerto;
+      if (Object.keys(data).length > 0) {
+        cambios.push(this.prisma.registro_ont.update({ where: { numero_serie: d.sn }, data }));
+      }
+    }
+
+    if (cambios.length > 0) await this.prisma.$transaction(cambios);
+    return cambios.length;
   }
 }
