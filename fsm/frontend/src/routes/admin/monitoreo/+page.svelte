@@ -45,6 +45,7 @@
   // Las posibles bajas (caidas hace mas de 7 dias) son ~200 equipos de clientes
   // que se fueron: mostradas por defecto tapaban las caidas reales.
   let mostrarBajas = $state(false);
+  const ocultasPorDefecto = $derived((resumen?.posibles_bajas ?? 0) + (resumen?.suspendidos ?? 0));
   // Cajas desplegadas en la vista por caja, por su `clave`. Sobrevive a las
   // recargas en vivo: la clave de SmartOLT no cambia entre sondeos.
   let abiertas = $state<Set<string>>(new Set());
@@ -415,7 +416,9 @@
       </label>
       <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer py-1.5">
         <input type="checkbox" bind:checked={mostrarBajas} class="cursor-pointer h-4 w-4" />
-        Mostrar posibles bajas{resumen?.posibles_bajas ? ` (${resumen.posibles_bajas})` : ''}
+        <!-- Esconde tambien a los suspendidos por deuda: la etiqueta lo dice para
+             que buscar la serie de un moroso no devuelva "nada" sin explicacion. -->
+        Mostrar posibles bajas y suspendidos{ocultasPorDefecto ? ` (${ocultasPorDefecto})` : ''}
       </label>
     {/if}
   </div>

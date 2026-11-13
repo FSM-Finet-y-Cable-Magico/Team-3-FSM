@@ -1084,7 +1084,7 @@ test('Monitoreo: las posibles bajas no cuentan como fuera de linea y se ocultan 
   await expect(page.getByRole('link', { name: 'CAIDA1' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'BAJA2021' })).toHaveCount(0);
 
-  await page.getByLabel('Mostrar posibles bajas (1)').check();
+  await page.getByLabel('Mostrar posibles bajas y suspendidos (1)').check();
   await expect(page.getByRole('link', { name: 'BAJA2021' })).toBeVisible();
   await expect(page.getByRole('row', { name: /BAJA2021/ })).toContainText('Posible baja');
 });
@@ -1128,7 +1128,9 @@ test('Monitoreo: un cliente suspendido por deuda se muestra con su etiqueta y no
 
   await expect(page.getByText('ni 1 clientes suspendidos por deuda')).toBeVisible();
   await page.getByRole('tab', { name: 'Todas las ONT' }).click();
-  await page.getByLabel(/Mostrar posibles bajas/).check();
+  // Oculto por defecto, y la casilla dice que tambien muestra a los suspendidos.
+  await expect(page.getByRole('link', { name: 'MOROSO1' })).toHaveCount(0);
+  await page.getByLabel('Mostrar posibles bajas y suspendidos (1)').check();
   await expect(page.getByRole('row', { name: /MOROSO1/ })).toContainText('Suspendido por deuda');
 });
 
@@ -1825,6 +1827,37 @@ test('Cortes: lista lo que falta cortar en SmartOLT, lo registra y pasa al histo
   await expect(page.getByText('No hay contratos por cortar.')).toBeVisible();
   await page.getByText('Historial').click();
   await expect(page.getByText('Admin Prueba')).toBeVisible();
+});
+
+test('Cortes: mientras se registra no se puede cancelar, y si otro ya lo hizo (409) el panel se refresca', async ({ page }) => {
+  await preparar(page);
+  let otroLoHizo = false;
+  let soltar: () => void = () => {};
+  const espera = new Promise<void>((ok) => (soltar = ok));
+  const fila = {
+    id_contrato: 5, estado_contrato: 'Suspendido', fecha_suspension: '2026-11-13', plan: null,
+    cliente: { id_cliente: 55, nombre_completo: 'Cliente Moroso', rut: null, telefono: null },
+    direccion: null, onts: [], ultimo_registro: null,
+  };
+  await page.route('http://127.0.0.1:3000/api/cortes', (route) => route.fulfill({ json: {
+    por_cortar: otroLoHizo ? [] : [fila], por_reactivar: [], historial: [],
+  } }));
+  await page.route('http://127.0.0.1:3000/api/cortes/5/hecho', async (route) => {
+    await espera;
+    otroLoHizo = true;
+    return route.fulfill({ status: 409, json: { codigo: 'NO_PENDIENTE', message: 'Este contrato no está pendiente de corte: ya se registró o G8 lo reactivó.' } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/cortes');
+
+  await page.getByRole('button', { name: 'Hecho en SmartOLT' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByRole('button', { name: 'Registrar corte' }).click();
+  await expect(dialogo.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+  soltar();
+
+  await expect(dialogo.getByText('ya se registró')).toBeVisible();
+  await dialogo.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(page.getByText('No hay contratos por cortar.')).toBeVisible();
 });
 
 test('Cortes: sin permiso sobre contrato lo dice en vez de romperse', async ({ page }) => {

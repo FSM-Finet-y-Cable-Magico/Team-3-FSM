@@ -52,17 +52,22 @@
   }
 
   async function confirmar() {
-    if (!pendiente) return;
+    // Se copia: el dialogo no se puede cerrar mientras guarda, pero `pendiente`
+    // es estado y no conviene leerlo despues del await.
+    const p = pendiente;
+    if (!p) return;
     guardando = true;
     errorDialogo = '';
     try {
-      await registrarCorte(token, pendiente.fila.id_contrato, pendiente.accion, observacion);
-      aviso = `${pendiente.accion === 'CORTE' ? 'Corte' : 'Reactivación'} de ${pendiente.fila.cliente?.nombre_completo ?? `contrato #${pendiente.fila.id_contrato}`} registrado`;
+      await registrarCorte(token, p.fila.id_contrato, p.accion, observacion);
+      aviso = `${p.accion === 'CORTE' ? 'Corte' : 'Reactivación'} de ${p.fila.cliente?.nombre_completo ?? `contrato #${p.fila.id_contrato}`} registrado`;
       pendiente = null;
       await cargar();
     } catch (e) {
-      // Aca aterriza el 409: otra persona ya lo registro.
+      // Aca aterriza el 409: otra persona ya lo registro. Se refresca el panel
+      // para que la fila no quede ahi como si faltara.
       errorDialogo = e instanceof Error ? e.message : 'No se pudo registrar';
+      await cargar();
     } finally {
       guardando = false;
     }
@@ -199,7 +204,7 @@
       </div>
       {#if errorDialogo}<p class="text-red-600">{errorDialogo}</p>{/if}
       <div class="flex gap-3">
-        <button onclick={() => (pendiente = null)} class="flex-1 btn btn-secundario">Cancelar</button>
+        <button onclick={() => (pendiente = null)} disabled={guardando} class="flex-1 btn btn-secundario">Cancelar</button>
         <button onclick={confirmar} disabled={guardando} class="flex-1 btn btn-primario">
           {guardando ? 'Registrando...' : pendiente.accion === 'CORTE' ? 'Registrar corte' : 'Registrar reactivación'}
         </button>
