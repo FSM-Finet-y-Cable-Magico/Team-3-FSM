@@ -11,6 +11,7 @@ import {
 import { ESTADO_CONEXION, potenciaFueraDeRango } from './monitoreo.constants.js';
 import { analizarInterrupciones } from './interrupciones.js';
 import { esInactiva } from './reglas-alerta.js';
+import { clientesSuspendidos } from '../cortes/suspendidos.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 
 /**
@@ -312,7 +313,8 @@ export class MonitoreoService {
     });
 
     const ahora = new Date();
-    return registros.map((r) => this.aVista(r, ahora));
+    const suspendidos = await clientesSuspendidos(this.prisma, id_empresa, this.logger);
+    return registros.map((r) => this.aVista(r, ahora, suspendidos));
   }
 
   /** Detalle de una ONT por número de serie: última lectura + historial. */
@@ -330,7 +332,8 @@ export class MonitoreoService {
       throw new NotFoundException(`ONT ${sn} no vista por el monitoreo`);
     }
 
-    return { ...this.aVista(registro, new Date()), historial_conexion: registro.historial };
+    const suspendidos = await clientesSuspendidos(this.prisma, id_empresa, this.logger);
+    return { ...this.aVista(registro, new Date(), suspendidos), historial_conexion: registro.historial };
   }
 
   /**
@@ -410,7 +413,8 @@ export class MonitoreoService {
       include: { monitoreos: { orderBy: { id_monitoreo: 'desc' }, take: 1 }, historial: ULTIMA_CAIDA },
     });
     const ahora = new Date();
-    return { id_cliente, onts: registros.map((r) => this.aVista(r, ahora)) };
+    const suspendidos = await clientesSuspendidos(this.prisma, id_empresa, this.logger);
+    return { id_cliente, onts: registros.map((r) => this.aVista(r, ahora, suspendidos)) };
   }
 
   /**
@@ -426,8 +430,14 @@ export class MonitoreoService {
     const por_estado: Record<string, number> = { ONLINE: 0, OFFLINE: 0, LOS: 0, DESCONOCIDO: 0 };
     let potencia_fuera_de_rango = 0;
     let posibles_bajas = 0;
+    let suspendidos = 0;
 
     for (const v of vistas) {
+      // Cortado por deuda: su caida es esperada, no es "fuera de linea".
+      if (v.suspendido) {
+        suspendidos++;
+        continue;
+      }
       if (v.posible_baja) {
         posibles_bajas++;
         continue;
@@ -441,6 +451,7 @@ export class MonitoreoService {
       total_ont: vistas.length,
       por_estado,
       posibles_bajas,
+      suspendidos,
       potencia_fuera_de_rango,
       fecha_actualizacion: new Date(),
     };
@@ -462,7 +473,7 @@ export class MonitoreoService {
     }[];
     /** Eventos de conexion, del mas nuevo al mas viejo. */
     historial?: { evento: string | null; timestamp: Date }[];
-  }, ahora: Date) {
+  }, ahora: Date, suspendidos: Set<number> = new Set()) {
     const ultima = r.monitoreos[0] ?? null;
     const potencia =
       ultima?.potencia_actual_dbm == null ? null : Number(ultima.potencia_actual_dbm);
@@ -472,6 +483,7 @@ export class MonitoreoService {
     const caida = r.historial?.find((h) => h.evento != null && h.evento !== ESTADO_CONEXION.ONLINE)?.timestamp ?? null;
     const sin_senal_desde =
       estado != null && estado !== ESTADO_CONEXION.ONLINE ? (caida ?? ultima?.timestamp_medicion ?? null) : null;
+    const suspendido = r.id_cliente != null && suspendidos.has(r.id_cliente);
     return {
       numero_serie: r.numero_serie,
       id_unidad: r.id_unidad,
@@ -484,7 +496,9 @@ export class MonitoreoService {
       potencia_fuera_de_rango: potenciaFueraDeRango(potencia),
       medido_en: ultima?.timestamp_medicion ?? null,
       /** Caida hace mas de 7 dias: equipo de un cliente que se fue. Ver `esInactiva`. */
-      posible_baja: esInactiva({ estado_conexion: estado, sin_senal_desde }, ahora),
+      posible_baja: !suspendido && esInactiva({ estado_conexion: estado, sin_senal_desde }, ahora),
+      /** Cliente suspendido por deuda (contrato de G8): su caida es esperada. */
+      suspendido,
     };
   }
 }

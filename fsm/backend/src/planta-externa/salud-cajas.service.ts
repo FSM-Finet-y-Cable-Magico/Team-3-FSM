@@ -87,7 +87,8 @@ export class SaludCajasService {
           puerto_pon: o.puerto_pon,
           // Se muestra, marcada, en vez de esconderla: es lo que permite ver
           // que la caja tiene equipos viejos que nadie dio de baja.
-          posible_baja: esInactiva(o, ahora),
+          posible_baja: !o.suspendido && esInactiva(o, ahora),
+          suspendido: !!o.suspendido,
         }))
         .sort((a, b) => (a.odb_puerto ?? 999) - (b.odb_puerto ?? 999) || a.numero_serie.localeCompare(b.numero_serie)),
       claves_smartolt: clavesPorFrecuencia(suyas),

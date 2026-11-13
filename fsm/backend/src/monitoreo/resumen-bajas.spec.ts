@@ -14,10 +14,10 @@ import { FUENTE_MONITOREO } from './fuente/fuente-monitoreo.js';
  */
 describe('resumen y listado de ONT · posibles bajas', () => {
   const dias = (n: number) => new Date(Date.now() - n * 86_400_000);
-  const ont = (sn: string, estado: string, desde: Date, caidaEn?: Date) => ({
+  const ont = (sn: string, estado: string, desde: Date, caidaEn?: Date, id_cliente: number | null = null) => ({
     numero_serie: sn,
     id_unidad: null,
-    id_cliente: null,
+    id_cliente,
     zona: 'ZONA 3',
     olt_externo: '2',
     nombre_cliente_ext: null,
@@ -31,13 +31,14 @@ describe('resumen y listado de ONT · posibles bajas', () => {
     // El evento de caida manda sobre la fecha de la lectura: se cayo ayer.
     ont('D', 'OFFLINE', dias(800), dias(1)),
   ]);
+  const contratoFindMany = jest.fn(async (_a?: any) => [] as any[]);
   let service: MonitoreoService;
 
   beforeEach(async () => {
     const mod = await Test.createTestingModule({
       providers: [
         MonitoreoService,
-        { provide: PrismaService, useValue: { registro_ont: { findMany } } },
+        { provide: PrismaService, useValue: { registro_ont: { findMany }, contrato: { findMany: contratoFindMany } } },
         { provide: RegistroOntService, useValue: {} },
         { provide: FUENTE_MONITOREO, useValue: { nombre: 'test' } },
         { provide: MonitoreoGateway, useValue: { publicar: jest.fn() } },
@@ -70,5 +71,20 @@ describe('resumen y listado de ONT · posibles bajas', () => {
     expect(r.total_ont).toBe(4);
     expect(r.posibles_bajas).toBe(1);
     expect(r.por_estado).toMatchObject({ ONLINE: 1, OFFLINE: 2 });
+  });
+
+  it('el cliente suspendido no es posible baja ni fuera de linea: se cuenta aparte', async () => {
+    contratoFindMany.mockImplementation(async () => [{ id_cliente: 9, estado: 'Suspendido' }]);
+    findMany.mockImplementation(async () => [
+      ont('A', 'ONLINE', dias(30)),
+      ont('S', 'OFFLINE', dias(800), undefined, 9),
+    ]);
+
+    const l = await service.lecturasRecientes(1);
+    expect(l.find((o) => o.numero_serie === 'S')).toMatchObject({ suspendido: true, posible_baja: false });
+
+    const r = await service.resumen(1);
+    expect(r).toMatchObject({ suspendidos: 1, posibles_bajas: 0 });
+    expect(r.por_estado).toMatchObject({ ONLINE: 1, OFFLINE: 0 });
   });
 });
