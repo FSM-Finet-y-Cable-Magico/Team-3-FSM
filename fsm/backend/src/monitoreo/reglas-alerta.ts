@@ -182,11 +182,12 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
     yaExplicado: (miembros: EstadoOnt[]) => boolean,
     marcar: (clave: string) => void,
     etiqueta: (clave: string) => string,
+    cuenta: { afectada: (o: EstadoOnt) => boolean; como: string },
   ) => {
     for (const [clave, miembros] of grupos) {
       if (miembros.length < minPadron) continue;
       if (yaExplicado(miembros)) continue;
-      const afectadas = miembros.filter(afectaAlGrupo).length;
+      const afectadas = miembros.filter(cuenta.afectada).length;
       const pct = Math.round((afectadas / miembros.length) * 100);
       if (pct < umbralPct) continue;
 
@@ -195,7 +196,7 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
       propuestas.push({
         tipo,
         severidad,
-        mensaje: `${afectadas} de ${miembros.length} ONT activas afectadas (${pct}%) en ${etiqueta(clave)}`,
+        mensaje: `${afectadas} de ${miembros.length} ONT activas ${cuenta.como} (${pct}%) en ${etiqueta(clave)}`,
         id_registro_ont: null,
         id_cliente: null,
         clave_caja: clave,
@@ -204,6 +205,14 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
       });
     }
   };
+
+  // OLT y placa caidas cuentan SOLO ONT sin servicio. Una placa con muchas ONT
+  // en linea pero con potencia fuera de rango no esta caida: es fibra con
+  // problemas en cada casa, y cada una ya tiene su alerta de potencia. Medido
+  // el 13-11 en la base real: las tres "Placa caida" al 25-39 % eran casi todas
+  // potencia (OLT 2/placa 1: 7 caidas, 52 por potencia). La caja (RF-15) si
+  // suma la potencia, porque el requisito lo pide; ver `afectaAlGrupo`.
+  const sinServicio = { afectada: estaCaida, como: 'sin servicio' };
 
   // --- Nivel 1: OLT completa ---
   evaluarNivel(
@@ -215,6 +224,7 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
     () => false,
     (k) => oltsCaidas.add(k),
     (k) => k,
+    sinServicio,
   );
 
   // --- Nivel 2: placa (CU-53 masivo) ---
@@ -227,6 +237,7 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
     (m) => oltsCaidas.has(claveDeOlt(m[0])),
     (k) => placasCaidas.add(k),
     (k) => k,
+    sinServicio,
   );
 
   // --- Nivel 3: caja NAP (CU-17) ---
@@ -239,6 +250,7 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
     (m) => oltsCaidas.has(claveDeOlt(m[0])) || placasCaidas.has(claveDePlaca(m[0])),
     (k) => cajasCaidas.add(k),
     (k) => `${k.split('|')[1]} (puerto ${k.split('|')[0]})`,
+    { afectada: afectaAlGrupo, como: 'afectadas' },
   );
 
   // --- CU-16: candidatas a OT preventiva, AGREGADAS POR CAJA ---
