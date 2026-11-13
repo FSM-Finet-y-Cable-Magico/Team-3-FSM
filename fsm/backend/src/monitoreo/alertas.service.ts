@@ -741,8 +741,11 @@ export class AlertasService {
    * medición. Si no hay evento (ONT que ya estaba caída antes del primer
    * arranque del poller) se usa la primera lectura conocida, que subestima la
    * antigüedad pero nunca la inventa.
+   *
+   * Publico: lo usan el motor, el panel de criticos y las cajas SmartOLT, y
+   * que lean del mismo lugar es lo que impide que se contradigan.
    */
-  private async cargarEstado(id_empresa: number): Promise<EstadoOnt[]> {
+  async cargarEstado(id_empresa: number): Promise<EstadoOnt[]> {
     const filas = await this.prisma.$queryRaw<
       {
         id_registro_ont: number;
@@ -753,6 +756,7 @@ export class AlertasService {
         board: number | null;
         puerto_pon: number | null;
         odb: string | null;
+        odb_puerto: number | null;
         zona: string | null;
         nombre_cliente_ext: string | null;
         estado_conexion: string | null;
@@ -783,7 +787,7 @@ export class AlertasService {
         ORDER BY h.id_registro_ont, h.timestamp DESC
       )
       SELECT r.id_registro_ont, r.numero_serie, r.id_cliente, r.id_caja_nap,
-             r.olt_externo, r.board, r.puerto_pon, r.odb, r.zona, r.nombre_cliente_ext,
+             r.olt_externo, r.board, r.puerto_pon, r.odb, r.odb_puerto, r.zona, r.nombre_cliente_ext,
              u.estado_conexion,
              u.potencia_actual_dbm::text AS potencia_dbm,
              CASE WHEN u.estado_conexion <> 'ONLINE'
@@ -807,6 +811,7 @@ export class AlertasService {
       potencia_dbm: f.potencia_dbm == null ? null : Number(f.potencia_dbm),
       sin_senal_desde: f.sin_senal_desde,
       odb: f.odb,
+      odb_puerto: f.odb_puerto,
       zona: f.zona,
       nombre_cliente: f.nombre_cliente_ext,
     }));
