@@ -153,8 +153,18 @@ export class MonitoreoService {
       for (const [sn, r] of refrescados) registros.set(sn, r);
     }
 
-    // Caja y puerto de TODAS las ONT, no solo las que se enriquecieron.
-    const ubicaciones_actualizadas = await this.registro.sincronizarUbicacion(detalles);
+    // Caja y puerto de TODAS las ONT, no solo las que se enriquecieron. Es un
+    // dato de apoyo: si falla, se registra y las lecturas se guardan igual.
+    // Sin filtro el censo es completo y puede liberar puertos de ONT que ya no
+    // estan en SmartOLT.
+    let ubicaciones_actualizadas = 0;
+    try {
+      ubicaciones_actualizadas = await this.registro.sincronizarUbicacion(detalles, {
+        censoCompleto: !filtro,
+      });
+    } catch (e) {
+      this.logger.error(`No se pudo actualizar la ubicacion de las ONT: ${(e as Error).message}`);
+    }
 
     const filasMonitoreo = lecturas.map((l) => {
       const r = registros.get(l.sn);

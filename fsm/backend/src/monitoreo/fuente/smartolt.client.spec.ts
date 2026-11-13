@@ -53,4 +53,14 @@ describe('SmartOltClient · puerto de la ONT en su caja', () => {
 
     expect(d.map((o) => o.odb_puerto)).toEqual([null, null, null, null, null, null, null]);
   });
+
+  it('un puerto absurdo de grande es un error de tipeo, no un puerto', async () => {
+    // La columna es SMALLINT: "99999" no cabe y tumbaria la transaccion de la
+    // ingesta entera, no solo esta ONT.
+    onus = [onu('A', '99999'), onu('B', '129'), onu('C', '64')];
+
+    const d = await new SmartOltClient('https://smartolt.test', 'tok').listarOntDetalles();
+
+    expect(d.map((o) => o.odb_puerto)).toEqual([null, null, 64]);
+  });
 });

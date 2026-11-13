@@ -76,6 +76,9 @@ interface RespuestaSmartOlt<T> {
 
 const TTL_CACHE_ONUS_MS = 10_000;
 
+/** Ningun divisor tiene mas puertos; un numero mayor es un error de tipeo. */
+export const MAX_PUERTO_CAJA = 128;
+
 export class SmartOltClient implements FuenteMonitoreo {
   readonly nombre = 'smartolt';
   private readonly logger = new Logger(SmartOltClient.name);
@@ -256,10 +259,14 @@ export class SmartOltClient implements FuenteMonitoreo {
     return 'DESCONOCIDO';
   }
 
-  /** Un puerto de caja es un entero positivo; cualquier otra cosa no se sabe. */
+  /**
+   * Un puerto de caja es un entero entre 1 y `MAX_PUERTO_CAJA`; cualquier otra
+   * cosa no se sabe. El tope no es decorativo: la columna es SMALLINT, y un
+   * "99999" tipeado a mano tumbaria la transaccion de la ingesta entera.
+   */
   private puertoDeCaja(v: unknown): number | null {
     const n = this.num(v);
-    return n != null && Number.isInteger(n) && n > 0 ? n : null;
+    return n != null && Number.isInteger(n) && n > 0 && n <= MAX_PUERTO_CAJA ? n : null;
   }
 
   private num(v: unknown): number | null {

@@ -63,6 +63,18 @@ describe('catalogo de cajas de SmartOLT', () => {
     expect(upsert).toHaveBeenCalledTimes(1);
   });
 
+  it('sanea lo que no cabe en la tabla en vez de tumbar el refresco entero', async () => {
+    // Una sola fila invalida hacia fallar la transaccion completa: el catalogo
+    // no se refrescaba nunca mas.
+    odbs = [odb('15', 'N'.repeat(100), 70000), odb('16', 'NAP9', 16.5), odb('17', 'NAP10', -1)];
+
+    await service.refrescar();
+
+    const filas = upsert.mock.calls.map((c) => (c[0] as any).create);
+    expect(filas[0].nombre).toHaveLength(80);
+    expect(filas.map((f) => f.capacidad)).toEqual([null, null, null]);
+  });
+
   it('no pide el catalogo si se refresco hace menos de 24 h', async () => {
     const ahora = new Date('2026-11-13T12:00:00Z');
     ultimo = { actualizado_en: new Date(ahora.getTime() - VIGENCIA_CATALOGO_MS + 60_000) };

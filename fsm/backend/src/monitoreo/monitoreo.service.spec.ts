@@ -243,7 +243,8 @@ describe('MonitoreoService.ingestarLecturas', () => {
 
     await service.ingestarLecturas();
 
-    expect(registroMock.sincronizarUbicacion).toHaveBeenCalledWith(detalles);
+    // Sin filtro, el censo es completo: puede liberar puertos de ONT que ya no estan.
+    expect(registroMock.sincronizarUbicacion).toHaveBeenCalledWith(detalles, { censoCompleto: true });
     expect(fuenteMock.listarOntDetalles).toHaveBeenCalledTimes(1);
     // El censo se pide junto con las lecturas, antes de tocar la base: si se
     // pidiera despues y la base tardara mas que la cache del cliente (10 s),
@@ -251,5 +252,17 @@ describe('MonitoreoService.ingestarLecturas', () => {
     const pedidoCenso = (fuenteMock.listarOntDetalles as jest.Mock).mock.invocationCallOrder[0];
     const primeraBase = (registroMock.asegurarRegistros as jest.Mock).mock.invocationCallOrder[0];
     expect(pedidoCenso).toBeLessThan(primeraBase);
+  });
+
+  it('si falla la ubicacion, las lecturas se guardan igual', async () => {
+    // La ubicacion es un dato de apoyo: un valor que no cabe en la base no puede
+    // dejar al sondeo sin guardar lecturas ni levantar alertas.
+    lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: new Date() }];
+    registroMock.sincronizarUbicacion.mockRejectedValueOnce(new Error('value out of range for type smallint'));
+
+    const r = await service.ingestarLecturas();
+
+    expect(monitoreoCreateMany).toHaveBeenCalled();
+    expect(r.ubicaciones_actualizadas).toBe(0);
   });
 });

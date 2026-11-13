@@ -1,8 +1,12 @@
 -- Puertos por caja SmartOLT (ver docs/superpowers/specs/2026-11-12-puertos-caja-smartolt-design.md).
 --
 -- Aditiva: una columna nullable y una tabla nueva, sin tocar filas existentes.
--- IF NOT EXISTS por si se aplica sobre una base donde ya se corrio a mano (la
--- base global de la VPS la aplica el admin; `g3_app` no puede alterar el esquema).
+--
+-- Se aplica UNA vez. Los IF NOT EXISTS protegen la columna, la tabla y el
+-- indice, pero la FK no tiene guarda: correrla dos veces falla en el ultimo
+-- paso. En la base global de la VPS la aplica el admin a mano (`g3_app` no
+-- puede alterar el esquema), y tiene que ser ANTES de desplegar este codigo:
+-- sin la columna `odb_puerto`, la ingesta falla en cada sondeo.
 
 -- AlterTable
 ALTER TABLE "registro_ont" ADD COLUMN IF NOT EXISTS "odb_puerto" SMALLINT;

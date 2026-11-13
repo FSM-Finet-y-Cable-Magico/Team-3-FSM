@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RegistroOntService } from './registro-ont.service.js';
 import { FUENTE_MONITOREO, type FuenteMonitoreo } from './fuente/fuente-monitoreo.js';
+import { MAX_PUERTO_CAJA } from './fuente/smartolt.client.js';
 
 /** Cada cuanto se vuelve a pedir el catalogo de cajas a la fuente. */
 export const VIGENCIA_CATALOGO_MS = 24 * 3_600_000;
@@ -39,7 +40,20 @@ export class CatalogoOdbService {
     if (!this.fuente.listarOdbs) return { disponible: false, cajas: 0 };
 
     const id_empresa = this.registro.idEmpresaFuente;
-    const odbs = (await this.fuente.listarOdbs()).filter((o) => o.id_externo && o.nombre);
+    // Saneado fila por fila: todo va en una sola transaccion, y una sola fila
+    // que no cabe en la tabla (un nombre largo, una capacidad tipeada mal)
+    // la tumbaba entera y el catalogo no se refrescaba nunca mas.
+    const odbs = (await this.fuente.listarOdbs())
+      .filter((o) => o.id_externo && o.nombre)
+      .map((o) => ({
+        id_externo: o.id_externo.slice(0, 40),
+        nombre: o.nombre.slice(0, 80),
+        capacidad:
+          o.capacidad != null && Number.isInteger(o.capacidad) && o.capacidad > 0 && o.capacidad <= MAX_PUERTO_CAJA
+            ? o.capacidad
+            : null,
+        zona: o.zona?.slice(0, 80) ?? null,
+      }));
     const ahora = new Date();
 
     await this.prisma.$transaction(
