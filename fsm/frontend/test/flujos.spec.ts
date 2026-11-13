@@ -1773,6 +1773,52 @@ test('Topologia: el mapa de salud muestra las cajas de la mas grave a la mas san
   await expect(enlaces).toHaveCount(4);
 });
 
+test('Cortes: lista lo que falta cortar en SmartOLT, lo registra y pasa al historial', async ({ page }) => {
+  await preparar(page);
+  let cortado = false;
+  const cuerpos: unknown[] = [];
+  const fila = {
+    id_contrato: 5, estado_contrato: 'Suspendido', fecha_suspension: '2026-11-13', plan: 'FULL S',
+    cliente: { id_cliente: 55, nombre_completo: 'Cliente Moroso', rut: '11111111-1', telefono: '9 1234 5678' },
+    direccion: { direccion_completa: 'Calle 1', comuna: 'La Granja' }, onts: [], ultimo_registro: null,
+  };
+  await page.route('http://127.0.0.1:3000/api/cortes', (route) => route.fulfill({ json: {
+    por_cortar: cortado ? [] : [fila],
+    por_reactivar: [],
+    historial: cortado ? [{ id_log: 1, accion: 'CORTE_SMARTOLT', fecha_hora: '2026-11-13T15:00:00Z', usuario: 'Admin Prueba', id_contrato: 5, cliente: 'Cliente Moroso', observacion: 'listo' }] : [],
+  } }));
+  await page.route('http://127.0.0.1:3000/api/cortes/5/hecho', (route) => {
+    cuerpos.push(route.request().postDataJSON());
+    cortado = true;
+    return route.fulfill({ status: 201, json: { id_log: 1, accion: 'CORTE_SMARTOLT', fecha_hora: '2026-11-13T15:00:00Z' } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/cortes');
+
+  await expect(page.getByText('El corte y la reactivación se hacen en SmartOLT')).toBeVisible();
+  await expect(page.getByText('Cliente Moroso')).toBeVisible();
+  await expect(page.getByText('Buscar en SmartOLT por nombre o RUT')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Hecho en SmartOLT' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByLabel('Observación (opcional)').fill('listo');
+  await dialogo.getByRole('button', { name: 'Registrar corte' }).click();
+
+  expect(cuerpos).toEqual([{ accion: 'CORTE', observacion: 'listo' }]);
+  await expect(page.getByText('No hay contratos por cortar.')).toBeVisible();
+  await page.getByText('Historial').click();
+  await expect(page.getByText('Admin Prueba')).toBeVisible();
+});
+
+test('Cortes: sin permiso sobre contrato lo dice en vez de romperse', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/cortes', (route) => route.fulfill({ status: 503, json: {
+    codigo: 'SIN_PERMISO_CONTRATO',
+    message: 'El sistema no tiene permiso para leer los contratos de la base compartida. Hay que pedirle al admin: GRANT SELECT ON contrato TO g3_app.',
+  } }));
+  await login(page, 'admin'); await page.goto('/admin/cortes');
+  await expect(page.getByText('no tiene permiso para leer los contratos')).toBeVisible();
+});
+
 // CU-25: baja de servicio.
 test('CU-25: la baja muestra lo que se desconecta, pide confirmar la deuda y enlaza las dos OT', async ({ page }) => {
   await preparar(page);
