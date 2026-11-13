@@ -214,6 +214,20 @@ describe('registro_ont · caja y puerto de cada ONT segun la fuente', () => {
     });
   });
 
+  it('no usa una transaccion: cientos de cambios no entran en los 5 s de Prisma', async () => {
+    // La primera vez que se cargan los puertos pueden cambiar cientos de ONT a
+    // la vez: en una sola transaccion pasaba el limite de 5 s de Prisma (P2028).
+    actuales = Array.from({ length: 120 }, (_, i) => ({
+      numero_serie: `S${i}`, odb: 'NAP1', odb_puerto: null, ...PON,
+    }));
+
+    const n = await service.sincronizarUbicacion(actuales.map((a, i) => det(a.numero_serie, 'NAP1', (i % 16) + 1)));
+
+    expect(n).toBe(120);
+    expect($transaction).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledTimes(120);
+  });
+
   it('con un censo parcial o vacio no libera nada', async () => {
     await service.sincronizarUbicacion([det('A', 'NAP203', 3)]);
     await service.sincronizarUbicacion([], { censoCompleto: true });

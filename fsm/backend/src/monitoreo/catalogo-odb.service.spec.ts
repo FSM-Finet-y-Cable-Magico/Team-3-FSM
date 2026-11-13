@@ -75,6 +75,18 @@ describe('catalogo de cajas de SmartOLT', () => {
     expect(filas.map((f) => f.capacidad)).toEqual([null, null, null]);
   });
 
+  it('no usa una transaccion: cientos de upserts no entran en los 5 s de Prisma', async () => {
+    // Medido contra Railway desde fuera de su red (~200 ms por ida y vuelta): un
+    // lote de 50 upserts tardo 6,4 s, paso el limite (P2028) y no se guardaba nada.
+    odbs = Array.from({ length: 120 }, (_, i) => odb(String(i + 1), `NAP${i + 1}`, 16));
+
+    const r = await service.refrescar();
+
+    expect(r.cajas).toBe(120);
+    expect($transaction).not.toHaveBeenCalled();
+    expect(upsert).toHaveBeenCalledTimes(120);
+  });
+
   it('no pide el catalogo si se refresco hace menos de 24 h', async () => {
     const ahora = new Date('2026-11-13T12:00:00Z');
     ultimo = { actualizado_en: new Date(ahora.getTime() - VIGENCIA_CATALOGO_MS + 60_000) };

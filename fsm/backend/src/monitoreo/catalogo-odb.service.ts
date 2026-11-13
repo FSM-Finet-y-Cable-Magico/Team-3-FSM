@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { RegistroOntService } from './registro-ont.service.js';
 import { FUENTE_MONITOREO, type FuenteMonitoreo } from './fuente/fuente-monitoreo.js';
 import { MAX_PUERTO_CAJA } from './fuente/smartolt.client.js';
+import { ejecutarEnLotes } from './lotes.js';
 
 /** Cada cuanto se vuelve a pedir el catalogo de cajas a la fuente. */
 export const VIGENCIA_CATALOGO_MS = 24 * 3_600_000;
@@ -56,8 +57,8 @@ export class CatalogoOdbService {
       }));
     const ahora = new Date();
 
-    await this.prisma.$transaction(
-      odbs.map((o) =>
+    await ejecutarEnLotes(
+      odbs.map((o) => () =>
         this.prisma.odb_smartolt.upsert({
           where: { id_empresa_id_externo: { id_empresa, id_externo: o.id_externo } },
           create: {

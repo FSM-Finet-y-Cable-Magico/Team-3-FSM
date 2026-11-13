@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { OntDetalle } from './fuente/fuente-monitoreo.js';
+import { ejecutarEnLotes } from './lotes.js';
 
 export interface RegistroResuelto {
   id_registro_ont: number;
@@ -225,7 +226,7 @@ export class RegistroOntService {
       odb?: string | null;
       odb_puerto?: number | null;
     };
-    const cambios: ReturnType<PrismaService['registro_ont']['update']>[] = [];
+    const cambios: (() => PromiseLike<unknown>)[] = [];
     for (const d of detalles) {
       const r = porSn.get(d.sn);
       if (!r) continue;
@@ -237,20 +238,22 @@ export class RegistroOntService {
       if (r.odb !== d.odb) data.odb = d.odb;
       if (d.odb_puerto !== undefined && r.odb_puerto !== d.odb_puerto) data.odb_puerto = d.odb_puerto;
       if (Object.keys(data).length > 0) {
-        cambios.push(this.prisma.registro_ont.update({ where: { numero_serie: d.sn }, data }));
+        cambios.push(() => this.prisma.registro_ont.update({ where: { numero_serie: d.sn }, data }));
       }
     }
 
     const liberar = opciones.censoCompleto
       ? [
-          this.prisma.registro_ont.updateMany({
-            where: { id_empresa: this.idEmpresaFuente, numero_serie: { notIn: sns }, odb_puerto: { not: null } },
-            data: { odb_puerto: null },
-          }),
+          () =>
+            this.prisma.registro_ont.updateMany({
+              where: { id_empresa: this.idEmpresaFuente, numero_serie: { notIn: sns }, odb_puerto: { not: null } },
+              data: { odb_puerto: null },
+            }),
         ]
       : [];
 
-    if (cambios.length + liberar.length > 0) await this.prisma.$transaction([...cambios, ...liberar]);
+    // Sin transaccion: cada fila es independiente (ver `ejecutarEnLotes`).
+    await ejecutarEnLotes([...cambios, ...liberar]);
     return cambios.length;
   }
 }
