@@ -1661,7 +1661,10 @@ test('CU-20: una caja sin puertos libres lo dice y sugiere las mas cercanas', as
 test('CU-20: el ADMIN ve lo que haria la reconciliacion de puertos antes de aplicarla', async ({ page }) => {
   await preparar(page);
   const llamadas: string[] = [];
-  await page.route('http://127.0.0.1:3000/api/planta-externa/cajas', route => route.fulfill({ json: [] }));
+  await page.route('http://127.0.0.1:3000/api/planta-externa/salud-cajas', route => route.fulfill({ json: {
+    resumen: { cajas: 0, por_estado: { CAIDA: 0, DEGRADADA: 0, OK: 0, SIN_ONT: 0 }, con_alerta_u_ot: 0, sin_ubicacion: 0, clientes_afectados: 0 },
+    cajas: [],
+  } }));
   await page.route(/\/api\/planta-externa\/puertos\/reconciliar/, route => {
     const url = new URL(route.request().url());
     llamadas.push(url.search);
@@ -1681,6 +1684,41 @@ test('CU-20: el ADMIN ve lo que haria la reconciliacion de puertos antes de apli
   await dialogo.getByRole('button', { name: 'Aplicar' }).click();
   await expect(dialogo).toContainText('Listo: se crearon 8 puertos y se ocuparon 3');
   expect(llamadas).toEqual(['', '?aplicar=true']);
+});
+
+test('Topologia: el mapa de salud muestra las cajas de la mas grave a la mas sana y filtra por indicador', async ({ page }) => {
+  await preparar(page);
+  const onts = (total: number, en_linea: number, caidas = 0, potencia_fuera = 0) =>
+    ({ total, en_linea, caidas, potencia_fuera, afectadas: caidas + potencia_fuera, potencia_promedio: total ? -21 : null });
+  const caja = (id: number, nombre: string, estado: string, o: ReturnType<typeof onts>, extra = {}) => ({
+    id_caja_nap: id, identificador_unico: nombre, zona: 'ZONA 3', numero_poste: null,
+    latitud: -33.5 - id / 1000, longitud: -71.6, estado, onts: o, alertas_abiertas: 0, ots_abiertas: 0, ...extra,
+  });
+  // Ya vienen ordenadas por gravedad: es el backend el que ordena.
+  await page.route('http://127.0.0.1:3000/api/planta-externa/salud-cajas', route => route.fulfill({ json: {
+    resumen: { cajas: 4, por_estado: { CAIDA: 1, DEGRADADA: 1, OK: 1, SIN_ONT: 1 }, con_alerta_u_ot: 1, sin_ubicacion: 1, clientes_afectados: 7 },
+    cajas: [
+      caja(1, 'NAP 1', 'CAIDA', onts(6, 0, 6), { alertas_abiertas: 1 }),
+      caja(2, 'NAP 2', 'DEGRADADA', onts(4, 3, 1)),
+      caja(3, 'NAP 3', 'OK', onts(5, 5)),
+      caja(4, 'NAP 4', 'SIN_ONT', onts(0, 0), { latitud: null, longitud: null }),
+    ],
+  } }));
+  // El mapa pide teselas a OpenStreetMap: en la prueba no hace falta salir a internet.
+  await page.route(/tile\.openstreetmap\.org/, route => route.fulfill({ status: 204 }));
+  await login(page, 'admin'); await page.goto('/admin/topologia');
+
+  await expect(page.getByRole('button', { name: /Cajas caídas/ })).toContainText('1');
+  await expect(page.getByRole('button', { name: /Cajas caídas/ })).toContainText('7 ONT afectadas');
+  const enlaces = page.getByRole('listitem').getByRole('link', { name: /^NAP \d$/ });
+  await expect(enlaces).toHaveText(['NAP 1', 'NAP 2', 'NAP 3', 'NAP 4']);
+  await expect(page.getByText('Sin ubicación: no aparece en el mapa')).toBeVisible();
+  await expect(page.getByRole('region', { name: /Mapa de cajas NAP/ })).toBeVisible();
+
+  await page.getByRole('button', { name: /Cajas caídas/ }).click();
+  await expect(enlaces).toHaveText(['NAP 1']);
+  await page.getByRole('button', { name: /Cajas caídas/ }).click();
+  await expect(enlaces).toHaveCount(4);
 });
 
 // CU-25: baja de servicio.

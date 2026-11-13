@@ -72,6 +72,99 @@ async function fetchApi<T>(token: string, url: string, init?: RequestInit): Prom
   return pedirJson<T>(token, url, init, 'Error en la solicitud');
 }
 
+// ---------------------------------------------------------------------------
+// Mapa de salud de la red
+// ---------------------------------------------------------------------------
+
+/**
+ * Estado de una caja según sus ONT. Mismas reglas que el motor de alertas:
+ * CAIDA es una falla de caja (70 % afectado con padrón suficiente, o alerta
+ * de falla de caja abierta); SIN_ONT es que no tiene ninguna ONT ligada.
+ */
+export type EstadoCaja = 'CAIDA' | 'DEGRADADA' | 'OK' | 'SIN_ONT';
+
+export interface ConteoOnts {
+  total: number;
+  en_linea: number;
+  caidas: number;
+  potencia_fuera: number;
+  /** Sin servicio o con potencia fuera de rango. */
+  afectadas: number;
+  potencia_promedio: number | null;
+}
+
+export interface SaludCaja {
+  id_caja_nap: number;
+  identificador_unico: string | null;
+  zona: string | null;
+  numero_poste: string | null;
+  latitud: number | null;
+  longitud: number | null;
+  estado: EstadoCaja;
+  onts: ConteoOnts;
+  alertas_abiertas: number;
+  ots_abiertas: number;
+}
+
+export interface ResumenSalud {
+  cajas: number;
+  por_estado: Record<EstadoCaja, number>;
+  con_alerta_u_ot: number;
+  sin_ubicacion: number;
+  clientes_afectados: number;
+}
+
+/** De la más grave a la más sana. */
+export async function saludCajas(token: string): Promise<{ resumen: ResumenSalud; cajas: SaludCaja[] }> {
+  return fetchApi(token, `${API_URL}/api/planta-externa/salud-cajas`);
+}
+
+export interface OntDeCaja {
+  numero_serie: string;
+  id_cliente: number | null;
+  nombre_cliente: string | null;
+  estado_conexion: string | null;
+  potencia_dbm: number | null;
+  sin_senal_desde: string | null;
+  odb: string | null;
+  odb_puerto: number | null;
+  olt_externo: string | null;
+  board: number | null;
+  puerto_pon: number | null;
+  /** Caída hace tanto que parece un equipo dado de baja: no cuenta en el estado. */
+  posible_baja: boolean;
+}
+
+export interface DetalleSaludCaja {
+  caja: SaludCaja & { mufa: string | null };
+  onts: OntDeCaja[];
+  /** Claves de la caja en SmartOLT, de la más usada a la menos. */
+  claves_smartolt: string[];
+  alertas: {
+    id_alerta: number;
+    tipo: string;
+    severidad: string | null;
+    mensaje: string | null;
+    afectados: number;
+    creada_en: string;
+    id_ot_generada: number | null;
+  }[];
+  ots: {
+    id_ot: number;
+    tipo_ot: string;
+    estado: string;
+    prioridad: string;
+    fecha_creacion: string;
+    fecha_completada: string | null;
+    tecnico: { nombre_completo: string } | null;
+  }[];
+  cercanas: (SaludCaja & { distancia_m: number })[];
+}
+
+export async function saludCaja(token: string, id: number): Promise<DetalleSaludCaja> {
+  return fetchApi(token, `${API_URL}/api/planta-externa/cajas/${id}/salud`);
+}
+
 /** Todas las cajas, con su ocupación. */
 export async function listarCajas(token: string): Promise<CajaListada[]> {
   return fetchApi(token, `${API_URL}/api/planta-externa/cajas`);
