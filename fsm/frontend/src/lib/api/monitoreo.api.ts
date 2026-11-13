@@ -9,6 +9,8 @@ export interface ResumenMonitoreo {
   por_estado: Record<string, number>;
   /** Caídas hace más de 7 días: equipos de clientes que se fueron. */
   posibles_bajas: number;
+  /** Clientes suspendidos por deuda: su caída es esperada. */
+  suspendidos?: number;
   potencia_fuera_de_rango: number;
   fecha_actualizacion: string;
 }
@@ -26,6 +28,8 @@ export interface LecturaOnt {
   medido_en: string | null;
   /** Caída hace más de 7 días: equipo de un cliente que se fue, no un incidente. */
   posible_baja: boolean;
+  /** Cliente suspendido por deuda (contrato de G8). */
+  suspendido?: boolean;
 }
 
 /** Una ONT critica de la caja, para desplegarla bajo la fila. */

@@ -375,7 +375,7 @@
           </thead>
           <tbody class="divide-y divide-slate-100">
             {#each salud.onts as o (o.numero_serie)}
-              <tr class={o.posible_baja ? 'opacity-60' : ''}>
+              <tr class={o.posible_baja || o.suspendido ? 'opacity-60' : ''}>
                 <td class="px-4 py-2.5 text-right tabular-nums text-slate-700">{o.odb_puerto ?? '—'}</td>
                 <td class="px-4 py-2.5">
                   <a href={`/admin/monitoreo/ont/${encodeURIComponent(o.numero_serie)}`} class="btn-texto font-mono text-xs">{o.numero_serie}</a>
@@ -393,7 +393,9 @@
                   {#if o.estado_conexion && o.estado_conexion !== 'ONLINE' && o.sin_senal_desde}
                     <span class="block text-xs text-slate-500">{hace(o.sin_senal_desde)}</span>
                   {/if}
-                  {#if o.posible_baja}
+                  {#if o.suspendido}
+                    <span class="block text-xs text-amber-700">Suspendido por deuda: no cuenta en el estado</span>
+                  {:else if o.posible_baja}
                     <span class="block text-xs text-slate-500">Posible baja: no cuenta en el estado</span>
                   {/if}
                 </td>

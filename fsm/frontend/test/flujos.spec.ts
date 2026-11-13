@@ -1114,6 +1114,24 @@ test('CU-15: cada caja dice cuantas ONT conocemos y de cuantos puertos es', asyn
   await expect(page.getByText('padrón parcial')).toHaveCount(0);
 });
 
+test('Monitoreo: un cliente suspendido por deuda se muestra con su etiqueta y no cuenta como fuera de linea', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/monitoreo/resumen', (route) => route.fulfill({ json: {
+    total_ont: 2, por_estado: { ONLINE: 1 }, posibles_bajas: 0, suspendidos: 1, potencia_fuera_de_rango: 0, fecha_actualizacion: '2026-11-13T15:00:00Z',
+  } }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/ont?*', (route) => route.fulfill({ json: [
+    { numero_serie: 'ACTIVA1', id_unidad: null, id_cliente: 1, zona: 'Z', olt_externo: '2', nombre_cliente_ext: null, estado_conexion: 'ONLINE', potencia_actual_dbm: -21, potencia_fuera_de_rango: false, medido_en: null, posible_baja: false, suspendido: false },
+    { numero_serie: 'MOROSO1', id_unidad: null, id_cliente: 9, zona: 'Z', olt_externo: '2', nombre_cliente_ext: null, estado_conexion: 'OFFLINE', potencia_actual_dbm: null, potencia_fuera_de_rango: false, medido_en: null, posible_baja: false, suspendido: true },
+  ] }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/criticos-por-caja*', (route) => route.fulfill({ json: { cajas: [], totales: { cajas_afectadas: 0, clientes_criticos: 0, criticos_sin_caja: 0 } } }));
+  await login(page, 'admin'); await page.goto('/admin/monitoreo');
+
+  await expect(page.getByText('ni 1 clientes suspendidos por deuda')).toBeVisible();
+  await page.getByRole('tab', { name: 'Todas las ONT' }).click();
+  await page.getByLabel(/Mostrar posibles bajas/).check();
+  await expect(page.getByRole('row', { name: /MOROSO1/ })).toContainText('Suspendido por deuda');
+});
+
 test('CU-14: desde el monitoreo se abre el historial de interrupciones de una ONT', async ({ page }) => {
   await preparar(page);
   const periodos: (string | null)[] = [];
