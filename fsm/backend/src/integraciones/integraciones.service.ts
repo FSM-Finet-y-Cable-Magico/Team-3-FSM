@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { exigirEmpresaEnScope, type ApiScope } from '../common/guards/api-key.guard.js';
 import { rutParaApi, filtroRut, variantesRut } from '../common/utils/rut.util.js';
@@ -12,7 +12,7 @@ import {
 } from '../ordenes/estado-equipo.constants.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 import type { PayloadCierre } from '../ordenes/fan-out/fan-out-cierre.js';
-import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from '../ordenes/fan-out/payload-cierre.js';
+import { completarSolicitudBaja, construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from '../ordenes/fan-out/payload-cierre.js';
 import {
   MOMENTO_FAN_OUT,
   TIPO_OT_BAJA,
@@ -48,6 +48,8 @@ function conClienteDeContrato<
 
 @Injectable()
 export class IntegracionesService {
+  private readonly logger = new Logger(IntegracionesService.name);
+
   constructor(
     private prisma: PrismaService,
     @Inject(MOMENTO_FAN_OUT) private momentoFanOut: MomentoFanOut,
@@ -273,7 +275,7 @@ export class IntegracionesService {
     });
     if (!ot) throw new NotFoundException(`OT ${id_ot} cerrada no encontrada en la empresa ${id_empresa}`);
 
-    return construirPayloadCierre(ot);
+    return construirPayloadCierre(await completarSolicitudBaja(this.prisma, ot, this.logger));
   }
 
   // ---- catálogo / clientes ----

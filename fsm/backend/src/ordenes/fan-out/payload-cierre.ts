@@ -92,24 +92,58 @@ export const INCLUDE_PAYLOAD_CIERRE = {
       comuna: true,
     },
   },
-  // La otra fuente del `request_id`: las OT de BAJA que pide G8 por
-  // `POST /integraciones/ordenes-baja`. Sin esto el `request_id` de un retiro
-  // viajaba en null, G1 guardaba la recepcion sin clave y G8 no podia encontrar
-  // su propia solicitud: el flujo no fallaba, devolvia vacio.
-  solicitud_baja: {
-    select: {
-      request_id: true,
-      trace_id: true,
-      id_cliente_externo: true,
-      id_contrato_externo: true,
-      id_servicio_externo: true,
-      id_solicitud_retiro_externa: true,
-      id_ticket_externo: true,
-    },
-  },
+  // `solicitud_baja` NO va aca: ver `completarSolicitudBaja`.
 } satisfies Prisma.orden_trabajoInclude;
 
-export type OtParaPayload = Prisma.orden_trabajoGetPayload<{ include: typeof INCLUDE_PAYLOAD_CIERRE }>;
+/**
+ * La otra fuente del `request_id`: las OT de BAJA que pide G8 por
+ * `POST /integraciones/ordenes-baja`. Sin esto el `request_id` de un retiro
+ * viajaba en null, G1 guardaba la recepcion sin clave y G8 no podia encontrar
+ * su propia solicitud: el flujo no fallaba, devolvia vacio.
+ */
+const SELECT_SOLICITUD_BAJA = {
+  request_id: true,
+  trace_id: true,
+  id_cliente_externo: true,
+  id_contrato_externo: true,
+  id_servicio_externo: true,
+  id_solicitud_retiro_externa: true,
+  id_ticket_externo: true,
+} satisfies Prisma.solicitud_baja_integracionSelect;
+
+export type SolicitudBajaPayload = Prisma.solicitud_baja_integracionGetPayload<{ select: typeof SELECT_SOLICITUD_BAJA }>;
+
+export type OtParaPayload = Prisma.orden_trabajoGetPayload<{ include: typeof INCLUDE_PAYLOAD_CIERRE }> & {
+  solicitud_baja: SolicitudBajaPayload | null;
+};
+
+/**
+ * Le agrega a la OT su solicitud de retiro de G8, si la tiene.
+ *
+ * Va APARTE del `include` a proposito. En la base global la tabla
+ * `solicitud_baja_integracion` la crea el admin, y mientras no exista, juntarla
+ * en el `include` hacia fallar el aviso de cierre y la reconciliacion de TODAS
+ * las OT, no solo de los retiros. Por eso se consulta solo para las OT de BAJA
+ * --las unicas que pueden tener una-- y, si falla, la OT sigue sin ella y se
+ * avisa en el log.
+ */
+export async function completarSolicitudBaja<T extends { id_ot: number; tipo_ot: string }>(
+  prisma: { solicitud_baja_integracion: { findUnique: (a: any) => Promise<unknown> } },
+  ot: T,
+  logger?: { warn(m: string): void },
+): Promise<T & { solicitud_baja: SolicitudBajaPayload | null }> {
+  if (ot.tipo_ot !== TIPO_OT_BAJA) return { ...ot, solicitud_baja: null };
+  try {
+    const solicitud = (await prisma.solicitud_baja_integracion.findUnique({
+      where: { id_ot: ot.id_ot },
+      select: SELECT_SOLICITUD_BAJA,
+    })) as SolicitudBajaPayload | null;
+    return { ...ot, solicitud_baja: solicitud };
+  } catch (e) {
+    logger?.warn(`No se pudo leer la solicitud de retiro de la OT ${ot.id_ot}: ${(e as Error)?.message ?? e}`);
+    return { ...ot, solicitud_baja: null };
+  }
+}
 
 export function construirPayloadCierre(ot: OtParaPayload): PayloadCierre {
   const guardado = (ot.cierre_equipos as CierreGuardado | null) ?? {};
