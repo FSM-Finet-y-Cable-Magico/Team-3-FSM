@@ -20,7 +20,7 @@ import {
   type EquipoDeclarado,
   type EquipoFaltante,
 } from './fan-out/fan-out-cierre.js';
-import { cierreGuardado, construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payload-cierre.js';
+import { cierreGuardado, completarSolicitudBaja, construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payload-cierre.js';
 import {
   MOMENTO_FAN_OUT,
   TIPO_OT_BAJA,
@@ -1424,7 +1424,7 @@ export class OrdenesService {
         include: INCLUDE_PAYLOAD_CIERRE,
       });
       if (!ot) throw new Error('la OT cerrada no se encontro al releerla');
-      await this.fanOut.notificar(construirPayloadCierre(ot));
+      await this.fanOut.notificar(construirPayloadCierre(await completarSolicitudBaja(this.prisma, ot, this.logger)));
     } catch (e) {
       this.logger.error(`fan-out del cierre ${id_ot}: ${(e as Error).message}`);
     }
