@@ -184,6 +184,8 @@ export interface OntDePuerto {
   estado_conexion: string | null;
   potencia_dbm: number | null;
   posible_baja: boolean;
+  /** Cliente suspendido por deuda (contrato de G8). */
+  suspendido?: boolean;
 }
 
 export interface PuertoDeCaja {

@@ -37,6 +37,7 @@ describe('grilla de puertos de una caja SmartOLT', () => {
     expect(g.puertos[2]).toMatchObject({ numero: 3, estado: 'OCUPADO', conflicto: false });
     expect(g.puertos[2].onts[0]).toEqual({
       numero_serie: 'B', nombre_cliente: 'Cliente B', estado_conexion: 'ONLINE', potencia_dbm: -21, posible_baja: false,
+      suspendido: false,
     });
     expect(g.puertos[1]).toMatchObject({ numero: 2, estado: 'SIN_REGISTRO', onts: [] });
   });
@@ -110,6 +111,12 @@ describe('grilla de puertos de una caja SmartOLT', () => {
 
     expect(g.puertos[3]).toMatchObject({ estado: 'OCUPADO' });
     expect(g.puertos[3].onts[0].posible_baja).toBe(true);
+  });
+
+  it('un cliente suspendido por deuda se marca como tal, no como posible baja', () => {
+    const g = armarGrilla([ont('A', 'NAP53', 2, { estado_conexion: 'ONLINE', suspendido: true })], [], AHORA);
+
+    expect(g.puertos[1].onts[0]).toMatchObject({ suspendido: true, posible_baja: false });
   });
 });
 

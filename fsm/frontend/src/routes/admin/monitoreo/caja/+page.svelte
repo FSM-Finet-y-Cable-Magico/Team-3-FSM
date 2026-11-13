@@ -73,7 +73,10 @@
       {o.estado_conexion ?? 'DESCONOCIDO'}
     </span>
     <span class="text-xs tabular-nums text-slate-600">{o.potencia_dbm == null ? '--' : `${o.potencia_dbm} dBm`}</span>
-    {#if o.posible_baja}
+    {#if o.suspendido}
+      <span class="text-xs px-1.5 py-0.5 rounded border bg-amber-50 text-amber-800 border-amber-200"
+        title="Cliente con el contrato suspendido por G8: su caída es esperada.">Suspendido por deuda</span>
+    {:else if o.posible_baja}
       <span class="text-xs px-1.5 py-0.5 rounded border bg-slate-100 text-slate-700 border-slate-300"
         title="Sin señal hace más de 7 días (DIAS_MAX_INCIDENTE): probablemente un cliente dado de baja que sigue en SmartOLT.">posible baja</span>
     {/if}
