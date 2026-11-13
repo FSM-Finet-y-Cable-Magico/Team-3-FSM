@@ -774,6 +774,7 @@ export class AlertasService {
         estado_conexion: string | null;
         potencia_dbm: string | null;
         sin_senal_desde: Date | null;
+        sin_fecha: boolean | null;
       }[]
     >`
       -- La ultima lectura es la ultima ESCRITA (id_monitoreo, autoincremental),
@@ -803,7 +804,10 @@ export class AlertasService {
              u.estado_conexion,
              u.potencia_actual_dbm::text AS potencia_dbm,
              CASE WHEN u.estado_conexion <> 'ONLINE'
-                  THEN COALESCE(t.timestamp, u.timestamp_medicion) END AS sin_senal_desde
+                  THEN COALESCE(t.timestamp, u.timestamp_medicion) END AS sin_senal_desde,
+             -- Sin evento y con la lectura fechada en su primera vez: es la
+             -- fecha que la ingesta pone cuando SmartOLT no informa ninguna.
+             (t.timestamp IS NULL AND u.timestamp_medicion = r.primera_vez) AS sin_fecha
       FROM registro_ont r
       JOIN ultima u ON u.id_registro_ont = r.id_registro_ont
       LEFT JOIN transicion t ON t.id_registro_ont = r.id_registro_ont
@@ -825,6 +829,7 @@ export class AlertasService {
       estado_conexion: f.estado_conexion,
       potencia_dbm: f.potencia_dbm == null ? null : Number(f.potencia_dbm),
       sin_senal_desde: f.sin_senal_desde,
+      sin_fecha_de_fuente: f.sin_fecha === true,
       odb: f.odb,
       odb_puerto: f.odb_puerto,
       zona: f.zona,

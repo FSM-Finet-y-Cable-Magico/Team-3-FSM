@@ -466,6 +466,7 @@ export class MonitoreoService {
     zona: string | null;
     olt_externo: string | null;
     nombre_cliente_ext: string | null;
+    primera_vez?: Date;
     monitoreos: {
       potencia_actual_dbm: unknown;
       estado_conexion: string | null;
@@ -484,6 +485,13 @@ export class MonitoreoService {
     const sin_senal_desde =
       estado != null && estado !== ESTADO_CONEXION.ONLINE ? (caida ?? ultima?.timestamp_medicion ?? null) : null;
     const suspendido = r.id_cliente != null && suspendidos.has(r.id_cliente);
+    // Sin evento y con la lectura fechada en su primera vez: SmartOLT no dio
+    // fecha. Mismo criterio que `sin_fecha` en `cargarEstado`.
+    const sin_fecha_de_fuente =
+      caida == null &&
+      ultima != null &&
+      r.primera_vez != null &&
+      ultima.timestamp_medicion.getTime() === r.primera_vez.getTime();
     return {
       numero_serie: r.numero_serie,
       id_unidad: r.id_unidad,
@@ -496,7 +504,7 @@ export class MonitoreoService {
       potencia_fuera_de_rango: potenciaFueraDeRango(potencia),
       medido_en: ultima?.timestamp_medicion ?? null,
       /** Caida hace mas de 7 dias: equipo de un cliente que se fue. Ver `esInactiva`. */
-      posible_baja: !suspendido && esInactiva({ estado_conexion: estado, sin_senal_desde }, ahora),
+      posible_baja: !suspendido && esInactiva({ estado_conexion: estado, sin_senal_desde, sin_fecha_de_fuente }, ahora),
       /** Cliente suspendido por deuda (contrato de G8): su caida es esperada. */
       suspendido,
     };
