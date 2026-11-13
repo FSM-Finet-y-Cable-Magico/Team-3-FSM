@@ -57,6 +57,8 @@ export interface EstadoOnt {
    * los usan; por eso son opcionales.
    */
   odb?: string | null;
+  /** Puerto de la ONT en su caja (SmartOLT `odb_port`). */
+  odb_puerto?: number | null;
   zona?: string | null;
   nombre_cliente?: string | null;
 }

@@ -4,6 +4,7 @@ import { normalizarNombreCaja } from './ligado-caja.js';
 import { descomponerFicha } from './ficha-cliente.js';
 import { evaluar, afectaAlGrupo, esInactiva, claveDeCaja, type EstadoOnt } from './reglas-alerta.js';
 import { ESTADO_CONEXION } from './monitoreo.constants.js';
+import { cabeceraDeCaja } from './cajas-smartolt.js';
 import {
   DIAS_MAX_INCIDENTE,
   MIN_ONT_PARA_FALLA_CAJA,
@@ -662,20 +663,11 @@ export class AlertasService {
     const filas = [...porCaja]
       .map(([clave, miembros]) => {
         const criticos = miembros.filter(esCritica);
-        const primera = miembros[0];
         const sinSenal = criticos.filter(
           (o) => o.estado_conexion != null && o.estado_conexion !== ESTADO_CONEXION.ONLINE,
         ).length;
         return {
-          clave,
-          // Las grafias de una misma caja conviven ("NAP53" y "NAP 53" en el
-          // mismo splitter): se muestra la que mas usaron los instaladores,
-          // que es la que el tecnico va a buscar en SmartOLT.
-          nombre: masFrecuente(miembros.map((o) => o.odb?.trim() || null)) ?? primera.caja_normalizada!,
-          olt_externo: primera.olt_externo,
-          board: primera.board,
-          puerto_pon: primera.puerto_pon,
-          zona: masFrecuente(miembros.map((o) => o.zona?.replace(/\s+/g, ' ').trim() || null)),
+          ...cabeceraDeCaja(clave, miembros),
           clientes_en_la_caja: miembros.length,
           // El padron esta incompleto: la mayoria de las cajas tienen menos de
           // cinco ONT registradas de una capacidad tipica de 16 puertos. En
@@ -819,22 +811,4 @@ export class AlertasService {
       nombre_cliente: f.nombre_cliente_ext,
     }));
   }
-}
-
-/**
- * El valor no nulo que mas se repite; a igual cantidad, el primero que
- * aparecio. Null si no hay ninguno.
- */
-function masFrecuente(valores: (string | null)[]): string | null {
-  const cuenta = new Map<string, number>();
-  for (const v of valores) if (v != null) cuenta.set(v, (cuenta.get(v) ?? 0) + 1);
-  let mejor: string | null = null;
-  let max = 0;
-  for (const [v, n] of cuenta) {
-    if (n > max) {
-      mejor = v;
-      max = n;
-    }
-  }
-  return mejor;
 }

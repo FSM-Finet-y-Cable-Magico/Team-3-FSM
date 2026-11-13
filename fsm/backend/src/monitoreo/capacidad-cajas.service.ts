@@ -1,29 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { FUENTE_MONITOREO, type FuenteMonitoreo } from './fuente/fuente-monitoreo.js';
-
-/**
- * Trim, mayúsculas y espacios colapsados. Nada más, y es a propósito.
- *
- * NO se usa `normalizarNombreCaja`, que es el del ligado. Aquel es tolerante
- * por diseño --parte letra/dígito y quita ceros a la izquierda-- porque cruza
- * dos sistemas distintos: nombres que escribieron los instaladores en SmartOLT
- * contra los del KML de Tomodat. Acá los dos lados son cadenas del MISMO
- * sistema, el `odb` del censo contra el `name` del catálogo, así que no hay
- * nada que tolerar.
- *
- * Y tolerar de más haría daño: `NAP 7`, `NAP-07` y `NAP07` colapsan a la misma
- * clave con aquel normalizador, y en SmartOLT son TRES cajas distintas, en tres
- * zonas y tres puertos PON distintos. Darles la capacidad de la equivocada crea
- * puertos que no existen.
- *
- * Medido contra producción: el estricto resuelve 221 cajas y el suelto 224. Las
- * tres de diferencia no valen el riesgo.
- */
-function clave(nombre: string | null): string | null {
-  const s = (nombre ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
-  return s === '' ? null : s;
-}
+import { claveEstrictaNombre as clave } from './cajas-smartolt.js';
 
 export interface ResumenCapacidad {
   cajas_sin_capacidad: number;
