@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { Logger } from '@nestjs/common';
 import { SmartOltClient } from './smartolt.client.js';
 
 /**
@@ -98,5 +99,42 @@ describe('SmartOltClient · desde cuando esta la ONT en su estado', () => {
     // Hora de pared de Chile (verano, UTC-3), sin importar la zona del servidor.
     expect(l[0].medido_en).toEqual(new Date('2026-11-01T13:00:00.000Z'));
     expect(l.slice(1).map((x) => x.medido_en)).toEqual([null, null, null]);
+  });
+});
+
+/**
+ * Una fecha que SmartOLT si manda pero que no se puede leer no puede perderse
+ * en silencio: asi paso el 13-11 con los microsegundos, y todas las lecturas
+ * quedaron fechadas en la primera vez que se vio la ONT sin que nada avisara.
+ */
+describe('SmartOltClient · fechas que no se pueden leer', () => {
+  const fetchOriginal = globalThis.fetch;
+  let onus: unknown[];
+
+  beforeEach(() => {
+    globalThis.fetch = jest.fn(
+      async () => new Response(JSON.stringify({ status: true, onus }), { status: 200 }),
+    ) as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = fetchOriginal;
+    jest.restoreAllMocks();
+  });
+
+  it('avisa en el log cuantas trajo con un formato desconocido, no las que vienen vacias', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    onus = [
+      { sn: 'A', status: 'Online', last_status_change: '2026-11-13 10:28:24.756123' },
+      { sn: 'B', status: 'Offline', last_status_change: null },
+      { sn: 'C', status: 'Offline', last_status_change: '13/11/2026 10:28' },
+    ];
+
+    const l = await new SmartOltClient('https://smartolt.test', 'tok').listarLecturas();
+
+    expect(l[0].medido_en).toEqual(new Date('2026-11-13T13:28:24.756Z'));
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain('1 ONT');
+    expect(String(warn.mock.calls[0][0])).toContain('13/11/2026 10:28');
   });
 });
