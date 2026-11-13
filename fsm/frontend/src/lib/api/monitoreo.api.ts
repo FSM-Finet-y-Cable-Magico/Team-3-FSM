@@ -147,3 +147,58 @@ export function historialInterrupciones(token: string, sn: string, periodo?: { d
     `${API_URL}/api/monitoreo/ont/${encodeURIComponent(sn)}/interrupciones${qs}`,
   );
 }
+
+// --- Cajas SmartOLT y sus puertos -------------------------------------------
+
+export interface ResumenCajaSmartolt {
+  /** `olt/placa/puerto|NOMBRE NORMALIZADO`. */
+  clave: string;
+  nombre: string;
+  olt_externo: string | null;
+  board: number | null;
+  puerto_pon: number | null;
+  zona: string | null;
+  capacidad: number;
+  /** La capacidad no salio del catalogo de SmartOLT: se estimo. */
+  capacidad_estimada: boolean;
+  ocupados: number;
+  ont_total: number;
+  sin_puerto: number;
+}
+
+export interface OntDePuerto {
+  numero_serie: string;
+  nombre_cliente: string | null;
+  estado_conexion: string | null;
+  potencia_dbm: number | null;
+  posible_baja: boolean;
+}
+
+export interface PuertoDeCaja {
+  numero: number;
+  estado: 'OCUPADO' | 'SIN_REGISTRO';
+  conflicto: boolean;
+  onts: OntDePuerto[];
+}
+
+export interface DetalleCajaSmartolt
+  extends Omit<ResumenCajaSmartolt, 'ont_total' | 'sin_puerto'> {
+  puertos: PuertoDeCaja[];
+  fuera_de_rango: (OntDePuerto & { odb_puerto: number })[];
+  sin_puerto: OntDePuerto[];
+}
+
+export function listarCajasSmartolt(token: string) {
+  return pedir<ResumenCajaSmartolt[]>(token, `${API_URL}/api/monitoreo/cajas-smartolt`);
+}
+
+/** La clave va en la query: lleva espacios, "/" y "|". */
+export function detalleCajaSmartolt(token: string, clave: string) {
+  const qs = new URLSearchParams({ clave });
+  return pedir<DetalleCajaSmartolt>(token, `${API_URL}/api/monitoreo/cajas-smartolt/detalle?${qs}`);
+}
+
+/** Ruta de la pagina de una caja. */
+export function urlCajaSmartolt(clave: string) {
+  return `/admin/monitoreo/caja?${new URLSearchParams({ clave })}`;
+}

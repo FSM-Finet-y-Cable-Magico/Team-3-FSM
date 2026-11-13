@@ -18,7 +18,9 @@
   import { authStore } from '$lib/stores/auth.store';
   import {
     obtenerResumenMonitoreo, listarLecturas, criticosPorCaja, TOPE_PADRON,
+    listarCajasSmartolt, urlCajaSmartolt,
     type ResumenMonitoreo, type LecturaOnt, type CriticosPorCaja, type ActualizacionMonitoreo,
+    type ResumenCajaSmartolt,
   } from '$lib/api/monitoreo.api';
 
   // Los umbrales salen de `lib/utils/potencia`, que ya los tenia para la ficha
@@ -36,7 +38,7 @@
 
   let cargando = $state(true);
   let error = $state('');
-  let vista = $state<'cajas' | 'onts'>('cajas');
+  let vista = $state<'cajas' | 'puertos' | 'onts'>('cajas');
   let filtroZona = $state('');
   let busqueda = $state('');
   let soloConProblema = $state(false);
@@ -49,6 +51,25 @@
     if (s.has(clave)) s.delete(clave);
     else s.add(clave);
     abiertas = s;
+  }
+
+  // Vista "Puertos por caja": se carga recien al abrirla. Arma todas las cajas
+  // con la misma consulta pesada que el panel, y no hace falta en cada visita.
+  let cajasSmartolt = $state<ResumenCajaSmartolt[] | null>(null);
+  let busquedaCaja = $state('');
+
+  async function cargarCajasSmartolt() {
+    try {
+      const c = await listarCajasSmartolt(token());
+      if (!destruido) cajasSmartolt = c;
+    } catch (e) {
+      if (!destruido) error = e instanceof Error ? e.message : 'No se pudieron cargar las cajas';
+    }
+  }
+
+  function verPuertos() {
+    vista = 'puertos';
+    if (!cajasSmartolt) cargarCajasSmartolt();
   }
 
   /** Id HTML para la fila desplegada: la clave trae espacios, `/` y `|`. */
@@ -91,6 +112,7 @@
     socket.on('monitoreo_update', (e: ActualizacionMonitoreo) => {
       ultimoEvento = e;
       cargar();
+      if (vista === 'puertos') cargarCajasSmartolt();
     });
     socket.on('disconnect', () => (enVivo = false));
   }
@@ -119,12 +141,25 @@
   // --- Derivados -------------------------------------------------------------
 
   const zonas = $derived(
-    [...new Set((porCaja?.cajas ?? []).map((c) => c.zona).filter((z): z is string => !!z))].sort(),
+    [
+      ...new Set(
+        [...(porCaja?.cajas ?? []), ...(cajasSmartolt ?? [])]
+          .map((c) => c.zona)
+          .filter((z): z is string => !!z),
+      ),
+    ].sort(),
   );
 
   const cajasVisibles = $derived(
     (porCaja?.cajas ?? []).filter((c) => !filtroZona || c.zona === filtroZona),
   );
+
+  const cajasSmartoltVisibles = $derived.by(() => {
+    const q = busquedaCaja.trim().toLowerCase();
+    return (cajasSmartolt ?? [])
+      .filter((c) => !filtroZona || c.zona === filtroZona)
+      .filter((c) => !q || c.nombre.toLowerCase().includes(q));
+  });
 
   function conProblema(o: LecturaOnt) {
     return (o.estado_conexion ?? 'ONLINE') !== 'ONLINE' || o.potencia_fuera_de_rango;
@@ -304,6 +339,13 @@
       <button
         type="button"
         role="tab"
+        aria-selected={vista === 'puertos'}
+        onclick={verPuertos}
+        class="btn-pestana {vista === 'puertos' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}"
+      >Puertos por caja</button>
+      <button
+        type="button"
+        role="tab"
         aria-selected={vista === 'onts'}
         onclick={() => (vista = 'onts')}
         class="btn-pestana {vista === 'onts' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}"
@@ -323,9 +365,23 @@
       </select>
     </div>
 
+    {#if vista === 'puertos'}
+      <div class="flex flex-col flex-1 min-w-52">
+        <label for="busca-caja" class="text-xs font-semibold text-slate-600 mb-0.5">Buscar caja</label>
+        <input
+          id="busca-caja"
+          type="search"
+          bind:value={busquedaCaja}
+          placeholder="Nombre de la caja, p. ej. NAP53"
+          class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm
+                 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        />
+      </div>
+    {/if}
+
     {#if vista === 'onts'}
       <div class="flex flex-col flex-1 min-w-52">
-        <label for="busca" class="text-xs font-semibold text-slate-600 mb-0.5">Buscar</label>
+        <label for="busca"class="text-xs font-semibold text-slate-600 mb-0.5">Buscar</label>
         <input
           id="busca"
           type="search"
@@ -416,7 +472,8 @@
                 <td class="px-3 py-2 text-right tabular-nums text-red-700">{c.sin_senal}</td>
                 <td class="px-3 py-2 text-right tabular-nums text-amber-700">{c.potencia_fuera_de_rango}</td>
                 <td class="px-3 py-2 text-right tabular-nums text-slate-700">{c.clientes_en_la_caja}</td>
-                <td class="px-3 py-2 text-right">
+                <td class="px-3 py-2 text-right whitespace-nowrap">
+                  <a href={urlCajaSmartolt(c.clave)} class="btn-texto mr-3">Puertos</a>
                   <button
                     type="button"
                     class="btn-texto"
@@ -459,6 +516,61 @@
                   </td>
                 </tr>
               {/if}
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+
+  <!-- Puertos por caja: todas las cajas de SmartOLT, con o sin criticos -->
+  {:else if vista === 'puertos'}
+    {#if !cajasSmartolt}
+      <div class="space-y-2">
+        {#each Array(5) as _}
+          <div class="h-12 bg-slate-100 rounded-lg motion-safe:animate-pulse"></div>
+        {/each}
+      </div>
+    {:else if cajasSmartoltVisibles.length === 0}
+      <div class="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl px-4 py-8 text-center">
+        Ninguna caja{busquedaCaja ? ` que coincida con «${busquedaCaja}»` : ''}{filtroZona ? ` en ${filtroZona}` : ''}.
+      </div>
+    {:else}
+      <p class="text-sm text-slate-700">
+        <strong class="text-slate-900">{cajasSmartoltVisibles.length}</strong> cajas de SmartOLT.
+        <span class="text-slate-600">«~» marca capacidad estimada: la caja no está en el catálogo de SmartOLT.</span>
+      </p>
+      <div class="overflow-x-auto rounded-xl border bg-white shadow-sm">
+        <table class="w-full text-sm">
+          <caption class="sr-only">Cajas NAP de SmartOLT y la ocupación de sus puertos</caption>
+          <thead class="bg-slate-100 text-slate-600 uppercase tracking-wide text-xs">
+            <tr>
+              <th scope="col" class="px-3 py-2 text-left font-semibold">Caja</th>
+              <th scope="col" class="px-3 py-2 text-left font-semibold">Zona</th>
+              <th scope="col" class="px-3 py-2 text-right font-semibold">Ocupados</th>
+              <th scope="col" class="px-3 py-2 text-right font-semibold">ONT sin puerto</th>
+              <th scope="col" class="px-3 py-2 text-right font-semibold">Ver</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {#each cajasSmartoltVisibles as c (c.clave)}
+              <tr class="hover:bg-slate-50 transition-colors duration-200">
+                <td class="px-3 py-2">
+                  <span class="font-medium text-slate-900">{c.nombre}</span>
+                  <span class="block text-xs text-slate-500 tabular-nums">
+                    OLT {c.olt_externo ?? '?'} · {c.board ?? '?'}/{c.puerto_pon ?? '?'}
+                  </span>
+                </td>
+                <td class="px-3 py-2 text-slate-700">{c.zona ?? '--'}</td>
+                <td class="px-3 py-2 text-right tabular-nums text-slate-900">
+                  {c.ocupados} / {c.capacidad_estimada ? '~' : ''}{c.capacidad}
+                </td>
+                <td class="px-3 py-2 text-right tabular-nums {c.sin_puerto ? 'text-amber-700' : 'text-slate-500'}">
+                  {c.sin_puerto}
+                </td>
+                <td class="px-3 py-2 text-right">
+                  <a href={urlCajaSmartolt(c.clave)} class="btn-texto">Puertos</a>
+                </td>
+              </tr>
             {/each}
           </tbody>
         </table>
