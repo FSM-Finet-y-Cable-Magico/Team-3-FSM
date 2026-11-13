@@ -66,6 +66,11 @@ export interface EstadoOnt {
    * activo). Su ONT caida es esperada: no es incidente. Ver `clientesSuspendidos`.
    */
   suspendido?: boolean;
+  /**
+   * SmartOLT no informa desde cuando esta en su estado y nunca la vimos cambiar:
+   * su fecha es solo la primera vez que la vimos. Ver `esInactiva`.
+   */
+  sin_fecha_de_fuente?: boolean;
 }
 
 export interface AlertaPropuesta {
@@ -130,12 +135,16 @@ export function afectaAlGrupo(o: EstadoOnt): boolean {
  * No es un incidente y no participa de ningún cálculo — ver `DIAS_MAX_INCIDENTE`.
  */
 export function esInactiva(
-  o: Pick<EstadoOnt, 'estado_conexion' | 'sin_senal_desde' | 'suspendido'>,
+  o: Pick<EstadoOnt, 'estado_conexion' | 'sin_senal_desde' | 'suspendido' | 'sin_fecha_de_fuente'>,
   ahora: Date,
 ): boolean {
   // Suspendido por deuda: fuera del padron igual que una baja, este o no en linea.
   if (o.suspendido) return true;
   if (!estaCaida(o)) return false;
+  // Caida y sin fecha de SmartOLT: nunca le registro un cambio, asi que esta asi
+  // desde antes de que la vieramos. Medido el 13-11: las 63 ONT en ese caso eran
+  // equipos de baja. Sin esto, en una base nueva parecian caidas de hoy.
+  if (o.sin_fecha_de_fuente) return true;
   if (!o.sin_senal_desde) return false;
   return (ahora.getTime() - o.sin_senal_desde.getTime()) / 86_400_000 > DIAS_MAX_INCIDENTE;
 }
