@@ -80,7 +80,7 @@ export class CsvSmartOltFuente implements FuenteMonitoreo {
       // fallback si por algún motivo falta la primera.
       potencia_rx_dbm: f.signal1490 ?? f.signal1310 ?? null,
       estado: this.mapearEstado(f.estadoRaw),
-      medido_en: f.ultimoCambio ?? new Date(),
+      medido_en: f.ultimoCambio ?? null,
     }));
   }
 

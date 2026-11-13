@@ -9,6 +9,8 @@ export interface RegistroResuelto {
   id_unidad: number | null;
   id_cliente: number | null;
   id_caja_nap: number | null;
+  /** Cuándo la ingesta vio la ONT por primera vez. */
+  primera_vez: Date;
 }
 
 /**
@@ -96,6 +98,7 @@ export class RegistroOntService {
         id_unidad: r.id_unidad,
         id_cliente: r.id_cliente,
         id_caja_nap: r.id_caja_nap,
+        primera_vez: r.primera_vez,
       });
     }
     return mapa;

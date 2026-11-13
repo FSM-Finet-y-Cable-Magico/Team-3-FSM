@@ -175,7 +175,7 @@ export class SmartOltClient implements FuenteMonitoreo {
         // cliente. 1310nm (upstream) es fallback si falta la primera.
         potencia_rx_dbm: this.num(o.signal_1490 ?? o.signal_1310),
         estado: this.mapearEstado(o.status),
-        medido_en: this.fecha(o.last_status_change) ?? new Date(),
+        medido_en: this.fecha(o.last_status_change),
       }));
   }
 

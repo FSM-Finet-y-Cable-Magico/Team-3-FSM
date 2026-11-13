@@ -84,7 +84,7 @@ export function claveDeCaja(o: EstadoOnt): string | null {
 const claveDePlaca = (o: EstadoOnt) => `OLT ${o.olt_externo ?? '?'} / placa ${o.board ?? '?'}`;
 const claveDeOlt = (o: EstadoOnt) => `OLT ${o.olt_externo ?? '?'}`;
 
-function estaCaida(o: EstadoOnt): boolean {
+function estaCaida(o: Pick<EstadoOnt, 'estado_conexion'>): boolean {
   return o.estado_conexion != null && o.estado_conexion !== ESTADO_CONEXION.ONLINE;
 }
 
@@ -124,7 +124,7 @@ export function afectaAlGrupo(o: EstadoOnt): boolean {
  * Equipo de un cliente dado de baja: sigue en SmartOLT, OFFLINE para siempre.
  * No es un incidente y no participa de ningún cálculo — ver `DIAS_MAX_INCIDENTE`.
  */
-export function esInactiva(o: EstadoOnt, ahora: Date): boolean {
+export function esInactiva(o: Pick<EstadoOnt, 'estado_conexion' | 'sin_senal_desde'>, ahora: Date): boolean {
   if (!estaCaida(o)) return false;
   if (!o.sin_senal_desde) return false;
   return (ahora.getTime() - o.sin_senal_desde.getTime()) / 86_400_000 > DIAS_MAX_INCIDENTE;

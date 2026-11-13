@@ -5,8 +5,10 @@ import { pedirJson } from './http.js';
 
 export interface ResumenMonitoreo {
   total_ont: number;
-  /** ONLINE / OFFLINE / LOS / DESCONOCIDO. */
+  /** ONLINE / OFFLINE / LOS / DESCONOCIDO. Solo ONT activas: sin las posibles bajas. */
   por_estado: Record<string, number>;
+  /** Caídas hace más de 7 días: equipos de clientes que se fueron. */
+  posibles_bajas: number;
   potencia_fuera_de_rango: number;
   fecha_actualizacion: string;
 }
@@ -22,6 +24,8 @@ export interface LecturaOnt {
   potencia_actual_dbm: number | null;
   potencia_fuera_de_rango: boolean;
   medido_en: string | null;
+  /** Caída hace más de 7 días: equipo de un cliente que se fue, no un incidente. */
+  posible_baja: boolean;
 }
 
 /** Una ONT critica de la caja, para desplegarla bajo la fila. */
