@@ -114,8 +114,12 @@ Módulo nuevo `cortes` (controller + `CortesService`), con la lógica pura en
     misma consulta aparte y la misma protección;
   - la etiqueta es **"Suspendido por deuda"** y tiene prioridad sobre "posible
     baja".
-- El resumen de Monitoreo cuenta a los suspendidos junto con las posibles bajas,
-  como "no incluye N posibles bajas o suspendidos".
+- El resumen de Monitoreo los excluye de "fuera de línea" y los cuenta aparte
+  (`suspendidos`), junto a las posibles bajas: "No incluye N posibles bajas (…)
+  ni M clientes suspendidos por deuda".
+- Un cliente cuenta como suspendido si tiene algún contrato suspendido y
+  **ninguno activo**. Con un servicio activo y otro suspendido no se sabe a cuál
+  corresponde la ONT, así que se sigue monitoreando.
 
 ## 4. Retiro por morosidad: la OT lleva la caja
 
