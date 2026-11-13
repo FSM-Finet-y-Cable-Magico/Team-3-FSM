@@ -2,6 +2,8 @@ import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '
 import { IntegracionesService } from './integraciones.service.js';
 import { InstalacionesService } from './instalaciones.service.js';
 import { SolicitudInstalacionDto } from './dto/solicitud-instalacion.dto.js';
+import { BajasService } from './bajas.service.js';
+import { CancelarBajaDto, SolicitudBajaDto } from './dto/solicitud-baja.dto.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { ApiKeyGuard, exigirEmpresaEnScope, type ApiScope } from '../common/guards/api-key.guard.js';
 import { TicketsService } from '../tickets/tickets.service.js';
@@ -30,6 +32,10 @@ export class IntegracionesController {
     private instalaciones: InstalacionesService,
     private tickets: TicketsService,
     private claveWifi: ClaveWifiService,
+    // Ultimo a proposito: los tres specs que construyen este controlador a mano
+    // pasan los anteriores por posicion, y agregarlo al final no les cambia el
+    // significado a los que ya estaban.
+    private bajas: BajasService,
   ) {}
 
   private ok(data: unknown) {
@@ -55,6 +61,46 @@ export class IntegracionesController {
     return r.creado
       ? { success: true, data: r.data, message: 'Solicitud de instalación aceptada' }
       : this.ok(r.data);
+  }
+
+  // ---- bajas por morosidad (acuerdo del 12-11-2026) ----
+
+  /**
+   * G8 pide el retiro de los equipos de un cliente moroso. Mismos codigos que
+   * instalaciones: 201 si es nueva, 200 con `duplicado: true` si es un reintento
+   * del mismo comando, 409 si el `request_id` se reusa con otro contenido.
+   *
+   * La OT queda en PENDIENTE y la despacha el jefe tecnico como cualquier otra:
+   * G8 no asigna tecnicos.
+   */
+  @Post('ordenes-baja')
+  async ordenBaja(
+    @Req() req: ConScope,
+    @Body() dto: SolicitudBajaDto,
+    @Res({ passthrough: true }) res: { status(code: number): unknown },
+  ) {
+    const r = await this.bajas.crear(req.apiScope, dto);
+    res.status(r.creado ? 201 : 200);
+    return r.creado
+      ? { success: true, data: r.data, message: 'Solicitud de retiro aceptada' }
+      : this.ok(r.data);
+  }
+
+  /**
+   * El cliente pago con el retiro en curso. Se identifica por `request_id`, que
+   * es la clave que G8 tiene en la mano.
+   *
+   * 409 `CANCELACION_NO_APLICABLE` si el tecnico ya cerro: en ese punto los
+   * equipos salieron del domicilio y reponer el servicio es una instalacion
+   * nueva, no una vuelta atras de este retiro.
+   */
+  @Post('ordenes-baja/:request_id/cancelacion')
+  async cancelarBaja(
+    @Req() req: ConScope,
+    @Param('request_id') request_id: string,
+    @Body() dto: CancelarBajaDto,
+  ) {
+    return this.ok(await this.bajas.cancelar(req.apiScope, request_id, dto));
   }
 
   // ---- tickets de soporte (CU-29 desde canales digitales) ----

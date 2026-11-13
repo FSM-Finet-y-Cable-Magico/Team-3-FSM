@@ -13,7 +13,13 @@ import {
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 import type { PayloadCierre } from '../ordenes/fan-out/fan-out-cierre.js';
 import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from '../ordenes/fan-out/payload-cierre.js';
-import { MOMENTO_FAN_OUT, estadosAvisados, type MomentoFanOut } from '../ordenes/fan-out/momento-fan-out.js';
+import {
+  MOMENTO_FAN_OUT,
+  TIPO_OT_BAJA,
+  estadosAvisados,
+  momentoPara,
+  type MomentoFanOut,
+} from '../ordenes/fan-out/momento-fan-out.js';
 import { conDireccionResuelta } from '../ordenes/direccion-ot.js';
 
 const MAX_RANGO_DIAS = 90;
@@ -51,9 +57,24 @@ export class IntegracionesService {
    * Los cierres que ya se avisaron por webhook, que son los que G1 y G8 tienen
    * que poder reconciliar. Con el aviso al cierre del tecnico, una OT que
    * espera aprobacion ya se aviso (ver momento-fan-out.ts).
+   *
+   * Se spreadea en el `where`, no se asigna a `estado`: desde que el momento es
+   * por tipo de OT, el filtro ya no es una lista de estados sino una condicion
+   * sobre los dos campos. Una BAJA que espera aprobacion NO se aviso aunque la
+   * variable diga `CIERRE`, y devolverla aca le diria a G8 que el retiro esta
+   * cerrado cuando el jefe tecnico todavia puede rechazarlo.
    */
-  private get estadosCerrados() {
-    return { in: estadosAvisados(this.momentoFanOut) };
+  private get filtroAvisado() {
+    const global = estadosAvisados(this.momentoFanOut);
+    // Con el global ya en APROBACION los dos conjuntos coinciden y el OR solo
+    // le daria trabajo de mas al planificador.
+    if (this.momentoFanOut === 'APROBACION') return { estado: { in: global } };
+    return {
+      OR: [
+        { tipo_ot: TIPO_OT_BAJA, estado: { in: estadosAvisados(momentoPara(TIPO_OT_BAJA, this.momentoFanOut)) } },
+        { tipo_ot: { not: TIPO_OT_BAJA }, estado: { in: global } },
+      ],
+    };
   }
 
   // ---- helpers ----
@@ -161,7 +182,7 @@ export class IntegracionesService {
     const page = q.page ?? 1;
     const limit = 100;
 
-    const where = { id_empresa, estado: this.estadosCerrados, fecha_completada: { gte, lt } };
+    const where = { id_empresa, ...this.filtroAvisado, fecha_completada: { gte, lt } };
     const [data, total] = await Promise.all([
       this.prisma.orden_trabajo.findMany({
         where,
@@ -247,7 +268,7 @@ export class IntegracionesService {
     this.exigirEmpresa(scope, id_empresa);
 
     const ot = await this.prisma.orden_trabajo.findFirst({
-      where: { id_ot, id_empresa, estado: this.estadosCerrados },
+      where: { id_ot, id_empresa, ...this.filtroAvisado },
       include: INCLUDE_PAYLOAD_CIERRE,
     });
     if (!ot) throw new NotFoundException(`OT ${id_ot} cerrada no encontrada en la empresa ${id_empresa}`);

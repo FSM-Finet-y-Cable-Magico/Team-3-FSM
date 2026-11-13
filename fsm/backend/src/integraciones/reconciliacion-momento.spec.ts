@@ -39,9 +39,15 @@ describe('reconciliacion segun el momento del aviso', () => {
     await service.cierre(scope, 41, 1).catch(() => undefined);
     await service.cierres(scope, { id_empresa: 1, desde: '2026-09-01', hasta: '2026-09-02' });
 
-    const estados = { in: ['COMPLETADA', 'PENDIENTE_APROBACION'] };
-    expect(findFirst.mock.calls[0][0].where.estado).toEqual(estados);
-    expect(findMany.mock.calls[0][0].where.estado).toEqual(estados);
+    // Desde que el momento es por tipo de OT, el filtro es un OR y no una lista
+    // de estados: una BAJA que espera aprobacion NO se aviso aunque el global
+    // sea CIERRE, y devolverla le diria a G8 que el retiro ya esta cerrado.
+    const esperado = [
+      { tipo_ot: 'BAJA', estado: { in: ['COMPLETADA'] } },
+      { tipo_ot: { not: 'BAJA' }, estado: { in: ['COMPLETADA', 'PENDIENTE_APROBACION'] } },
+    ];
+    expect(findFirst.mock.calls[0][0].where.OR).toEqual(esperado);
+    expect(findMany.mock.calls[0][0].where.OR).toEqual(esperado);
   });
 
   it('con el aviso a la aprobacion, solo las COMPLETADA', async () => {

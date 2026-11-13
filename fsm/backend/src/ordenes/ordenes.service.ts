@@ -14,9 +14,19 @@ import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
 import { ACCION_A_ESTADO_G1, ORIGENES_VALIDOS_G1 } from './estado-equipo.constants.js';
 import { problemaDeEquipo, type EquipoAValidar } from './validar-equipos.js';
 import type { ReparacionDeclarada } from './reparacion-cierre.constants.js';
-import { FAN_OUT_CIERRE, type FanOutCierre, type EquipoDeclarado } from './fan-out/fan-out-cierre.js';
+import {
+  FAN_OUT_CIERRE,
+  type FanOutCierre,
+  type EquipoDeclarado,
+  type EquipoFaltante,
+} from './fan-out/fan-out-cierre.js';
 import { cierreGuardado, construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payload-cierre.js';
-import { MOMENTO_FAN_OUT, type MomentoFanOut } from './fan-out/momento-fan-out.js';
+import {
+  MOMENTO_FAN_OUT,
+  TIPO_OT_BAJA,
+  momentoPara,
+  type MomentoFanOut,
+} from './fan-out/momento-fan-out.js';
 import { AprobarCierreDto } from './dto/aprobar-cierre.dto.js';
 import { RechazarCierreDto } from './dto/rechazar-cierre.dto.js';
 import { ResolverRemotoDto } from './dto/resolver-remoto.dto.js';
@@ -720,8 +730,17 @@ export class OrdenesService {
         },
       });
       if (soltarTicket) await this.moverTicket(tx, soltarTicket, id_ot, userId, 'cancelada');
-      // CU-20: una instalacion cancelada devuelve su puerto reservado.
-      if (dto.estado === 'CANCELADA') await this.moverPuerto(tx, ot, 'liberar');
+      // CU-20: una instalacion cancelada devuelve su puerto RESERVADO.
+      //
+      // Se excluye la BAJA a proposito. Cancelar una baja significa que el
+      // cliente sigue con servicio, y su puerto tiene que seguir OCUPADO. El
+      // `liberar` de aca actua sobre puertos RESERVADO, asi que hoy no tocaba
+      // uno ocupado --pero una baja sobre una instalacion todavia sin confirmar
+      // si tiene puerto reservado, y cancelarla lo soltaba--. Vale dejarlo
+      // explicito: es el tipo de OT, no el estado del puerto, lo que decide.
+      if (dto.estado === 'CANCELADA' && ot.tipo_ot !== TIPO_OT_BAJA) {
+        await this.moverPuerto(tx, ot, 'liberar');
+      }
 
       await tx.historial_ot.create({
         data: {
@@ -836,10 +855,18 @@ export class OrdenesService {
         estado_g1: ACCION_A_ESTADO_G1[e.accion],
         motivo: e.motivo,
         observacion_estado_fisico: e.observacion_estado_fisico,
+        con_dano: e.con_dano,
         diagnostico: e.diagnostico,
       }));
     const equipos_instalados = conEstadoG1(dto.equipos_instalados);
     const equipos_retirados = conEstadoG1(dto.equipos_retirados);
+    // NO pasan por `validarSeries`: esa comprueba que la serie este asignada al
+    // tecnico que cierra, y un equipo que no se recupero es exactamente el que
+    // el tecnico no tiene. Validarlos ahi haria imposible declarar un faltante.
+    const equipos_faltantes: EquipoFaltante[] = (dto.equipos_faltantes ?? []).map((e) => ({
+      numero_serie: e.numero_serie,
+      motivo: e.motivo.trim(),
+    }));
 
     // G3 valida que el material EXISTA en el catálogo de la empresa (input
     // propio); el SALDO lo valida G1 (ACUERDO G1↔G3). Sin esto, un id malo da
@@ -906,16 +933,17 @@ export class OrdenesService {
           // equipos habria dejado la columna en null y los tres datos se
           // habrian perdido entre el cierre y la aprobacion, que es cuando se
           // leen para avisarle a G1.
-          cierre_equipos: cierreGuardado(equipos_instalados, equipos_retirados, reparacion),
+          cierre_equipos: cierreGuardado(equipos_instalados, equipos_retirados, reparacion, equipos_faltantes),
         },
       });
 
       // CU-20: el tecnico confirma la instalacion; el puerto reservado para el
       // cliente queda OCUPADO.
       if (ot.tipo_ot === 'INSTALACION') await this.moverPuerto(tx, ot, 'confirmar');
-      // CU-25: la OT-BAJA-PUERTO (la de baja que lleva caja) deja el puerto
-      // del cliente LIBRE al desconectarlo.
-      if (ot.tipo_ot === 'BAJA') await this.moverPuerto(tx, ot, 'desconectar');
+      // La BAJA ya NO desconecta aca: lo hace `aprobarCierre`. Desconectar al
+      // cerrar dejaba el puerto LIBRE mientras el equipo seguia en el domicilio
+      // --y si el jefe tecnico rechazaba el cierre, libre para siempre, porque
+      // `rechazarCierre` no lo devolvia--. Lo levanto G8 el 12-11-2026.
 
       await tx.historial_ot.create({
         data: {
@@ -963,8 +991,9 @@ export class OrdenesService {
     // desde el celular, esperando por algo que ya estaba guardado -- y con el
     // riesgo de que reintentara el cierre creyendo que fallo.
     // Con el aviso movido a la aprobacion (CIERRE_FAN_OUT_MOMENTO), aca no se
-    // avisa: el jefe tecnico todavia puede rechazar.
-    if (this.momentoFanOut === 'CIERRE') void this.notificarCierre(id_ot);
+    // avisa: el jefe tecnico todavia puede rechazar. Una BAJA nunca avisa aca,
+    // sea cual sea la variable (ver momentoPara).
+    if (momentoPara(ot.tipo_ot, this.momentoFanOut) === 'CIERRE') void this.notificarCierre(id_ot);
 
     const advertencia_potencia =
       dto.potencia_optica_dbm < -24 || dto.potencia_optica_dbm > -19;
@@ -1300,11 +1329,16 @@ export class OrdenesService {
           valor_nuevo: { estado: 'COMPLETADA', observaciones },
         },
       });
+      // CU-25: la baja desconecta el puerto del cliente recien aca, con el
+      // cierre aprobado. Antes se hacia en `cerrarOT`: ver el comentario de
+      // alla sobre el puerto que quedaba libre con el equipo aun instalado.
+      if (ot.tipo_ot === TIPO_OT_BAJA) await this.moverPuerto(tx, ot, 'desconectar');
+
       // CU-30: el ticket derivado se resuelve cuando su OT se completa.
       if (ot.id_ticket) await this.moverTicket(tx, ot.id_ticket, id_ot, userId, 'completada', ot.resuelto_remotamente);
     });
 
-    if (this.momentoFanOut === 'APROBACION') void this.notificarCierre(id_ot);
+    if (momentoPara(ot.tipo_ot, this.momentoFanOut) === 'APROBACION') void this.notificarCierre(id_ot);
 
     this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
     return this.obtenerDetalle(id_ot, id_empresa);

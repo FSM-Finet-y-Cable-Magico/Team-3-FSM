@@ -424,6 +424,9 @@ model orden_trabajo {
   /// P0 del acuerdo con G8: la solicitud con la que G8 pidio esta OT por
   /// `POST /integraciones/instalaciones`. Null en toda OT creada dentro de G3.
   solicitud_integracion          solicitud_instalacion_integracion?
+  /// Acuerdo del 12-11-2026: la solicitud de retiro por morosidad con la que G8
+  /// pidio esta OT por `POST /integraciones/ordenes-baja`. Null en todo lo demas.
+  solicitud_baja                 solicitud_baja_integracion?
   /// CU-50: avisos de mantencion programados o enviados por esta OT.
   avisos                         log_notificacion[]
 
@@ -483,6 +486,52 @@ model solicitud_instalacion_integracion {
   fecha_creacion          DateTime       @default(now()) @db.Timestamptz()
   fecha_actualizacion     DateTime       @default(now()) @updatedAt @db.Timestamptz()
   orden_trabajo           orden_trabajo? @relation(fields: [id_ot], references: [id_ot])
+
+  @@index([id_empresa])
+}
+
+/// Retiro por morosidad pedido por G8 (acuerdo del 12-11-2026).
+///
+/// Tabla aparte de `solicitud_instalacion_integracion` y no un `tipo` dentro de
+/// ella. Son dos comandos distintos y comparten poco: una instalacion es sobre
+/// alguien que todavia no es cliente y trae prospecto, plan y persona; una baja
+/// es sobre un cliente que ya existe y trae servicio, solicitud de retiro y
+/// ticket. Meterlas juntas obligaba a anular `id_prospecto_externo`, que hoy es
+/// NOT NULL, y a leer cada fila preguntando antes de que tipo es.
+///
+/// - `request_id` UNIQUE + `hash_payload`: el mismo comando reintentado
+///   devuelve la OT original; el mismo `request_id` con otro contenido es 409.
+///   Es el mismo contrato que ya rige para instalaciones.
+/// - `request_id` es VarChar(150) y no UUID: G8 lo arma como
+///   `g8-retiro-{id_empresa}-{id_solicitud}` y G1 declaro ese largo maximo.
+/// - `id_*_externo` son ids de G8: sin FK, a proposito, igual que en
+///   instalaciones. `id_empresa` tampoco, para no referenciar tablas compartidas.
+/// - Es la unica fuente del `request_id` que G1 necesita en la raiz del aviso de
+///   cierre; sin esta fila G8 no puede encontrar su propia recepcion en G1.
+model solicitud_baja_integracion {
+  id_solicitud                Int            @id @default(autoincrement())
+  request_id                  String         @unique @db.VarChar(150)
+  trace_id                    String         @db.VarChar(100)
+  hash_payload                String         @db.VarChar(64)
+  id_empresa                  Int
+  id_cliente_externo          Int
+  id_contrato_externo         Int
+  id_servicio_externo         Int
+  id_solicitud_retiro_externa Int
+  id_ticket_externo           Int?
+  /// Snapshot de lo que G8 pidio, no la fuente de verdad: al tecnico se lo manda
+  /// a la direccion de servicio que el cliente ya tiene en nuestra base.
+  rut_cliente                 String         @db.VarChar(12)
+  direccion_retiro            String         @db.VarChar(200)
+  comuna_retiro               String         @db.VarChar(80)
+  observaciones               String?        @db.Text
+  id_ot                       Int?           @unique
+  /// Estado de la SOLICITUD, no de la OT: la OT tiene su propia maquina.
+  estado                      String         @db.VarChar(30)
+  motivo_cancelacion          String?        @db.VarChar(300)
+  fecha_creacion              DateTime       @default(now()) @db.Timestamptz()
+  fecha_actualizacion         DateTime       @default(now()) @updatedAt @db.Timestamptz()
+  orden_trabajo               orden_trabajo? @relation(fields: [id_ot], references: [id_ot])
 
   @@index([id_empresa])
 }
