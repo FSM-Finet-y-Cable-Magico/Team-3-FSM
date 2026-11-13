@@ -14,6 +14,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { PlantaExternaService } from './planta-externa.service.js';
 import { TopologiaService } from './topologia.service.js';
+import { SaludCajasService } from './salud-cajas.service.js';
 import {
   CrearCajaDto,
   CrearMufaDto,
@@ -36,6 +37,7 @@ export class PlantaExternaController {
   constructor(
     private planta: PlantaExternaService,
     private topologia: TopologiaService,
+    private salud: SaludCajasService,
   ) {}
 
   /** Árbol OLT → tarjetas → mufas → cajas. */
@@ -59,6 +61,25 @@ export class PlantaExternaController {
   caja(@CurrentUser() user: UserPayload, @Param('id') id: string, @Query('empresa') empresa?: string) {
     const idEmpresa = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
     return this.planta.detalleCaja(+id, idEmpresa);
+  }
+
+  /**
+   * Mapa de salud de la red: cada caja con el estado de sus ONT, sus alertas y
+   * sus OT abiertas, de la más grave a la más sana.
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('salud-cajas')
+  saludCajas(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.salud.listar(id);
+  }
+
+  /** Una caja del mapa: sus ONT, alertas, OT y cajas cercanas. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('cajas/:id/salud')
+  saludCaja(@CurrentUser() user: UserPayload, @Param('id') id: string, @Query('empresa') empresa?: string) {
+    const idEmpresa = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.salud.detalle(+id, idEmpresa);
   }
 
   /** Cajas con coordenadas, para el mapa. */
