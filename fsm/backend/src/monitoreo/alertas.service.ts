@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizarNombreCaja } from './ligado-caja.js';
 import { descomponerFicha } from './ficha-cliente.js';
-import { evaluar, afectaAlGrupo, esInactiva, type EstadoOnt } from './reglas-alerta.js';
+import { evaluar, afectaAlGrupo, esInactiva, claveDeCaja, type EstadoOnt } from './reglas-alerta.js';
 import { ESTADO_CONEXION } from './monitoreo.constants.js';
 import {
   DIAS_MAX_INCIDENTE,
@@ -636,53 +636,50 @@ export class AlertasService {
     // afectada mientras el motor no levantaba la alerta.
     const esCritica = afectaAlGrupo;
 
-    // Se agrupa por id_caja_nap y no por el nombre normalizado: dos cajas
-    // distintas pueden llamarse igual en zonas distintas -- la red real de FiNet
-    // tiene nueve "NAP 5" -- y juntarlas mezclaria clientes de barrios lejanos
-    // en una sola fila.
-    const porCaja = new Map<number, EstadoOnt[]>();
+    // La caja es la de SmartOLT, no la del KML de Tomodat: se agrupa con la
+    // MISMA clave que el motor de alertas (puerto PON + nombre normalizado).
+    //
+    // Antes se agrupaba por `id_caja_nap`, la caja de Tomodat que el ligado
+    // deduce por nombre y cercania. El panel mostraba entonces nombres que el
+    // tecnico no encontraba en SmartOLT ("nap 53" del KML contra "NAP53" del
+    // instalador), y podia contradecir a las alertas, que nunca usaron Tomodat.
+    //
+    // El puerto PON en la clave es lo que impide juntar homonimas: la red real
+    // de FiNet tiene nueve "NAP 5", en barrios distintos y splitters distintos.
+    const porCaja = new Map<string, EstadoOnt[]>();
     const sinCaja: EstadoOnt[] = [];
     for (const o of onts) {
-      if (o.id_caja_nap == null) {
+      const clave = claveDeCaja(o);
+      if (clave == null) {
         if (esCritica(o)) sinCaja.push(o);
         continue;
       }
-      const lista = porCaja.get(o.id_caja_nap);
+      const lista = porCaja.get(clave);
       if (lista) lista.push(o);
-      else porCaja.set(o.id_caja_nap, [o]);
+      else porCaja.set(clave, [o]);
     }
 
-    const cajas = await this.prisma.caja_nap.findMany({
-      where: { id_caja_nap: { in: [...porCaja.keys()] } },
-      select: {
-        id_caja_nap: true,
-        identificador_unico: true,
-        zona: true,
-        latitud: true,
-        longitud: true,
-        capacidad_puertos: true,
-      },
-    });
-    const infoCaja = new Map(cajas.map((c) => [c.id_caja_nap, c]));
-
     const filas = [...porCaja]
-      .map(([id, miembros]) => {
+      .map(([clave, miembros]) => {
         const criticos = miembros.filter(esCritica);
-        const info = infoCaja.get(id);
+        const primera = miembros[0];
         const sinSenal = criticos.filter(
           (o) => o.estado_conexion != null && o.estado_conexion !== ESTADO_CONEXION.ONLINE,
         ).length;
         return {
-          id_caja_nap: id,
-          identificador_unico: info?.identificador_unico ?? null,
-          zona: info?.zona ?? null,
-          latitud: info?.latitud ?? null,
-          longitud: info?.longitud ?? null,
+          clave,
+          // Las grafias de una misma caja conviven ("NAP53" y "NAP 53" en el
+          // mismo splitter): se muestra la que mas usaron los instaladores,
+          // que es la que el tecnico va a buscar en SmartOLT.
+          nombre: masFrecuente(miembros.map((o) => o.odb?.trim() || null)) ?? primera.caja_normalizada!,
+          olt_externo: primera.olt_externo,
+          board: primera.board,
+          puerto_pon: primera.puerto_pon,
+          zona: masFrecuente(miembros.map((o) => o.zona?.replace(/\s+/g, ' ').trim() || null)),
           clientes_en_la_caja: miembros.length,
-          capacidad_puertos: info?.capacidad_puertos ?? null,
-          // El padron esta incompleto: 216 de las 262 cajas de FiNet tienen
-          // menos de cinco ONT registradas y capacidad declarada de 16 puertos.
-          // En esas, "100%" quiere decir "las dos que conocemos", no "la caja
+          // El padron esta incompleto: la mayoria de las cajas tienen menos de
+          // cinco ONT registradas de una capacidad tipica de 16 puertos. En
+          // esas, "100%" quiere decir "las dos que conocemos", no "la caja
           // entera". Es el mismo motivo por el que CU-17 no declara caida una
           // caja bajo `MIN_ONT_PARA_FALLA_CAJA`, y se marca para que el panel
           // no presente ese 100% como si fuera un dato firme.
@@ -694,6 +691,13 @@ export class AlertasService {
           // mandar una cuadrilla a la caja o tecnicos a cada domicilio: el
           // mismo criterio con el que CU-17 declara una falla de caja.
           pct_afectado: Math.round((criticos.length / miembros.length) * 100),
+          // Para desplegar bajo la fila a quien hay que ir a ver.
+          onts_criticas: criticos.map((o) => ({
+            numero_serie: o.numero_serie,
+            nombre_cliente: o.nombre_cliente ?? null,
+            estado_conexion: o.estado_conexion,
+            potencia_dbm: o.potencia_dbm,
+          })),
         };
       })
       .filter((f) => f.criticos > 0)
@@ -714,7 +718,7 @@ export class AlertasService {
       totales: {
         cajas_afectadas: filas.length,
         clientes_criticos: filas.reduce((n, f) => n + f.criticos, 0),
-        // Criticos que no se pudieron atribuir a ninguna caja: no participan de
+        // Criticos sin nombre de caja en SmartOLT: no participan de
         // la agrupacion, pero esconderlos daria un total que no cuadra.
         criticos_sin_caja: sinCaja.length,
       },
@@ -757,6 +761,8 @@ export class AlertasService {
         board: number | null;
         puerto_pon: number | null;
         odb: string | null;
+        zona: string | null;
+        nombre_cliente_ext: string | null;
         estado_conexion: string | null;
         potencia_dbm: string | null;
         sin_senal_desde: Date | null;
@@ -785,7 +791,7 @@ export class AlertasService {
         ORDER BY h.id_registro_ont, h.timestamp DESC
       )
       SELECT r.id_registro_ont, r.numero_serie, r.id_cliente, r.id_caja_nap,
-             r.olt_externo, r.board, r.puerto_pon, r.odb,
+             r.olt_externo, r.board, r.puerto_pon, r.odb, r.zona, r.nombre_cliente_ext,
              u.estado_conexion,
              u.potencia_actual_dbm::text AS potencia_dbm,
              CASE WHEN u.estado_conexion <> 'ONLINE'
@@ -808,6 +814,27 @@ export class AlertasService {
       estado_conexion: f.estado_conexion,
       potencia_dbm: f.potencia_dbm == null ? null : Number(f.potencia_dbm),
       sin_senal_desde: f.sin_senal_desde,
+      odb: f.odb,
+      zona: f.zona,
+      nombre_cliente: f.nombre_cliente_ext,
     }));
   }
+}
+
+/**
+ * El valor no nulo que mas se repite; a igual cantidad, el primero que
+ * aparecio. Null si no hay ninguno.
+ */
+function masFrecuente(valores: (string | null)[]): string | null {
+  const cuenta = new Map<string, number>();
+  for (const v of valores) if (v != null) cuenta.set(v, (cuenta.get(v) ?? 0) + 1);
+  let mejor: string | null = null;
+  let max = 0;
+  for (const [v, n] of cuenta) {
+    if (n > max) {
+      mejor = v;
+      max = n;
+    }
+  }
+  return mejor;
 }

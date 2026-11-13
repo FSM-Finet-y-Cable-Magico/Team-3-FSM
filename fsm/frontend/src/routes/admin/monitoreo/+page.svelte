@@ -40,6 +40,19 @@
   let filtroZona = $state('');
   let busqueda = $state('');
   let soloConProblema = $state(false);
+  // Cajas desplegadas en la vista por caja, por su `clave`. Sobrevive a las
+  // recargas en vivo: la clave de SmartOLT no cambia entre sondeos.
+  let abiertas = $state<Set<string>>(new Set());
+
+  function alternar(clave: string) {
+    const s = new Set(abiertas);
+    if (s.has(clave)) s.delete(clave);
+    else s.add(clave);
+    abiertas = s;
+  }
+
+  /** Id HTML para la fila desplegada: la clave trae espacios, `/` y `|`. */
+  const idFila = (clave: string) => `onts-${clave.replace(/[^A-Za-z0-9_-]/g, "_")}`;
 
   // Estado del canal en vivo. Se muestra en pantalla: un panel que dice
   // "en vivo" cuando en realidad se quedo mudo es peor que uno que no lo dice.
@@ -343,7 +356,7 @@
         <strong class="text-slate-900">{porCaja.totales.cajas_afectadas}</strong> cajas con clientes críticos ·
         <strong class="text-slate-900">{porCaja.totales.clientes_criticos}</strong> clientes afectados
         {#if porCaja.totales.criticos_sin_caja > 0}
-          · <span class="text-slate-600">{porCaja.totales.criticos_sin_caja} críticos sin caja asignada</span>
+          · <span class="text-slate-600">{porCaja.totales.criticos_sin_caja} críticos sin caja en SmartOLT</span>
         {/if}
       </p>
     {/if}
@@ -368,10 +381,16 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
-            {#each cajasVisibles as c (c.id_caja_nap)}
+            {#each cajasVisibles as c (c.clave)}
+              {@const abierta = abiertas.has(c.clave)}
               <tr class="hover:bg-slate-50 transition-colors duration-200">
-                <td class="px-3 py-2 font-medium text-slate-900">
-                  {c.identificador_unico ?? `Caja #${c.id_caja_nap}`}
+                <!-- Nombre tal como esta en SmartOLT, para que el tecnico lo
+                     encuentre alli. El puerto PON distingue las homonimas. -->
+                <td class="px-3 py-2">
+                  <span class="font-medium text-slate-900">{c.nombre}</span>
+                  <span class="block text-xs text-slate-500 tabular-nums">
+                    OLT {c.olt_externo ?? '?'} · {c.board ?? '?'}/{c.puerto_pon ?? '?'}
+                  </span>
                 </td>
                 <td class="px-3 py-2 text-slate-700">{c.zona ?? '--'}</td>
                 <td class="px-3 py-2">
@@ -389,25 +408,57 @@
                       <span
                         class="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-medium
                                bg-slate-100 text-slate-700 border border-slate-300"
-                        title="Sólo {c.clientes_en_la_caja} ONT registradas{c.capacidad_puertos
-                          ? ` de ${c.capacidad_puertos} puertos`
-                          : ''}: el porcentaje habla de esas, no de la caja entera."
+                        title="Sólo {c.clientes_en_la_caja} ONT registradas: el porcentaje habla de esas, no de la caja entera."
                       >padrón parcial</span>
                     {/if}
                   </div>
                 </td>
                 <td class="px-3 py-2 text-right tabular-nums text-red-700">{c.sin_senal}</td>
                 <td class="px-3 py-2 text-right tabular-nums text-amber-700">{c.potencia_fuera_de_rango}</td>
-                <td class="px-3 py-2 text-right tabular-nums text-slate-700">
-                  {c.clientes_en_la_caja}{c.capacidad_puertos ? ` / ${c.capacidad_puertos}` : ''}
-                </td>
+                <td class="px-3 py-2 text-right tabular-nums text-slate-700">{c.clientes_en_la_caja}</td>
                 <td class="px-3 py-2 text-right">
-                  <a
-                    href="/admin/topologia/{c.id_caja_nap}"
+                  <button
+                    type="button"
                     class="btn-texto"
-                  >Caja</a>
+                    aria-expanded={abierta}
+                    aria-controls={idFila(c.clave)}
+                    onclick={() => alternar(c.clave)}
+                  >{abierta ? 'Ocultar' : 'Ver'}</button>
                 </td>
               </tr>
+              {#if abierta}
+                <tr id={idFila(c.clave)} class="bg-slate-50">
+                  <td colspan="7" class="px-3 py-2">
+                    <table class="w-full text-xs">
+                      <caption class="sr-only">ONT críticas de {c.nombre}</caption>
+                      <thead class="text-slate-500 uppercase tracking-wide">
+                        <tr>
+                          <th scope="col" class="px-2 py-1 text-left font-semibold">Serie</th>
+                          <th scope="col" class="px-2 py-1 text-left font-semibold">Cliente</th>
+                          <th scope="col" class="px-2 py-1 text-left font-semibold">Estado</th>
+                          <th scope="col" class="px-2 py-1 text-right font-semibold">Potencia</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {#each c.onts_criticas as o (o.numero_serie)}
+                          <tr>
+                            <td class="px-2 py-1 font-mono text-slate-800">{o.numero_serie}</td>
+                            <td class="px-2 py-1 text-slate-700">{o.nombre_cliente ?? '--'}</td>
+                            <td class="px-2 py-1">
+                              <span class="px-1.5 py-0.5 rounded border {estadoClase[o.estado_conexion ?? 'DESCONOCIDO'] ?? estadoClase.DESCONOCIDO}">
+                                {o.estado_conexion ?? 'DESCONOCIDO'}
+                              </span>
+                            </td>
+                            <td class="px-2 py-1 text-right tabular-nums {clasePotencia(o.potencia_dbm)}">
+                              {o.potencia_dbm == null ? '--' : `${o.potencia_dbm} dBm`}
+                            </td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  </td>
+                </tr>
+              {/if}
             {/each}
           </tbody>
         </table>
