@@ -24,15 +24,29 @@ export interface LecturaOnt {
   medido_en: string | null;
 }
 
+/** Una ONT critica de la caja, para desplegarla bajo la fila. */
+export interface OntCriticaDeCaja {
+  numero_serie: string;
+  nombre_cliente: string | null;
+  estado_conexion: string | null;
+  potencia_dbm: number | null;
+}
+
+/**
+ * Caja segun SmartOLT (nombre que escribio el instalador + puerto PON), no la
+ * del KML de Tomodat. Es la misma clave con la que agrupa el motor de alertas.
+ */
 export interface CajaCritica {
-  id_caja_nap: number;
-  identificador_unico: string | null;
+  /** `olt/placa/puerto|NOMBRE NORMALIZADO`. Unica por fila. */
+  clave: string;
+  /** Nombre tal como aparece en SmartOLT. */
+  nombre: string;
+  olt_externo: string | null;
+  board: number | null;
+  puerto_pon: number | null;
+  /** Zona de SmartOLT, la mas frecuente entre las ONT de la caja. */
   zona: string | null;
-  latitud: string | null;
-  longitud: string | null;
   clientes_en_la_caja: number;
-  /** Puertos que declara la caja, para contrastar con lo que hay registrado. */
-  capacidad_puertos: number | null;
   /**
    * Menos de 5 ONT registradas: el "100%" de esa caja habla de lo poco que se
    * sabe de ella, no de la caja entera. Mismo umbral con el que CU-17 se niega
@@ -44,6 +58,7 @@ export interface CajaCritica {
   potencia_fuera_de_rango: number;
   /** Que porcentaje de la caja esta afectado. Decide cuadrilla vs. visitas. */
   pct_afectado: number;
+  onts_criticas: OntCriticaDeCaja[];
 }
 
 export interface CriticosPorCaja {
@@ -131,4 +146,59 @@ export function historialInterrupciones(token: string, sn: string, periodo?: { d
     token,
     `${API_URL}/api/monitoreo/ont/${encodeURIComponent(sn)}/interrupciones${qs}`,
   );
+}
+
+// --- Cajas SmartOLT y sus puertos -------------------------------------------
+
+export interface ResumenCajaSmartolt {
+  /** `olt/placa/puerto|NOMBRE NORMALIZADO`. */
+  clave: string;
+  nombre: string;
+  olt_externo: string | null;
+  board: number | null;
+  puerto_pon: number | null;
+  zona: string | null;
+  capacidad: number;
+  /** La capacidad no salio del catalogo de SmartOLT: se estimo. */
+  capacidad_estimada: boolean;
+  ocupados: number;
+  ont_total: number;
+  sin_puerto: number;
+}
+
+export interface OntDePuerto {
+  numero_serie: string;
+  nombre_cliente: string | null;
+  estado_conexion: string | null;
+  potencia_dbm: number | null;
+  posible_baja: boolean;
+}
+
+export interface PuertoDeCaja {
+  numero: number;
+  estado: 'OCUPADO' | 'SIN_REGISTRO';
+  conflicto: boolean;
+  onts: OntDePuerto[];
+}
+
+export interface DetalleCajaSmartolt
+  extends Omit<ResumenCajaSmartolt, 'ont_total' | 'sin_puerto'> {
+  puertos: PuertoDeCaja[];
+  fuera_de_rango: (OntDePuerto & { odb_puerto: number })[];
+  sin_puerto: OntDePuerto[];
+}
+
+export function listarCajasSmartolt(token: string) {
+  return pedir<ResumenCajaSmartolt[]>(token, `${API_URL}/api/monitoreo/cajas-smartolt`);
+}
+
+/** La clave va en la query: lleva espacios, "/" y "|". */
+export function detalleCajaSmartolt(token: string, clave: string) {
+  const qs = new URLSearchParams({ clave });
+  return pedir<DetalleCajaSmartolt>(token, `${API_URL}/api/monitoreo/cajas-smartolt/detalle?${qs}`);
+}
+
+/** Ruta de la pagina de una caja. */
+export function urlCajaSmartolt(clave: string) {
+  return `/admin/monitoreo/caja?${new URLSearchParams({ clave })}`;
 }

@@ -55,6 +55,8 @@ export interface ResumenIngesta {
   sin_unidad: number;
   cambios_estado: number;
   registros_enriquecidos: number;
+  /** ONT a las que el censo les cambio la caja o el puerto en este sondeo. */
+  ubicaciones_actualizadas: number;
   ms: number;
 }
 
@@ -124,23 +126,44 @@ export class MonitoreoService {
 
   async ingestarLecturas(filtro?: FiltroConsulta): Promise<ResumenIngesta> {
     const t0 = Date.now();
-    const lecturas = await this.fuente.listarLecturas(filtro);
+    // El censo se pide JUNTO con las lecturas y antes de tocar la base.
+    // SmartOltClient responde los dos con una sola llamada a
+    // get_all_onus_details (la memoiza 10 s), que tiene cuota de 15 por hora;
+    // pedirlo despues de las consultas a la base arriesgaba una segunda llamada
+    // si la base tardaba. El censo hace falta en cada tick: de ahi sale la caja
+    // y el puerto de cada ONT.
+    const [lecturas, detalles] = await Promise.all([
+      this.fuente.listarLecturas(filtro),
+      this.fuente.listarOntDetalles(filtro),
+    ]);
     const sns = lecturas.map((l) => l.sn);
 
     const registros = await this.registro.asegurarRegistros(sns);
 
-    // Enriquecer (censo + cruce con unidad_equipo) solo si hay ONT que todavía
-    // no tienen unidad resuelta — evita pegarle a la fuente en cada tick.
+    // Enriquecer (cruce con unidad_equipo) solo las ONT que todavía no tienen
+    // unidad resuelta.
     let registros_enriquecidos = 0;
     const sinUnidad = sns.filter((sn) => registros.get(sn)?.id_unidad == null);
     if (sinUnidad.length > 0) {
-      const detalles = await this.fuente.listarOntDetalles(filtro);
       registros_enriquecidos = await this.registro.enriquecer(
         detalles.filter((d) => sinUnidad.includes(d.sn)),
       );
       // releer los registros afectados para persistir con los enlaces frescos
       const refrescados = await this.registro.asegurarRegistros(sinUnidad);
       for (const [sn, r] of refrescados) registros.set(sn, r);
+    }
+
+    // Caja y puerto de TODAS las ONT, no solo las que se enriquecieron. Es un
+    // dato de apoyo: si falla, se registra y las lecturas se guardan igual.
+    // Sin filtro el censo es completo y puede liberar puertos de ONT que ya no
+    // estan en SmartOLT.
+    let ubicaciones_actualizadas = 0;
+    try {
+      ubicaciones_actualizadas = await this.registro.sincronizarUbicacion(detalles, {
+        censoCompleto: !filtro,
+      });
+    } catch (e) {
+      this.logger.error(`No se pudo actualizar la ubicacion de las ONT: ${(e as Error).message}`);
     }
 
     const filasMonitoreo = lecturas.map((l) => {
@@ -204,6 +227,7 @@ export class MonitoreoService {
       sin_unidad: [...registros.values()].filter((r) => r.id_unidad == null).length,
       cambios_estado: eventos.length,
       registros_enriquecidos,
+      ubicaciones_actualizadas,
       ms: Date.now() - t0,
     };
     this.logger.log(

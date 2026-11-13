@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MonitoreoService } from './monitoreo.service.js';
+import { CatalogoOdbService } from './catalogo-odb.service.js';
 
 /**
  * Dispara `ingestarLecturas()` cada `MONITOREO_POLL_INTERVAL_MS`.
@@ -23,6 +24,7 @@ export class MonitoreoPollerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private config: ConfigService,
     private monitoreo: MonitoreoService,
+    private catalogo: CatalogoOdbService,
   ) {}
 
   onModuleInit() {
@@ -54,6 +56,11 @@ export class MonitoreoPollerService implements OnModuleInit, OnModuleDestroy {
       await this.monitoreo.ingestarLecturas();
     } catch (e) {
       this.logger.error(`Fallo en la ingesta: ${(e as Error).message}`);
+    }
+    try {
+      // Aparte de la ingesta: si una falla, la otra corre igual. No lanza (ver
+      // CatalogoOdbService), el try es solo por defensa.
+      await this.catalogo.refrescarSiVencido();
     } finally {
       this.corriendo = false;
     }

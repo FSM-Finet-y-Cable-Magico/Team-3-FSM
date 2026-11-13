@@ -51,6 +51,16 @@ export interface EstadoOnt {
   potencia_dbm: number | null;
   /** Desde cuándo está en un estado distinto de ONLINE. Null si está online. */
   sin_senal_desde: Date | null;
+  /**
+   * Datos de SmartOLT que solo sirven para MOSTRAR (CU-15): el nombre de caja
+   * tal como lo escribió el instalador, la zona y el cliente. Las reglas no
+   * los usan; por eso son opcionales.
+   */
+  odb?: string | null;
+  /** Puerto de la ONT en su caja (SmartOLT `odb_port`). */
+  odb_puerto?: number | null;
+  zona?: string | null;
+  nombre_cliente?: string | null;
 }
 
 export interface AlertaPropuesta {

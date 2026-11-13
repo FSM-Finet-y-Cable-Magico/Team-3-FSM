@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { OntDetalle } from './fuente/fuente-monitoreo.js';
+import { ejecutarEnLotes } from './lotes.js';
 
 export interface RegistroResuelto {
   id_registro_ont: number;
@@ -140,6 +141,7 @@ export class RegistroOntService {
           puerto_pon: d.puerto_pon,
           zona: d.zona,
           odb: d.odb,
+          ...(d.odb_puerto !== undefined ? { odb_puerto: d.odb_puerto } : {}),
           modelo: d.modelo,
           nombre_cliente_ext: d.nombre_cliente,
           direccion_cliente_ext: d.direccion_cliente,
@@ -154,6 +156,7 @@ export class RegistroOntService {
           puerto_pon: d.puerto_pon,
           zona: d.zona,
           odb: d.odb,
+          ...(d.odb_puerto !== undefined ? { odb_puerto: d.odb_puerto } : {}),
           modelo: d.modelo,
           nombre_cliente_ext: d.nombre_cliente,
           direccion_cliente_ext: d.direccion_cliente,
@@ -170,5 +173,87 @@ export class RegistroOntService {
     }
     this.logger.log(`registro_ont: ${tocados} enriquecidas desde el censo`);
     return tocados;
+  }
+
+  /**
+   * Mantiene al dia DONDE esta cada ONT segun la fuente: su puerto PON (OLT,
+   * placa, puerto), su zona, su caja (`odb`) y su puerto en la caja
+   * (`odb_puerto`).
+   *
+   * Corre en cada sondeo y sobre TODAS las ONT del censo, no solo las que no
+   * tienen unidad como `enriquecer`: si no, una ONT ya enlazada a G1 nunca se
+   * enteraria de que la movieron de caja ni recibiria su puerto. Van todos
+   * juntos porque la identidad de la caja es "puerto PON + nombre": actualizar
+   * solo el nombre dejaria a la ONT en una caja que no existe. Escribe solo las
+   * filas que cambiaron, asi que en un sondeo normal no escribe nada.
+   *
+   * `odb_puerto` undefined es "la fuente no lo sabe" y no se toca; null es
+   * "SmartOLT dice que no tiene" y se escribe.
+   *
+   * Con `censoCompleto` (el sondeo sin filtro), las ONT de la empresa que ya no
+   * aparecen en el censo sueltan su puerto: una ONT reemplazada y borrada de
+   * SmartOLT lo dejaba tomado para siempre. No se hace con un censo vacio, que
+   * es mas probable que sea una falla que una red sin clientes.
+   *
+   * @returns cuantas ONT del censo cambiaron.
+   */
+  async sincronizarUbicacion(
+    detalles: OntDetalle[],
+    opciones: { censoCompleto?: boolean } = {},
+  ): Promise<number> {
+    if (detalles.length === 0) return 0;
+    const sns = detalles.map((d) => d.sn);
+
+    const actuales = await this.prisma.registro_ont.findMany({
+      where: { numero_serie: { in: sns }, id_empresa: this.idEmpresaFuente },
+      select: {
+        numero_serie: true,
+        olt_externo: true,
+        board: true,
+        puerto_pon: true,
+        zona: true,
+        odb: true,
+        odb_puerto: true,
+      },
+    });
+    const porSn = new Map(actuales.map((r) => [r.numero_serie, r]));
+
+    type Ubicacion = {
+      olt_externo?: string | null;
+      board?: number | null;
+      puerto_pon?: number | null;
+      zona?: string | null;
+      odb?: string | null;
+      odb_puerto?: number | null;
+    };
+    const cambios: (() => PromiseLike<unknown>)[] = [];
+    for (const d of detalles) {
+      const r = porSn.get(d.sn);
+      if (!r) continue;
+      const data: Ubicacion = {};
+      if (r.olt_externo !== d.olt_externo) data.olt_externo = d.olt_externo;
+      if (r.board !== d.board) data.board = d.board;
+      if (r.puerto_pon !== d.puerto_pon) data.puerto_pon = d.puerto_pon;
+      if (r.zona !== d.zona) data.zona = d.zona;
+      if (r.odb !== d.odb) data.odb = d.odb;
+      if (d.odb_puerto !== undefined && r.odb_puerto !== d.odb_puerto) data.odb_puerto = d.odb_puerto;
+      if (Object.keys(data).length > 0) {
+        cambios.push(() => this.prisma.registro_ont.update({ where: { numero_serie: d.sn }, data }));
+      }
+    }
+
+    const liberar = opciones.censoCompleto
+      ? [
+          () =>
+            this.prisma.registro_ont.updateMany({
+              where: { id_empresa: this.idEmpresaFuente, numero_serie: { notIn: sns }, odb_puerto: { not: null } },
+              data: { odb_puerto: null },
+            }),
+        ]
+      : [];
+
+    // Sin transaccion: cada fila es independiente (ver `ejecutarEnLotes`).
+    await ejecutarEnLotes([...cambios, ...liberar]);
+    return cambios.length;
   }
 }
