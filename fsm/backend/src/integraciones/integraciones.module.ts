@@ -3,6 +3,7 @@ import { TicketsModule } from '../tickets/tickets.module.js';
 import { IntegracionesController } from './integraciones.controller.js';
 import { IntegracionesService } from './integraciones.service.js';
 import { InstalacionesService } from './instalaciones.service.js';
+import { BajasService } from './bajas.service.js';
 import { ApiKeyGuard } from '../common/guards/api-key.guard.js';
 import { momentoFanOutProvider } from '../ordenes/fan-out/momento-fan-out.js';
 import { ClaveWifiService } from './clave-wifi.service.js';
@@ -15,6 +16,7 @@ import { ClaveWifiController } from './clave-wifi.controller.js';
   providers: [
     IntegracionesService,
     InstalacionesService,
+    BajasService,
     ClaveWifiService,
     ApiKeyGuard,
     momentoFanOutProvider,

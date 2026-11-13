@@ -96,6 +96,20 @@ export class EquipoOtDto {
   observacion_estado_fisico?: string;
 
   /**
+   * El equipo volvio dañado. Lo pidio G1 el 12-11-2026, con este nombre: es el
+   * campo con el que deciden si la recepcion es `RECIBIDO` o
+   * `RECIBIDO_CON_DANO`.
+   *
+   * Ya existia `observacion_estado_fisico`, pero es texto libre: sirve para que
+   * un humano lea el detalle, no para que G1 ramifique. Un sistema no puede
+   * decidir mirando "venia con la tapa suelta". Los dos campos convivien: este
+   * dice SI, el otro dice QUE.
+   */
+  @IsOptional()
+  @IsBoolean()
+  con_dano?: boolean;
+
+  /**
    * Que le pasa al equipo, de la lista fija de G1 (confirmada el 4-sept).
    *
    * OPCIONAL a proposito, aunque G1 lo "exige" al retirar para diagnostico.
@@ -110,6 +124,35 @@ export class EquipoOtDto {
   @IsOptional()
   @IsIn(Object.values(DIAGNOSTICO_RETIRO))
   diagnostico?: DiagnosticoRetiro;
+}
+
+/**
+ * Un equipo que el tecnico NO pudo recuperar del domicilio.
+ *
+ * Es su propia lista y no una `accion` mas de `EquipoOtDto` porque no describe
+ * un movimiento de inventario: nada se movio. G1 lo registra como
+ * `NO_RECIBIDO` y G8 deja la baja bloqueada esperando una decision comercial
+ * (acuerdo del 12-11-2026, §5 del documento de G1).
+ *
+ * El `motivo` es OBLIGATORIO, al contrario que en `EquipoOtDto`. Un equipo que
+ * no se recupero es plata que alguien va a tener que cobrar o perdonar, y la
+ * persona que decide eso no estuvo en el domicilio: si el tecnico no explica
+ * por que falta, la decision se toma a ciegas. Es el unico campo del cierre
+ * donde se eligio molestar al tecnico antes que perder el dato.
+ */
+export class EquipoFaltanteDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(30)
+  @Matches(/^[A-Z0-9-]+$/, {
+    message: 'numero_serie: solo A-Z, 0-9 y guión (formato de G1)',
+  })
+  numero_serie: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  motivo: string;
 }
 
 export class CerrarOtDto {
@@ -147,6 +190,20 @@ export class CerrarOtDto {
   @ValidateNested({ each: true })
   @Type(() => EquipoOtDto)
   equipos_retirados?: EquipoOtDto[];
+
+  /**
+   * Equipos que debian retirarse y no se pudieron recuperar.
+   *
+   * NO se validan contra el inventario como los otros dos: `validarSeries`
+   * comprueba que la serie este asignada al tecnico que cierra, y un equipo que
+   * no se recupero es justo el que el tecnico no tiene. Validarlos ahi haria
+   * imposible declarar un faltante.
+   */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => EquipoFaltanteDto)
+  equipos_faltantes?: EquipoFaltanteDto[];
 
   @IsNumber()
   @IsNotEmpty()

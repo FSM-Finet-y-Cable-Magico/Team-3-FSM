@@ -1,7 +1,8 @@
 import { Prisma } from '../../../generated/prisma/client.js';
-import type { EquipoDeclarado, PayloadCierre } from './fan-out-cierre.js';
+import type { EquipoDeclarado, EquipoFaltante, PayloadCierre } from './fan-out-cierre.js';
 import { rutParaApi } from '../../common/utils/rut.util.js';
 import { conDireccionResuelta } from '../direccion-ot.js';
+import { TIPO_OT_BAJA } from './momento-fan-out.js';
 import type { ReparacionDeclarada } from '../reparacion-cierre.constants.js';
 
 /**
@@ -22,6 +23,8 @@ import type { ReparacionDeclarada } from '../reparacion-cierre.constants.js';
 export interface CierreGuardado {
   instalados?: EquipoDeclarado[];
   retirados?: EquipoDeclarado[];
+  /** Equipos que no se recuperaron (acuerdo G1↔G3 del 12-11-2026). */
+  faltantes?: EquipoFaltante[];
   reparacion?: ReparacionDeclarada;
 }
 
@@ -37,12 +40,17 @@ export function cierreGuardado(
   instalados: EquipoDeclarado[],
   retirados: EquipoDeclarado[],
   reparacion: ReparacionDeclarada | null,
+  faltantes: EquipoFaltante[] = [],
 ): Prisma.InputJsonValue | typeof Prisma.JsonNull {
   const guardado: CierreGuardado = {};
   if (instalados.length || retirados.length) {
     guardado.instalados = instalados;
     guardado.retirados = retirados;
   }
+  // En su propio `if`: un retiro puede no mover ningun equipo y traer solo
+  // faltantes --es justo el caso de una baja donde el cliente no entrego
+  // nada--, y colgarlo del `if` de arriba habria perdido la lista entera.
+  if (faltantes.length) guardado.faltantes = faltantes;
   if (reparacion) guardado.reparacion = reparacion;
 
   return Object.keys(guardado).length
@@ -84,6 +92,21 @@ export const INCLUDE_PAYLOAD_CIERRE = {
       comuna: true,
     },
   },
+  // La otra fuente del `request_id`: las OT de BAJA que pide G8 por
+  // `POST /integraciones/ordenes-baja`. Sin esto el `request_id` de un retiro
+  // viajaba en null, G1 guardaba la recepcion sin clave y G8 no podia encontrar
+  // su propia solicitud: el flujo no fallaba, devolvia vacio.
+  solicitud_baja: {
+    select: {
+      request_id: true,
+      trace_id: true,
+      id_cliente_externo: true,
+      id_contrato_externo: true,
+      id_servicio_externo: true,
+      id_solicitud_retiro_externa: true,
+      id_ticket_externo: true,
+    },
+  },
 } satisfies Prisma.orden_trabajoInclude;
 
 export type OtParaPayload = Prisma.orden_trabajoGetPayload<{ include: typeof INCLUDE_PAYLOAD_CIERRE }>;
@@ -92,9 +115,16 @@ export function construirPayloadCierre(ot: OtParaPayload): PayloadCierre {
   const guardado = (ot.cierre_equipos as CierreGuardado | null) ?? {};
   const fecha = (ot.fecha_completada ?? ot.fecha_creacion).toISOString();
   const origen = ot.solicitud_integracion;
+  const baja = ot.solicitud_baja;
 
   return {
-    clave_idempotencia: `${ot.id_ot}:${fecha}`,
+    // Una BAJA lleva su propia clave, sin fecha. Se puede porque solo se avisa
+    // al aprobar (ver momentoPara), asi que hay UN aviso por OT y no dos que
+    // distinguir. Resuelve el choque que levanto G8: `fecha_completada` se
+    // conserva tras un rechazo a proposito, asi que un cierre corregido reusaba
+    // la clave `id_ot:fecha` --y para los otros tipos de OT sigue siendo lo
+    // correcto, porque ahi el aviso al cierre ya esta en produccion--.
+    clave_idempotencia: ot.tipo_ot === TIPO_OT_BAJA ? `baja:${ot.id_ot}` : `${ot.id_ot}:${fecha}`,
     id_ot: ot.id_ot,
     id_empresa: ot.id_empresa,
     tipo_ot: ot.tipo_ot,
@@ -121,16 +151,23 @@ export function construirPayloadCierre(ot: OtParaPayload): PayloadCierre {
       })),
     equipos_instalados: guardado.instalados ?? [],
     equipos_retirados: guardado.retirados ?? [],
+    equipos_faltantes: guardado.faltantes ?? [],
     // Los tres datos de reparacion que pide G1. Van null en todo tipo de OT
     // que no sea REPARACION: ahi no hay diagnostico que informar, y el mismo
     // payload lo recibe G8, que no los usa.
     falla_reportada: guardado.reparacion?.falla_reportada ?? null,
     solucion_aplicada: guardado.reparacion?.solucion_aplicada ?? null,
     resultado: guardado.reparacion?.resultado ?? null,
-    request_id: origen?.request_id ?? null,
-    trace_id: origen?.trace_id ?? null,
+    // Los dos origenes posibles, en orden: una OT la pidio G8 como instalacion
+    // o como retiro, nunca las dos cosas.
+    request_id: origen?.request_id ?? baja?.request_id ?? null,
+    trace_id: origen?.trace_id ?? baja?.trace_id ?? null,
     id_prospecto: origen?.id_prospecto_externo ?? null,
-    id_contrato: origen?.id_contrato_externo ?? null,
+    id_contrato: origen?.id_contrato_externo ?? baja?.id_contrato_externo ?? null,
     id_plan: origen?.id_plan_externo ?? null,
+    id_cliente_externo: baja?.id_cliente_externo ?? null,
+    id_servicio: baja?.id_servicio_externo ?? null,
+    id_solicitud_retiro: baja?.id_solicitud_retiro_externa ?? null,
+    id_ticket_externo: baja?.id_ticket_externo ?? null,
   };
 }

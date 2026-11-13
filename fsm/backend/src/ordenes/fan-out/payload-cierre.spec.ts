@@ -56,6 +56,9 @@ describe('construirPayloadCierre', () => {
         { numero_serie: 'ONT-123', accion: 'INSTALADO_EN_CLIENTE', estado_g1: 'Instalado en cliente' },
       ],
       equipos_retirados: [],
+      // Siempre presente, vacia si no falto nada: una lista ausente y una vacia
+      // significan lo mismo y G1 no tiene por que tratar dos casos.
+      equipos_faltantes: [],
       falla_reportada: null,
       solucion_aplicada: null,
       resultado: null,
@@ -64,6 +67,12 @@ describe('construirPayloadCierre', () => {
       id_prospecto: null,
       id_contrato: null,
       id_plan: null,
+      // Correlacion de una BAJA por morosidad: null en todo lo demas, igual que
+      // los de instalacion, porque este payload tambien lo recibe G1.
+      id_cliente_externo: null,
+      id_servicio: null,
+      id_solicitud_retiro: null,
+      id_ticket_externo: null,
     });
   });
 

@@ -20,10 +20,26 @@ export interface EquipoDeclarado {
   motivo?: string;
   observacion_estado_fisico?: string;
   /**
+   * El equipo volvio dañado. Nombre fijado por G1 el 12-11-2026: es el campo
+   * con el que ramifican entre `RECIBIDO` y `RECIBIDO_CON_DANO`.
+   */
+  con_dano?: boolean;
+  /**
    * Diagnostico de la lista fija de G1. Solo tiene sentido al retirar.
    * Si no viene, G1 asume "Causa desconocida" y usa `motivo` (acordado).
    */
   diagnostico?: string;
+}
+
+/**
+ * Un equipo que el tecnico no pudo recuperar del domicilio.
+ *
+ * No lleva `accion` ni `estado_g1`: no hubo movimiento de inventario que
+ * declarar. Lo unico que viaja es cual falta y por que.
+ */
+export interface EquipoFaltante {
+  numero_serie: string;
+  motivo: string;
 }
 
 export interface PayloadCierre {
@@ -91,6 +107,16 @@ export interface PayloadCierre {
   equipos_instalados: EquipoDeclarado[];
   equipos_retirados: EquipoDeclarado[];
   /**
+   * Equipos que debian retirarse y no se recuperaron. G1 los registra como
+   * `NO_RECIBIDO` con el `motivo` en su campo `detalle`, y G8 deja la baja
+   * bloqueada hasta una decision comercial (acuerdo del 12-11-2026).
+   *
+   * Siempre presente, aunque sea vacio: una lista ausente y una lista vacia
+   * significan lo mismo --no falto nada-- y obligar a G1 y G8 a tratar los dos
+   * casos no aporta nada. Es el mismo criterio de `equipos_retirados`.
+   */
+  equipos_faltantes: EquipoFaltante[];
+  /**
    * Cierre de REPARACION: que fallaba, que se hizo y como quedo. Los pidio G1
    * el 8-nov-2026; sin ellos no registra el cierre de la reparacion y lo anota
    * como la discrepancia `DATOS_REPARACION_INCOMPLETOS`.
@@ -123,6 +149,19 @@ export interface PayloadCierre {
   id_prospecto: number | null;
   id_contrato: number | null;
   id_plan: number | null;
+  /**
+   * Correlacion de una OT de BAJA por morosidad (acuerdo del 12-11-2026). Van
+   * null en todo lo demas, por el mismo motivo que los de instalacion: el mismo
+   * payload lo recibe G1, que no conoce el CRM de G8.
+   *
+   * `id_solicitud_retiro` es la que G8 cierra con su `finalize`, y
+   * `id_servicio` la que pasa a `Baja`. Sin ellas el aviso llega y G8 no sabe a
+   * que servicio corresponde.
+   */
+  id_cliente_externo: number | null;
+  id_servicio: number | null;
+  id_solicitud_retiro: number | null;
+  id_ticket_externo: number | null;
 }
 
 export interface FanOutCierre {

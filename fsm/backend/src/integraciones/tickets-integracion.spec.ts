@@ -21,6 +21,7 @@ describe('tickets desde canales digitales', () => {
     {} as InstalacionesService,
     { crear, porCodigo } as unknown as TicketsService,
     {} as never,
+    {} as never,
   );
   const req = { apiScope: { grupo: 'G2', empresas: [1] } };
   const dto = { id_empresa: 1, rut_cliente: '12345678-5', id_categoria: 1, descripcion: 'Sin internet', origen: 'BOT' };
