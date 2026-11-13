@@ -4,7 +4,7 @@ import { normalizarNombreCaja } from './ligado-caja.js';
 import { descomponerFicha } from './ficha-cliente.js';
 import { evaluar, afectaAlGrupo, esInactiva, claveDeCaja, type EstadoOnt } from './reglas-alerta.js';
 import { ESTADO_CONEXION } from './monitoreo.constants.js';
-import { cabeceraDeCaja } from './cajas-smartolt.js';
+import { cabeceraDeCaja, capacidadDeCaja, type EntradaCatalogo } from './cajas-smartolt.js';
 import {
   DIAS_MAX_INCIDENTE,
   MIN_ONT_PARA_FALLA_CAJA,
@@ -618,7 +618,15 @@ export class AlertasService {
    * que todavia tienen servicio.
    */
   async criticosPorCaja(id_empresa: number, zona?: string) {
-    const todas = await this.cargarEstado(id_empresa);
+    const [todas, catalogo] = await Promise.all([
+      this.cargarEstado(id_empresa),
+      // Para mostrar la capacidad de la caja junto a las ONT conocidas. Es el
+      // mismo catalogo de la grilla de "Puertos por caja".
+      this.prisma.odb_smartolt.findMany({
+        where: { id_empresa },
+        select: { nombre: true, capacidad: true },
+      }) as Promise<EntradaCatalogo[]>,
+    ]);
 
     // Mismo padron que el motor de RF-15: fuera los equipos de clientes dados
     // de baja. Siguen en SmartOLT, OFFLINE para siempre, y si entran inflan el
@@ -676,6 +684,9 @@ export class AlertasService {
           // caja bajo `MIN_ONT_PARA_FALLA_CAJA`, y se marca para que el panel
           // no presente ese 100% como si fuera un dato firme.
           padron_chico: miembros.length < MIN_ONT_PARA_FALLA_CAJA,
+          // Contexto para ese porcentaje: "2 de 2 ONT conocidas" en una caja
+          // de 16 puertos no es lo mismo que la caja entera caida.
+          ...capacidadDeCaja(miembros, catalogo),
           criticos: criticos.length,
           sin_senal: sinSenal,
           potencia_fuera_de_rango: criticos.length - sinSenal,

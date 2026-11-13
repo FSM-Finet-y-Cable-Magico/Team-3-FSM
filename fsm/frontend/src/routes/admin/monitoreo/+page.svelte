@@ -478,17 +478,20 @@
                     <span class="tabular-nums font-semibold text-slate-900 w-24 text-right">
                       {c.pct_afectado}% ({c.criticos}/{c.clientes_en_la_caja})
                     </span>
-                    <!-- Sin esta marca, "100% (2/2)" se lee como "la caja
-                         entera esta caida" cuando en realidad son las dos
-                         unicas ONT que tenemos registradas de una caja de 16. -->
-                    {#if c.padron_chico}
-                      <span
-                        class="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-medium
-                               bg-slate-100 text-slate-700 border border-slate-300"
-                        title="Sólo {c.clientes_en_la_caja} ONT registradas: el porcentaje habla de esas, no de la caja entera."
-                      >padrón parcial</span>
-                    {/if}
                   </div>
+                  <!-- Sin este contexto, "100% (2/2)" se lee como "la caja
+                       entera esta caida" cuando son las dos unicas ONT que
+                       conocemos de una caja de 16. El denominador son ONT
+                       conocidas, no puertos: un puerto vacio no es un cliente. -->
+                  <p
+                    class="text-xs mt-0.5 {c.padron_chico ? 'text-amber-800' : 'text-slate-500'}"
+                    title={c.padron_chico
+                      ? 'Con menos de 5 ONT conocidas no se puede decir que falle la caja: el porcentaje habla solo de esas.'
+                      : undefined}
+                  >
+                    {c.criticos} de {c.clientes_en_la_caja} ONT conocidas · caja de
+                    {c.capacidad_estimada ? '~' : ''}{c.capacidad} puertos
+                  </p>
                 </td>
                 <td class="px-3 py-2 text-right tabular-nums text-red-700">{c.sin_senal}</td>
                 <td class="px-3 py-2 text-right tabular-nums text-amber-700">{c.potencia_fuera_de_rango}</td>

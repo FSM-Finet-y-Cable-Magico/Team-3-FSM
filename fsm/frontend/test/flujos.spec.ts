@@ -1089,6 +1089,31 @@ test('Monitoreo: las posibles bajas no cuentan como fuera de linea y se ocultan 
   await expect(page.getByRole('row', { name: /BAJA2021/ })).toContainText('Posible baja');
 });
 
+test('CU-15: cada caja dice cuantas ONT conocemos y de cuantos puertos es', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/monitoreo/resumen', route => route.fulfill({ json: {
+    total_ont: 2, por_estado: { ONLINE: 2 }, posibles_bajas: 0, potencia_fuera_de_rango: 2, fecha_actualizacion: '2026-11-13T15:00:00Z',
+  } }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/ont?*', route => route.fulfill({ json: [] }));
+  const caja = (clave: string, nombre: string, extra: Record<string, unknown>) => ({
+    clave, nombre, olt_externo: '2', board: 2, puerto_pon: 5, zona: 'ZONA 6', criticos: 2, sin_senal: 0,
+    potencia_fuera_de_rango: 2, pct_afectado: 100, onts_criticas: [], ...extra,
+  });
+  await page.route('http://127.0.0.1:3000/api/monitoreo/criticos-por-caja*', route => route.fulfill({ json: {
+    cajas: [
+      caja('2/2/5|86', '86', { clientes_en_la_caja: 2, padron_chico: true, capacidad: 16, capacidad_estimada: false }),
+      caja('2/1/7|NAP 9', 'NAP 9', { clientes_en_la_caja: 2, padron_chico: true, capacidad: 8, capacidad_estimada: true }),
+    ],
+    totales: { cajas_afectadas: 2, clientes_criticos: 4, criticos_sin_caja: 0 },
+  } }));
+  await login(page, 'admin'); await page.goto('/admin/monitoreo');
+
+  await expect(page.getByText('2 de 2 ONT conocidas · caja de 16 puertos')).toBeVisible();
+  // Sin entrada en el catalogo de SmartOLT, la capacidad es estimada y lo dice.
+  await expect(page.getByText('2 de 2 ONT conocidas · caja de ~8 puertos')).toBeVisible();
+  await expect(page.getByText('padrón parcial')).toHaveCount(0);
+});
+
 test('CU-14: desde el monitoreo se abre el historial de interrupciones de una ONT', async ({ page }) => {
   await preparar(page);
   const periodos: (string | null)[] = [];

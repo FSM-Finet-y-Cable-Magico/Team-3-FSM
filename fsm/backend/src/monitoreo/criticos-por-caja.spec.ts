@@ -20,6 +20,9 @@ describe('CU-15 · clientes criticos por caja', () => {
 
   const queryRaw = jest.fn(async () => estado);
   const cajaFindMany = jest.fn(async () => []);
+  // Catalogo de cajas de SmartOLT (nombre y capacidad).
+  let catalogo: { nombre: string; capacidad: number | null }[];
+  const catalogoFindMany = jest.fn(async (_a?: any) => catalogo);
 
   // Zona de SmartOLT de cada caja de prueba, para no repetirla en cada fila.
   const ZONA: Record<string, string> = { 'NAP 1': 'ZONA 3', 'NAP 2': 'ZONA 7' };
@@ -51,12 +54,17 @@ describe('CU-15 · clientes criticos por caja', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    catalogo = [];
     const mod = await Test.createTestingModule({
       providers: [
         AlertasService,
         {
           provide: PrismaService,
-          useValue: { $queryRaw: queryRaw, caja_nap: { findMany: cajaFindMany } },
+          useValue: {
+            $queryRaw: queryRaw,
+            caja_nap: { findMany: cajaFindMany },
+            odb_smartolt: { findMany: catalogoFindMany },
+          },
         },
       ],
     }).compile();
@@ -299,5 +307,55 @@ describe('CU-15 · clientes criticos por caja', () => {
 
     expect(r.cajas).toHaveLength(1);
     expect(r.cajas[0].zona).toBe('ZONA 7');
+  });
+});
+
+/**
+ * "100 % (2/2)" se leia como "la caja entera esta caida" cuando eran las dos
+ * unicas ONT conocidas de una caja de 16. El panel muestra la capacidad de la
+ * caja, la misma que la grilla de "Puertos por caja", para dar ese contexto.
+ */
+describe('CU-15 · capacidad de la caja en el panel', () => {
+  let service: AlertasService;
+  let estado: any[];
+  let catalogo: { nombre: string; capacidad: number | null }[];
+  const catalogoFindMany = jest.fn(async (_a?: any) => catalogo);
+
+  const ont = (id: number, odb: string, odb_puerto: number | null) => ({
+    id_registro_ont: id, numero_serie: `SN-${id}`, id_cliente: null, id_caja_nap: null,
+    olt_externo: '2', board: 2, puerto_pon: 5, odb, odb_puerto, zona: 'ZONA 6',
+    nombre_cliente_ext: null, estado_conexion: 'ONLINE', potencia_dbm: -27, sin_senal_desde: null,
+  });
+
+  beforeEach(async () => {
+    const mod = await Test.createTestingModule({
+      providers: [
+        AlertasService,
+        {
+          provide: PrismaService,
+          useValue: { $queryRaw: jest.fn(async () => estado), odb_smartolt: { findMany: catalogoFindMany } },
+        },
+      ],
+    }).compile();
+    service = mod.get(AlertasService);
+  });
+
+  it('usa la capacidad del catalogo de SmartOLT', async () => {
+    estado = [ont(1, '86', 1), ont(2, '86', 2)];
+    catalogo = [{ nombre: '86', capacidad: 16 }];
+
+    const r = await service.criticosPorCaja(1);
+
+    expect(r.cajas[0]).toMatchObject({ clientes_en_la_caja: 2, capacidad: 16, capacidad_estimada: false });
+    expect(catalogoFindMany.mock.calls.at(-1)![0].where).toEqual({ id_empresa: 1 });
+  });
+
+  it('sin entrada en el catalogo la estima por el puerto mas alto, y lo dice', async () => {
+    estado = [ont(1, '86', 1), ont(2, '86', 11)];
+    catalogo = [];
+
+    const r = await service.criticosPorCaja(1);
+
+    expect(r.cajas[0]).toMatchObject({ capacidad: 16, capacidad_estimada: true });
   });
 });
