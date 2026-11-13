@@ -45,6 +45,7 @@ model empresa {
   transferencias_destino  transferencia_equipo[]   @relation("empresa_destino")
   prestamos               prestamo_externo[]
   plantillas_notificacion plantilla_notificacion[]
+  odbs_smartolt           odb_smartolt[]
 }
 
 model usuario {
@@ -850,6 +851,9 @@ model registro_ont {
   puerto_pon            Int?                     @db.SmallInt
   zona                  String?                  @db.VarChar(80)
   odb                   String?                  @db.VarChar(50)
+  /// Puerto del divisor donde está conectada la ONT (SmartOLT `odb_port`).
+  /// Null si SmartOLT no lo informa. Lo escribe la ingesta en cada sondeo.
+  odb_puerto            Int?                     @db.SmallInt
   modelo                String?                  @db.VarChar(80)
   nombre_cliente_ext    String?                  @db.VarChar(160)
   direccion_cliente_ext String?                  @db.VarChar(200)
@@ -873,6 +877,29 @@ model registro_ont {
   confirmada_por usuario? @relation("caja_confirmada", fields: [caja_confirmada_por], references: [id_usuario])
 
   @@index([id_empresa])
+}
+
+/// Copia del catálogo de cajas de SmartOLT (`/system/get_odbs`).
+///
+/// Existe por la capacidad: `nr_of_ports` no viene en el censo de ONT, y pedir
+/// el catálogo cada vez que alguien abre una caja gastaría la cuota de la API,
+/// compartida con los otros grupos. El sondeo lo refresca a lo sumo una vez
+/// al día (`CatalogoOdbService`).
+///
+/// Tabla de G3. No tiene serie de ONT: es un catálogo de cajas.
+model odb_smartolt {
+  id_odb_smartolt Int      @id @default(autoincrement())
+  id_empresa      Int
+  /// Id del ODB en SmartOLT. Estable, a diferencia del nombre.
+  id_externo      String   @db.VarChar(40)
+  nombre          String   @db.VarChar(80)
+  capacidad       Int?     @db.SmallInt
+  zona            String?  @db.VarChar(80)
+  actualizado_en  DateTime @default(now())
+
+  empresa empresa @relation(fields: [id_empresa], references: [id_empresa])
+
+  @@unique([id_empresa, id_externo])
 }
 
 /**
