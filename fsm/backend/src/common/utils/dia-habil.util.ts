@@ -48,7 +48,9 @@ function offsetMinutos(zona: string, instante: Date): number {
 }
 
 /**
- * Instante UTC que corresponde a la medianoche de pared de `zona`.
+ * Instante UTC que corresponde a una hora de pared de `zona` (por defecto, la
+ * medianoche del dia). Tambien lo usa la lectura de fechas de SmartOLT, que
+ * vienen como hora de pared de Chile y sin zona.
  *
  * Se hace en dos pasadas a proposito: el offset se mide primero sobre una
  * aproximacion y despues sobre el instante ya corregido, porque en los dos dias
@@ -63,8 +65,17 @@ function offsetMinutos(zona: string, instante: Date): number {
  * primer intento, que es el instante inmediatamente posterior al salto y el
  * unico que sirve como frontera del dia.
  */
-function instanteDesdePared(zona: string, y: number, m: number, d: number): Date {
-  const pared = Date.UTC(y, m - 1, d);
+export function instanteDesdePared(
+  zona: string,
+  y: number,
+  m: number,
+  d: number,
+  h = 0,
+  min = 0,
+  s = 0,
+  ms = 0,
+): Date {
+  const pared = Date.UTC(y, m - 1, d, h, min, s, ms);
 
   const offAprox = offsetMinutos(zona, new Date(pared));
   const primerIntento = new Date(pared - offAprox * 60000);

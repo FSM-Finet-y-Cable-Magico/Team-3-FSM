@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import { ZONA_OPERACION } from '../../common/utils/dia-habil.util.js';
+import { fechaDeFuente } from './fecha-fuente.js';
 import type {
   FuenteMonitoreo,
   FiltroConsulta,
@@ -92,6 +94,11 @@ export class SmartOltClient implements FuenteMonitoreo {
   constructor(
     private readonly baseUrl: string,
     private readonly token: string,
+    /**
+     * Zona en la que SmartOLT escribe sus fechas (la de la cuenta). Ver
+     * `fechaDeFuente`: sin esto, la hora dependia de la zona del servidor.
+     */
+    private readonly zona: string = ZONA_OPERACION,
   ) {
     if (!baseUrl || !token) {
       throw new Error(
@@ -276,8 +283,6 @@ export class SmartOltClient implements FuenteMonitoreo {
   }
 
   private fecha(v: string | undefined): Date | null {
-    if (!v) return null;
-    const d = new Date(v.replace(' ', 'T'));
-    return isNaN(d.getTime()) ? null : d;
+    return fechaDeFuente(v, this.zona);
   }
 }

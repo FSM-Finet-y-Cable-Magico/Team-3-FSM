@@ -1,5 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
+import { ZONA_OPERACION } from '../../common/utils/dia-habil.util.js';
+import { fechaDeFuente } from './fecha-fuente.js';
 import type {
   FuenteMonitoreo,
   FiltroConsulta,
@@ -39,7 +41,11 @@ export class CsvSmartOltFuente implements FuenteMonitoreo {
   private readonly logger = new Logger(CsvSmartOltFuente.name);
   private filas: FilaOnu[] | null = null;
 
-  constructor(private readonly ruta: string) {
+  constructor(
+    private readonly ruta: string,
+    /** Zona en la que el export de SmartOLT escribe sus fechas. Ver `fechaDeFuente`. */
+    private readonly zona: string = ZONA_OPERACION,
+  ) {
     if (!ruta) {
       throw new Error(
         'CsvSmartOltFuente: falta SMARTOLT_CSV_PATH. Usá MONITOREO_FUENTE=mock si no tenés el export.',
@@ -156,7 +162,7 @@ export class CsvSmartOltFuente implements FuenteMonitoreo {
         // vale la pena adivinar el recorte — es solo referencia (nombre_cliente_ext),
         // no se usa para vincular el cliente real.
         nombre: vacioNull(fila[iName]),
-        ultimoCambio: fechaHora(fila[iUltimoCambio]),
+        ultimoCambio: fechaDeFuente(fila[iUltimoCambio], this.zona),
       });
     }
 
@@ -191,13 +197,6 @@ function decimal(v: string | undefined): number | null {
   if (!s) return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
-}
-
-function fechaHora(v: string | undefined): Date | null {
-  const s = v?.trim();
-  if (!s) return null;
-  const d = new Date(s.replace(' ', 'T'));
-  return isNaN(d.getTime()) ? null : d;
 }
 
 /**
