@@ -54,13 +54,11 @@
 
     <!-- Header con logo real -->
     <div class="text-center mb-8">
-      <div class="inline-flex items-center justify-center bg-white border border-slate-200 rounded-2xl px-7 py-3.5 shadow-sm mb-5">
-        <img
-          src="/logo_finet.png"
-          alt="FiNet Limitada"
-          class="h-20 w-auto"
-        />
-      </div>
+      <img
+        src="/logo_finet.png"
+        alt="FiNet Limitada"
+        class="h-20 w-auto mx-auto mb-5"
+      />
       <div class="border-t border-slate-700 pt-4">
         <p class="text-slate-300 text-sm font-medium tracking-widest uppercase">
           Sistema de Gestión de Campo
