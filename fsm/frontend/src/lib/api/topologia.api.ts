@@ -133,6 +133,8 @@ export interface OntDeCaja {
   puerto_pon: number | null;
   /** Caída hace tanto que parece un equipo dado de baja: no cuenta en el estado. */
   posible_baja: boolean;
+  /** Cliente suspendido por deuda (contrato de G8): no cuenta en el estado. */
+  suspendido?: boolean;
 }
 
 export interface DetalleSaludCaja {

@@ -92,4 +92,15 @@ describe('SaludCajasService', () => {
     expect(d.cercanas.map((c) => c.id_caja_nap)).toEqual([2, 3]);
     expect(d.cercanas[0].distancia_m).toBeLessThan(200);
   });
+
+  it('el detalle marca la ONT de un cliente suspendido, y no como posible baja', async () => {
+    cajaFindMany.mockImplementation(async () => [
+      { id_caja_nap: 1, identificador_unico: 'NAP 5', zona: 'Z', numero_poste: null, latitud: -33.5, longitud: -71.6, mufa: null },
+    ]);
+    cargarEstado.mockImplementation(async () => [ont(1, { numero_serie: 'S', estado_conexion: 'OFFLINE', suspendido: true })]);
+
+    const d = await service.detalle(1, 1);
+
+    expect(d.onts[0]).toMatchObject({ numero_serie: 'S', suspendido: true, posible_baja: false });
+  });
 });

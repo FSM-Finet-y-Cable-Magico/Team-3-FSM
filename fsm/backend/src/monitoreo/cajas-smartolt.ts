@@ -84,6 +84,8 @@ export interface OntDePuerto {
   potencia_dbm: number | null;
   /** Caida hace mas de DIAS_MAX_INCIDENTE: probablemente un cliente dado de baja. */
   posible_baja: boolean;
+  /** Cliente suspendido por deuda (contrato de G8). Tiene prioridad sobre `posible_baja`. */
+  suspendido: boolean;
 }
 
 export interface PuertoDeCaja {
@@ -158,7 +160,9 @@ export function armarGrilla(onts: EstadoOnt[], catalogo: EntradaCatalogo[], ahor
     nombre_cliente: o.nombre_cliente ?? null,
     estado_conexion: o.estado_conexion,
     potencia_dbm: o.potencia_dbm,
-    posible_baja: esInactiva(o, ahora),
+    // `esInactiva` tambien es true para un suspendido: no es "posible baja".
+    posible_baja: !o.suspendido && esInactiva(o, ahora),
+    suspendido: !!o.suspendido,
   });
 
   const conPuerto = onts.filter(tienePuerto);

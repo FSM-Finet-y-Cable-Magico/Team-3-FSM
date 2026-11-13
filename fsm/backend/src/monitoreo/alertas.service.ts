@@ -5,6 +5,7 @@ import { descomponerFicha } from './ficha-cliente.js';
 import { evaluar, afectaAlGrupo, esInactiva, claveDeCaja, type EstadoOnt } from './reglas-alerta.js';
 import { ESTADO_CONEXION } from './monitoreo.constants.js';
 import { cabeceraDeCaja, capacidadDeCaja, type EntradaCatalogo } from './cajas-smartolt.js';
+import { clientesSuspendidos } from '../cortes/suspendidos.js';
 import {
   DIAS_MAX_INCIDENTE,
   MIN_ONT_PARA_FALLA_CAJA,
@@ -809,6 +810,9 @@ export class AlertasService {
       WHERE r.id_empresa = ${id_empresa}
     `;
 
+    // Aparte de la consulta principal a proposito: si se pierde el permiso
+    // sobre `contrato` (de G8), el monitoreo no puede caerse. Ver `clientesSuspendidos`.
+    const suspendidos = await clientesSuspendidos(this.prisma, id_empresa, this.logger);
     return filas.map((f) => ({
       id_registro_ont: f.id_registro_ont,
       numero_serie: f.numero_serie,
@@ -825,6 +829,7 @@ export class AlertasService {
       odb_puerto: f.odb_puerto,
       zona: f.zona,
       nombre_cliente: f.nombre_cliente_ext,
+      suspendido: f.id_cliente != null && suspendidos.has(f.id_cliente),
     }));
   }
 }

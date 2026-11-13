@@ -45,6 +45,7 @@
   // Las posibles bajas (caidas hace mas de 7 dias) son ~200 equipos de clientes
   // que se fueron: mostradas por defecto tapaban las caidas reales.
   let mostrarBajas = $state(false);
+  const ocultasPorDefecto = $derived((resumen?.posibles_bajas ?? 0) + (resumen?.suspendidos ?? 0));
   // Cajas desplegadas en la vista por caja, por su `clave`. Sobrevive a las
   // recargas en vivo: la clave de SmartOLT no cambia entre sondeos.
   let abiertas = $state<Set<string>>(new Set());
@@ -174,7 +175,7 @@
 
   function prioridad(o: LecturaOnt) {
     // Una baja vieja no es lo primero que hay que mirar, aunque este caida.
-    if (o.posible_baja) return 4;
+    if (o.posible_baja || o.suspendido) return 4;
     if ((o.estado_conexion ?? 'ONLINE') !== 'ONLINE') return 0;
     if (o.potencia_fuera_de_rango) return 1;
     if (potenciaDegradandose(o.potencia_actual_dbm)) return 2;
@@ -184,7 +185,7 @@
   const ontsFiltradas = $derived.by(() => {
     const q = busqueda.trim().toLowerCase();
     return lecturas
-      .filter((o) => mostrarBajas || !o.posible_baja)
+      .filter((o) => mostrarBajas || !(o.posible_baja || o.suspendido))
       .filter((o) => !soloConProblema || conProblema(o))
       .filter((o) => !filtroZona || o.zona === filtroZona)
       .filter(
@@ -323,11 +324,12 @@
             · {resumen.por_estado.DESCONOCIDO} sin lectura
           {/if}
         </p>
-        {#if resumen.posibles_bajas > 0}
-          <!-- Se dicen aparte para que el total cierre: caidas hace mas de 7
-               dias son equipos de clientes que se fueron, no un incidente. -->
+        {#if resumen.posibles_bajas > 0 || (resumen.suspendidos ?? 0) > 0}
+          <!-- Se dicen aparte para que el total cierre: ni una baja vieja ni un
+               cliente cortado por deuda son un incidente. -->
           <p class="text-xs text-slate-500 mt-0.5">
-            No incluye {resumen.posibles_bajas} posibles bajas (caídas hace más de 7 días)
+            No incluye {resumen.posibles_bajas} posibles bajas (caídas hace más de 7 días){#if (resumen.suspendidos ?? 0) > 0}
+              ni {resumen.suspendidos} clientes suspendidos por deuda{/if}
           </p>
         {/if}
       </div>
@@ -414,7 +416,9 @@
       </label>
       <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer py-1.5">
         <input type="checkbox" bind:checked={mostrarBajas} class="cursor-pointer h-4 w-4" />
-        Mostrar posibles bajas{resumen?.posibles_bajas ? ` (${resumen.posibles_bajas})` : ''}
+        <!-- Esconde tambien a los suspendidos por deuda: la etiqueta lo dice para
+             que buscar la serie de un moroso no devuelva "nada" sin explicacion. -->
+        Mostrar posibles bajas y suspendidos{ocultasPorDefecto ? ` (${ocultasPorDefecto})` : ''}
       </label>
     {/if}
   </div>
@@ -631,17 +635,19 @@
         </thead>
         <tbody class="divide-y divide-slate-100">
           {#each ontsVisibles as o (o.numero_serie)}
-            <tr class="hover:bg-slate-50 transition-colors duration-200 {o.posible_baja ? 'text-slate-500' : ''}">
+            <tr class="hover:bg-slate-50 transition-colors duration-200 {o.posible_baja || o.suspendido ? 'text-slate-500' : ''}">
               <td class="px-3 py-2">
                 <span
                   class="px-2 py-0.5 rounded-md text-xs font-semibold border
-                         {o.posible_baja
+                         {o.posible_baja || o.suspendido
                            ? 'bg-slate-100 text-slate-600 border-slate-200'
                            : (estadoClase[o.estado_conexion ?? 'DESCONOCIDO'] ?? estadoClase.DESCONOCIDO)}"
                 >
                   {o.estado_conexion ?? 'DESCONOCIDO'}
                 </span>
-                {#if o.posible_baja}
+                {#if o.suspendido}
+                  <span class="block text-xs text-amber-700 mt-0.5">Suspendido por deuda</span>
+                {:else if o.posible_baja}
                   <span class="block text-xs text-slate-500 mt-0.5">Posible baja</span>
                 {/if}
               </td>

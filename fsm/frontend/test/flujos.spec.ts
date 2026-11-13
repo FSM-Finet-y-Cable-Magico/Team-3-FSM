@@ -1084,7 +1084,7 @@ test('Monitoreo: las posibles bajas no cuentan como fuera de linea y se ocultan 
   await expect(page.getByRole('link', { name: 'CAIDA1' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'BAJA2021' })).toHaveCount(0);
 
-  await page.getByLabel('Mostrar posibles bajas (1)').check();
+  await page.getByLabel('Mostrar posibles bajas y suspendidos (1)').check();
   await expect(page.getByRole('link', { name: 'BAJA2021' })).toBeVisible();
   await expect(page.getByRole('row', { name: /BAJA2021/ })).toContainText('Posible baja');
 });
@@ -1112,6 +1112,26 @@ test('CU-15: cada caja dice cuantas ONT conocemos y de cuantos puertos es', asyn
   // Sin entrada en el catalogo de SmartOLT, la capacidad es estimada y lo dice.
   await expect(page.getByText('2 de 2 ONT conocidas · caja de ~8 puertos')).toBeVisible();
   await expect(page.getByText('padrón parcial')).toHaveCount(0);
+});
+
+test('Monitoreo: un cliente suspendido por deuda se muestra con su etiqueta y no cuenta como fuera de linea', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/monitoreo/resumen', (route) => route.fulfill({ json: {
+    total_ont: 2, por_estado: { ONLINE: 1 }, posibles_bajas: 0, suspendidos: 1, potencia_fuera_de_rango: 0, fecha_actualizacion: '2026-11-13T15:00:00Z',
+  } }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/ont?*', (route) => route.fulfill({ json: [
+    { numero_serie: 'ACTIVA1', id_unidad: null, id_cliente: 1, zona: 'Z', olt_externo: '2', nombre_cliente_ext: null, estado_conexion: 'ONLINE', potencia_actual_dbm: -21, potencia_fuera_de_rango: false, medido_en: null, posible_baja: false, suspendido: false },
+    { numero_serie: 'MOROSO1', id_unidad: null, id_cliente: 9, zona: 'Z', olt_externo: '2', nombre_cliente_ext: null, estado_conexion: 'OFFLINE', potencia_actual_dbm: null, potencia_fuera_de_rango: false, medido_en: null, posible_baja: false, suspendido: true },
+  ] }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/criticos-por-caja*', (route) => route.fulfill({ json: { cajas: [], totales: { cajas_afectadas: 0, clientes_criticos: 0, criticos_sin_caja: 0 } } }));
+  await login(page, 'admin'); await page.goto('/admin/monitoreo');
+
+  await expect(page.getByText('ni 1 clientes suspendidos por deuda')).toBeVisible();
+  await page.getByRole('tab', { name: 'Todas las ONT' }).click();
+  // Oculto por defecto, y la casilla dice que tambien muestra a los suspendidos.
+  await expect(page.getByRole('link', { name: 'MOROSO1' })).toHaveCount(0);
+  await page.getByLabel('Mostrar posibles bajas y suspendidos (1)').check();
+  await expect(page.getByRole('row', { name: /MOROSO1/ })).toContainText('Suspendido por deuda');
 });
 
 test('CU-14: desde el monitoreo se abre el historial de interrupciones de una ONT', async ({ page }) => {
@@ -1771,6 +1791,83 @@ test('Topologia: el mapa de salud muestra las cajas de la mas grave a la mas san
   await expect(enlaces).toHaveText(['NAP 1']);
   await page.getByRole('button', { name: /Cajas caídas/ }).click();
   await expect(enlaces).toHaveCount(4);
+});
+
+test('Cortes: lista lo que falta cortar en SmartOLT, lo registra y pasa al historial', async ({ page }) => {
+  await preparar(page);
+  let cortado = false;
+  const cuerpos: unknown[] = [];
+  const fila = {
+    id_contrato: 5, estado_contrato: 'Suspendido', fecha_suspension: '2026-11-13', plan: 'FULL S',
+    cliente: { id_cliente: 55, nombre_completo: 'Cliente Moroso', rut: '11111111-1', telefono: '9 1234 5678' },
+    direccion: { direccion_completa: 'Calle 1', comuna: 'La Granja' }, onts: [], ultimo_registro: null,
+  };
+  await page.route('http://127.0.0.1:3000/api/cortes', (route) => route.fulfill({ json: {
+    por_cortar: cortado ? [] : [fila],
+    por_reactivar: [],
+    historial: cortado ? [{ id_log: 1, accion: 'CORTE_SMARTOLT', fecha_hora: '2026-11-13T15:00:00Z', usuario: 'Admin Prueba', id_contrato: 5, cliente: 'Cliente Moroso', observacion: 'listo' }] : [],
+  } }));
+  await page.route('http://127.0.0.1:3000/api/cortes/5/hecho', (route) => {
+    cuerpos.push(route.request().postDataJSON());
+    cortado = true;
+    return route.fulfill({ status: 201, json: { id_log: 1, accion: 'CORTE_SMARTOLT', fecha_hora: '2026-11-13T15:00:00Z' } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/cortes');
+
+  await expect(page.getByText('El corte y la reactivación se hacen en SmartOLT')).toBeVisible();
+  await expect(page.getByText('Cliente Moroso')).toBeVisible();
+  await expect(page.getByText('Buscar en SmartOLT por nombre o RUT')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Hecho en SmartOLT' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByLabel('Observación (opcional)').fill('listo');
+  await dialogo.getByRole('button', { name: 'Registrar corte' }).click();
+
+  expect(cuerpos).toEqual([{ accion: 'CORTE', observacion: 'listo' }]);
+  await expect(page.getByText('No hay contratos por cortar.')).toBeVisible();
+  await page.getByText('Historial').click();
+  await expect(page.getByText('Admin Prueba')).toBeVisible();
+});
+
+test('Cortes: mientras se registra no se puede cancelar, y si otro ya lo hizo (409) el panel se refresca', async ({ page }) => {
+  await preparar(page);
+  let otroLoHizo = false;
+  let soltar: () => void = () => {};
+  const espera = new Promise<void>((ok) => (soltar = ok));
+  const fila = {
+    id_contrato: 5, estado_contrato: 'Suspendido', fecha_suspension: '2026-11-13', plan: null,
+    cliente: { id_cliente: 55, nombre_completo: 'Cliente Moroso', rut: null, telefono: null },
+    direccion: null, onts: [], ultimo_registro: null,
+  };
+  await page.route('http://127.0.0.1:3000/api/cortes', (route) => route.fulfill({ json: {
+    por_cortar: otroLoHizo ? [] : [fila], por_reactivar: [], historial: [],
+  } }));
+  await page.route('http://127.0.0.1:3000/api/cortes/5/hecho', async (route) => {
+    await espera;
+    otroLoHizo = true;
+    return route.fulfill({ status: 409, json: { codigo: 'NO_PENDIENTE', message: 'Este contrato no está pendiente de corte: ya se registró o G8 lo reactivó.' } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/cortes');
+
+  await page.getByRole('button', { name: 'Hecho en SmartOLT' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByRole('button', { name: 'Registrar corte' }).click();
+  await expect(dialogo.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+  soltar();
+
+  await expect(dialogo.getByText('ya se registró')).toBeVisible();
+  await dialogo.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(page.getByText('No hay contratos por cortar.')).toBeVisible();
+});
+
+test('Cortes: sin permiso sobre contrato lo dice en vez de romperse', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/cortes', (route) => route.fulfill({ status: 503, json: {
+    codigo: 'SIN_PERMISO_CONTRATO',
+    message: 'El sistema no tiene permiso para leer los contratos de la base compartida. Hay que pedirle al admin: GRANT SELECT ON contrato TO g3_app.',
+  } }));
+  await login(page, 'admin'); await page.goto('/admin/cortes');
+  await expect(page.getByText('no tiene permiso para leer los contratos')).toBeVisible();
 });
 
 // CU-25: baja de servicio.

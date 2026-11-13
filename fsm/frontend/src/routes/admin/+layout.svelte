@@ -65,6 +65,8 @@
   const ICON_EMPRESA = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 21V5a2 2 0 012-2h8a2 2 0 012 2v16m-12 0h16m-4 0v-9a1 1 0 011-1h2a1 1 0 011 1v9M8 7h4M8 11h4M8 15h4"/></svg>`;
 
   const ICON_TELEFONO = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/></svg>`;
+  // Boton de encendido: corte del servicio por deuda.
+  const ICON_CORTE = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 11-12.728 0M12 3v9"/></svg>`;
   // Globo de conversacion: un reclamo del cliente.
   const ICON_TICKET = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h8M8 14h5m-9 6l2.5-3H19a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v14z"/></svg>`;
 
@@ -79,6 +81,8 @@
     { href: '/admin/alertas', label: 'Alertas de Red', icon: ICON_ALERTA, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/monitoreo', label: 'Monitoreo', icon: ICON_SENAL, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/topologia', label: 'Topología', icon: ICON_RED, roles: ['ADMIN', 'JEFE_TECNICO'] },
+    // Cortes y reactivaciones por morosidad: G8 suspende, FiNet corta en SmartOLT.
+    { href: '/admin/cortes', label: 'Cortes', icon: ICON_CORTE, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/reportes', label: 'Reportes', icon: ICON_REPORTE, roles: ['ADMIN', 'JEFE_TECNICO'] },
     { href: '/admin/notificaciones', label: 'Notificaciones', icon: ICON_CAMPANA, roles: ['ADMIN', 'JEFE_TECNICO'] },
     // Catalogo de planes, en solo lectura.
