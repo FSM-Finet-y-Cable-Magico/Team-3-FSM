@@ -57,13 +57,17 @@
   // con la misma consulta pesada que el panel, y no hace falta en cada visita.
   let cajasSmartolt = $state<ResumenCajaSmartolt[] | null>(null);
   let busquedaCaja = $state('');
+  // Error propio de esta vista. Con el `error` compartido, la proxima recarga
+  // del panel lo borraba y la pestaña quedaba cargando para siempre.
+  let errorCajas = $state('');
 
   async function cargarCajasSmartolt() {
+    errorCajas = '';
     try {
       const c = await listarCajasSmartolt(token());
       if (!destruido) cajasSmartolt = c;
     } catch (e) {
-      if (!destruido) error = e instanceof Error ? e.message : 'No se pudieron cargar las cajas';
+      if (!destruido) errorCajas = e instanceof Error ? e.message : 'No se pudieron cargar las cajas';
     }
   }
 
@@ -381,7 +385,7 @@
 
     {#if vista === 'onts'}
       <div class="flex flex-col flex-1 min-w-52">
-        <label for="busca"class="text-xs font-semibold text-slate-600 mb-0.5">Buscar</label>
+        <label for="busca" class="text-xs font-semibold text-slate-600 mb-0.5">Buscar</label>
         <input
           id="busca"
           type="search"
@@ -524,7 +528,12 @@
 
   <!-- Puertos por caja: todas las cajas de SmartOLT, con o sin criticos -->
   {:else if vista === 'puertos'}
-    {#if !cajasSmartolt}
+    {#if errorCajas && !cajasSmartolt}
+      <Alert class="rounded-lg text-sm">
+        {errorCajas}
+        <button type="button" class="btn-texto ml-2" onclick={cargarCajasSmartolt}>Reintentar</button>
+      </Alert>
+    {:else if !cajasSmartolt}
       <div class="space-y-2">
         {#each Array(5) as _}
           <div class="h-12 bg-slate-100 rounded-lg motion-safe:animate-pulse"></div>
