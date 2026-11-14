@@ -15,10 +15,8 @@ export const NIVEL_RIESGO = { VERDE: 'VERDE', AMARILLO: 'AMARILLO', ROJO: 'ROJO'
 export type NivelRiesgo = (typeof NIVEL_RIESGO)[keyof typeof NIVEL_RIESGO];
 export const NIVELES_RIESGO: NivelRiesgo[] = [NIVEL_RIESGO.VERDE, NIVEL_RIESGO.AMARILLO, NIVEL_RIESGO.ROJO];
 
-/** MOD RF-32 y CU-37: AMARILLO y ROJO exigen justificacion de 20 caracteres. */
+/** CU-37: anular un bloqueo por lista roja exige justificacion de 20 caracteres. */
 export const MIN_JUSTIFICACION_RIESGO = 20;
-export const MENSAJE_JUSTIFICACION_RIESGO =
-  'Debe ingresar una descripción con al menos 20 caracteres para justificar el marcado.';
 
 /** Textos de CU-35. */
 export const mensajeVetado = (motivo: string) =>

@@ -1,10 +1,5 @@
-import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ClientesService } from './clientes.service.js';
-import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
-import { EditarClienteDto } from './dto/editar-cliente.dto.js';
-import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
-import { CambiarNivelRiesgoDto } from './dto/cambiar-nivel-riesgo.dto.js';
-import { BajaServicioDto } from './dto/baja-servicio.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
@@ -73,63 +68,5 @@ export class ClientesController {
     @CurrentUser() user: { id_empresa: number },
   ) {
     return this.clientesService.consultarPorRut(rut, user.id_empresa);
-  }
-
-  @Roles('ADMIN', 'JEFE_TECNICO')
-  @Post()
-  registrarCliente(
-    @Body() dto: RegistrarClienteDto,
-    @CurrentUser() user: { userId: number; id_empresa: number },
-  ) {
-    return this.clientesService.registrarCliente(dto, user.userId, user.id_empresa);
-  }
-
-  @Roles('ADMIN', 'JEFE_TECNICO')
-  @Patch(':id')
-  editarFicha(
-    @Param('id') id: string,
-    @Body() dto: EditarClienteDto,
-    @CurrentUser() user: { userId: number; id_empresa: number },
-  ) {
-    return this.clientesService.editarFicha(+id, dto, user.userId, user.id_empresa);
-  }
-
-  /** CU-25: lo que muestra el formulario de baja. */
-  @Roles('ADMIN', 'JEFE_TECNICO')
-  @Get(':id/baja')
-  resumenBaja(@Param('id') id: string, @CurrentUser() user: { id_empresa: number }) {
-    return this.clientesService.resumenBaja(+id, user.id_empresa);
-  }
-
-  /** CU-25: baja de servicio, con sus dos OT. */
-  @Roles('ADMIN', 'JEFE_TECNICO')
-  @Post(':id/baja')
-  darDeBaja(
-    @Param('id') id: string,
-    @Body() dto: BajaServicioDto,
-    @CurrentUser() user: { userId: number; id_empresa: number },
-  ) {
-    return this.clientesService.darDeBaja(+id, dto, user);
-  }
-
-  /** MOD RF-32: semaforo de riesgo VERDE, AMARILLO o ROJO. */
-  @Roles('ADMIN', 'JEFE_TECNICO')
-  @Patch(':id/riesgo')
-  cambiarNivelRiesgo(
-    @Param('id') id: string,
-    @Body() dto: CambiarNivelRiesgoDto,
-    @CurrentUser() user: { userId: number; id_empresa: number },
-  ) {
-    return this.clientesService.cambiarNivelRiesgo(+id, dto, user.userId, user.id_empresa);
-  }
-
-  @Roles('ADMIN', 'JEFE_TECNICO')
-  @Post(':id/conflictivo')
-  marcarConflictivo(
-    @Param('id') id: string,
-    @Body() dto: MarcarConflictivoDto,
-    @CurrentUser() user: { userId: number; id_empresa: number },
-  ) {
-    return this.clientesService.marcarConflictivo(+id, dto, user.userId, user.id_empresa);
   }
 }

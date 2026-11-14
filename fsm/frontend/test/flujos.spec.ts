@@ -211,7 +211,7 @@ test('paginación de clientes conserva mensajes y permite ir y volver', async ({
 });
 test('TECNICO no consulta Clientes mediante navegación directa', async ({ page }) => {
   const registro = await preparar(page); await login(page);
-  for (const ruta of ['/admin/clientes', '/admin/clientes/12345678-5', '/admin/clientes/nuevo']) {
+  for (const ruta of ['/admin/clientes', '/admin/clientes/12345678-5']) {
     await page.goto(ruta); await expect(page).toHaveURL(/\/terreno$/);
   }
   expect(registro.clientes).toBe(0);
@@ -388,7 +388,7 @@ test('un token vencido devuelve al login en vez de dejar la pantalla con un erro
 
 test('sin sesión no se montan las vistas de Clientes antes de redirigir', async ({ page }) => {
   const registro = await preparar(page);
-  for (const ruta of ['/admin/clientes', '/admin/clientes/12345678-5', '/admin/clientes/nuevo']) {
+  for (const ruta of ['/admin/clientes', '/admin/clientes/12345678-5']) {
     await page.goto(ruta);
     await expect(page).toHaveURL(/\/login$/);
   }
@@ -1368,33 +1368,21 @@ test('clave WiFi: un ticket sin solicitudes no muestra la seccion', async ({ pag
 });
 
 // MOD RF-32: semaforo de riesgo del cliente, en la ficha y en terreno.
-test('MOD RF-32: la ficha muestra el semaforo y pide justificacion para subir el nivel', async ({ page }) => {
+test('MOD RF-32: la ficha muestra el semaforo, pero es de solo lectura: el cliente lo administra el CRM', async ({ page }) => {
   await preparar(page);
-  const cambios: unknown[] = [];
-  let nivel = 'VERDE';
   await page.route('http://127.0.0.1:3000/api/clientes/rut/12345678-5', route =>
-    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: nivel, contratos_activos: [] }, historial_ot: [] } }));
-  await page.route(/\/api\/clientes\/1\/riesgo$/, route => {
-    const cuerpo = route.request().postDataJSON();
-    cambios.push(cuerpo);
-    nivel = cuerpo.nivel;
-    return route.fulfill({ json: { id_cliente: 1, nivel_riesgo: cuerpo.nivel, motivo: cuerpo.motivo ?? null } });
-  });
+    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: 'AMARILLO', obs_conflictivo: 'Discusión fuerte con el técnico', contratos_activos: [] }, historial_ot: [] } }));
   await login(page, 'admin'); await page.goto('/admin/clientes/12345678-5');
 
-  await expect(page.getByText('Riesgo VERDE')).toBeVisible();
-  await page.getByRole('button', { name: 'Cambiar nivel de riesgo' }).click();
-  const dialogo = page.getByRole('dialog');
-  await dialogo.getByLabel('Nivel').selectOption('AMARILLO');
-  await dialogo.getByLabel('Justificación').fill('Muy corto');
-  await dialogo.getByRole('button', { name: 'Guardar nivel' }).click();
-  await expect(dialogo.getByText('al menos 20 caracteres')).toBeVisible();
-  expect(cambios).toEqual([]);
-
-  await dialogo.getByLabel('Justificación').fill('Discusión fuerte con el técnico en la última visita');
-  await dialogo.getByRole('button', { name: 'Guardar nivel' }).click();
   await expect(page.getByText('Riesgo AMARILLO')).toBeVisible();
-  expect(cambios).toEqual([{ nivel: 'AMARILLO', motivo: 'Discusión fuerte con el técnico en la última visita' }]);
+  await expect(page.getByText('Discusión fuerte con el técnico')).toBeVisible();
+  for (const accion of ['Editar ficha', 'Cambiar nivel de riesgo', 'Dar de baja']) {
+    await expect(page.getByRole('button', { name: accion })).toHaveCount(0);
+  }
+
+  await page.goto('/admin/clientes');
+  await expect(page.getByRole('link', { name: 'Buscar por dirección' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Nuevo Cliente/ })).toHaveCount(0);
 });
 
 test('MOD RF-32: la tarjeta de terreno muestra el nivel del cliente', async ({ page }) => {
@@ -1868,40 +1856,6 @@ test('Cortes: sin permiso sobre contrato lo dice en vez de romperse', async ({ p
   } }));
   await login(page, 'admin'); await page.goto('/admin/cortes');
   await expect(page.getByText('no tiene permiso para leer los contratos')).toBeVisible();
-});
-
-// CU-25: baja de servicio.
-test('CU-25: la baja muestra lo que se desconecta, pide confirmar la deuda y enlaza las dos OT', async ({ page }) => {
-  await preparar(page);
-  const bajas: unknown[] = [];
-  await page.route('http://127.0.0.1:3000/api/clientes/rut/12345678-5', route =>
-    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: 'VERDE', contratos_activos: [] }, historial_ot: [] } }));
-  await page.route(/\/api\/clientes\/1\/baja$/, route => {
-    if (route.request().method() === 'POST') {
-      bajas.push(route.request().postDataJSON());
-      return route.fulfill({ status: 201, json: { id_cliente: 1, estado: 'BAJA', ot_baja_puerto: 500, ot_baja_equipo: 501 } });
-    }
-    return route.fulfill({ json: {
-      id_cliente: 1, nombre_completo: 'Cliente de prueba', rut: '12345678-5', estado: 'ACTIVO', direccion: 'Calle de prueba 100, El Quisco',
-      onts: ['ZTEG1234'], puertos: [{ id_puerto: 23, numero_puerto: 3, id_caja_nap: 5, caja: 'NAP-B' }],
-      motivos: ['VOLUNTARIA', 'MOROSIDAD', 'FUERZA_MAYOR', 'MUDANZA_SIN_COBERTURA'],
-    } });
-  });
-  await login(page, 'admin'); await page.goto('/admin/clientes/12345678-5');
-
-  await page.getByRole('button', { name: 'Dar de baja' }).click();
-  const dialogo = page.getByRole('dialog');
-  await expect(dialogo).toContainText('ZTEG1234');
-  await expect(dialogo).toContainText('Puerto 3 de NAP-B');
-  await dialogo.getByLabel('Motivo').selectOption('MUDANZA_SIN_COBERTURA');
-  const confirmar = dialogo.getByRole('button', { name: 'Registrar baja' });
-  await expect(confirmar).toBeDisabled();
-  await dialogo.getByLabel('Confirmo que el cliente no tiene deuda pendiente').check();
-  await confirmar.click();
-
-  await expect(page.getByRole('link', { name: 'OT #500' })).toHaveAttribute('href', '/admin/ot/500');
-  await expect(page.getByRole('link', { name: 'OT #501' })).toBeVisible();
-  expect(bajas).toEqual([{ motivo: 'MUDANZA_SIN_COBERTURA', confirma_sin_deuda: true }]);
 });
 
 // RF-53 y RF-54: zona del cliente.

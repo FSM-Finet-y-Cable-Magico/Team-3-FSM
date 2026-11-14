@@ -87,57 +87,6 @@ export async function buscarPorRut(token: string, rut: string): Promise<ClienteC
   return fetchApi(token, `${API_URL}/api/clientes/rut/${rut}`);
 }
 
-export async function registrarCliente(token: string, dto: Record<string, unknown>): Promise<ClienteFicha> {
-  return fetchApi(token, `${API_URL}/api/clientes`, {
-    method: 'POST',
-    body: JSON.stringify(dto),
-  });
-}
-
-export async function editarCliente(token: string, id: number, dto: Record<string, unknown>): Promise<ClienteFicha> {
-  return fetchApi(token, `${API_URL}/api/clientes/${id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(dto),
-  });
-}
-
-/** MOD RF-32: cambiar el nivel del semaforo. AMARILLO y ROJO exigen motivo. */
-export async function cambiarNivelRiesgo(
-  token: string,
-  id: number,
-  nivel: import('$lib/utils/riesgo').NivelRiesgo,
-  motivo?: string,
-): Promise<{ id_cliente: number; nivel_riesgo: string; motivo: string | null }> {
-  return fetchApi(token, `${API_URL}/api/clientes/${id}/riesgo`, {
-    method: 'PATCH',
-    body: JSON.stringify(motivo ? { nivel, motivo } : { nivel }),
-  });
-}
-
-/** CU-25: lo que muestra el formulario de baja. */
-export interface ResumenBaja {
-  id_cliente: number;
-  nombre_completo: string;
-  rut: string | null;
-  estado: string;
-  direccion: string | null;
-  onts: string[];
-  puertos: { id_puerto: number; numero_puerto: number | null; id_caja_nap: number | null; caja: string | null }[];
-  motivos: string[];
-}
-
-export async function resumenBaja(token: string, id: number): Promise<ResumenBaja> {
-  return fetchApi(token, `${API_URL}/api/clientes/${id}/baja`);
-}
-
-export async function darDeBaja(
-  token: string,
-  id: number,
-  dto: { motivo: string; confirma_sin_deuda: boolean; observaciones?: string },
-): Promise<{ id_cliente: number; estado: string; ot_baja_puerto: number; ot_baja_equipo: number }> {
-  return fetchApi(token, `${API_URL}/api/clientes/${id}/baja`, { method: 'POST', body: JSON.stringify(dto) });
-}
-
 /** CU-07: un cliente asociado a la direccion buscada. */
 export interface ClienteEnDireccion {
   id_cliente: number;
@@ -165,13 +114,6 @@ export async function verificarListaRoja(
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(q)) if (v) p.set(k, v);
   return fetchApi(token, `${API_URL}/api/clientes/lista-roja/verificar?${p.toString()}`);
-}
-
-export async function marcarConflictivo(token: string, id: number, motivo: string): Promise<void> {
-  return fetchApi(token, `${API_URL}/api/clientes/${id}/conflictivo`, {
-    method: 'POST',
-    body: JSON.stringify({ motivo }),
-  });
 }
 
 export async function listarClientes(
