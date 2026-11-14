@@ -26,6 +26,11 @@ export interface CierreGuardado {
   /** Equipos que no se recuperaron (acuerdo G1↔G3 del 12-11-2026). */
   faltantes?: EquipoFaltante[];
   reparacion?: ReparacionDeclarada;
+  /**
+   * Comentario libre del tecnico, para el jefe que aprueba. Es interno: a
+   * proposito `construirPayloadCierre` no lo lee, asi que no llega a G1/G8.
+   */
+  comentario?: string;
 }
 
 /**
@@ -41,6 +46,7 @@ export function cierreGuardado(
   retirados: EquipoDeclarado[],
   reparacion: ReparacionDeclarada | null,
   faltantes: EquipoFaltante[] = [],
+  comentario: string | null = null,
 ): Prisma.InputJsonValue | typeof Prisma.JsonNull {
   const guardado: CierreGuardado = {};
   if (instalados.length || retirados.length) {
@@ -52,6 +58,7 @@ export function cierreGuardado(
   // nada--, y colgarlo del `if` de arriba habria perdido la lista entera.
   if (faltantes.length) guardado.faltantes = faltantes;
   if (reparacion) guardado.reparacion = reparacion;
+  if (comentario) guardado.comentario = comentario;
 
   return Object.keys(guardado).length
     ? (guardado as unknown as Prisma.InputJsonValue)

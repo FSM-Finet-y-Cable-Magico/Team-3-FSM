@@ -317,6 +317,59 @@ test('el retiro de un equipo viaja con su diagnostico y separado de lo instalado
   });
 });
 
+test('el tecnico deja un comentario al cerrar y viaja recortado', async ({ page }) => {
+  // Opcional y en cualquier tipo de OT: la OT de prueba es una instalacion.
+  const registro = await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.locator('input[type=number]').fill('-21');
+  await page.getByLabel('Comentarios del cierre (opcional)').fill('  El cliente pidio el router en el living  ');
+  await page.getByRole('button', { name: 'Cerrar OT', exact: true }).click();
+  await expect(page).toHaveURL(/\/terreno$/);
+  expect(registro.cierres[0]).toMatchObject({ comentario_tecnico: 'El cliente pidio el router en el living' });
+});
+
+test('sin comentario, el cierre no manda el campo', async ({ page }) => {
+  const registro = await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.locator('input[type=number]').fill('-21');
+  await page.getByRole('button', { name: 'Cerrar OT', exact: true }).click();
+  await expect(page).toHaveURL(/\/terreno$/);
+  expect(registro.cierres[0]).not.toHaveProperty('comentario_tecnico');
+});
+
+test('el detalle de la OT muestra lo que el tecnico escribio al cerrar', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes/1', route => route.fulfill({ json: {
+    ...ot, tipo_ot: 'REPARACION', estado: 'COMPLETADA',
+    cierre_equipos: {
+      comentario: 'Volver a revisar en una semana',
+      reparacion: { falla_reportada: 'Conector sucio en la roseta', solucion_aplicada: 'Se limpio y se volvio a medir', resultado: 'PARCIAL' },
+      retirados: [{ numero_serie: 'ONT-9', accion: 'RETIRADO_PARA_DIAGNOSTICO', diagnostico: 'Sin señal óptica', observacion_estado_fisico: 'Tapa quebrada' }],
+    },
+  } }));
+  await login(page, 'admin'); await page.goto('/admin/ot/1');
+
+  const tarjeta = page.locator('section', { has: page.getByRole('heading', { name: 'Cierre del técnico' }) });
+  await expect(tarjeta.getByText('Volver a revisar en una semana')).toBeVisible();
+  await expect(tarjeta.getByText('Conector sucio en la roseta')).toBeVisible();
+  await expect(tarjeta.getByText('Se limpio y se volvio a medir')).toBeVisible();
+  await expect(tarjeta.getByText('Parcial')).toBeVisible();
+  await expect(tarjeta.getByText('ONT-9')).toBeVisible();
+  await expect(tarjeta.getByText('Tapa quebrada')).toBeVisible();
+});
+
+test('sin nada escrito al cerrar, el detalle no muestra la tarjeta', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes/1', route => route.fulfill({ json: { ...ot, estado: 'COMPLETADA', cierre_equipos: null } }));
+  await login(page, 'admin'); await page.goto('/admin/ot/1');
+  await expect(page.getByRole('heading', { name: /Orden de Trabajo/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cierre del técnico' })).toHaveCount(0);
+});
+
 test('un retiro sin diagnostico no deja cerrar, y el boton dice que falta', async ({ page }) => {
   // El contrato con G1 acepta el retiro sin diagnostico --asume "Causa
   // desconocida"-- pero el formulario lo exige: el tecnico es el unico que

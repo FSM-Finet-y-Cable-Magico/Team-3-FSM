@@ -307,6 +307,21 @@
   };
 
   const nivelPotencia = $derived(estadoPotencia(ot?.potencia_optica_dbm));
+
+  // Lo que el tecnico escribio al cerrar: comentario, datos de la reparacion y
+  // detalle de los equipos. Todo vive en `cierre_equipos`.
+  const cierre = $derived(ot?.cierre_equipos ?? null);
+  const ETIQUETA_RESULTADO: Record<string, string> = {
+    RESUELTO: 'Resuelto',
+    PARCIAL: 'Parcial',
+    SIN_SOLUCION: 'Sin solución',
+  };
+  const equiposCierre = $derived([
+    ...(cierre?.instalados ?? []).map((e) => ({ ...e, grupo: 'Instalado' })),
+    ...(cierre?.retirados ?? []).map((e) => ({ ...e, grupo: 'Retirado' })),
+    ...(cierre?.faltantes ?? []).map((e) => ({ ...e, grupo: 'No recuperado' })),
+  ] as (ordenesApi.EquipoCierre & { grupo: string })[]);
+  const hayCierreTecnico = $derived(!!cierre?.comentario || !!cierre?.reparacion || equiposCierre.length > 0);
 </script>
 
 {#if loading}
@@ -688,6 +703,60 @@
         <h3 class="font-semibold text-gray-700 mb-2">Galería de evidencia</h3>
         <p class="text-sm text-gray-400">Sin fotografías de evidencia registradas.</p>
       </div>
+    {/if}
+
+    <!-- Cierre del técnico: lo que escribió al cerrar -->
+    {#if hayCierreTecnico && cierre}
+      <section class="bg-white rounded-xl shadow p-6 space-y-4">
+        <h3 class="font-semibold text-gray-700">Cierre del técnico</h3>
+
+        {#if cierre.comentario}
+          <div>
+            <p class="text-gray-500 text-xs font-medium uppercase mb-0.5">Comentarios</p>
+            <p class="text-sm text-gray-800 whitespace-pre-line">{cierre.comentario}</p>
+          </div>
+        {/if}
+
+        {#if cierre.reparacion}
+          <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            <div>
+              <dt class="text-gray-500 text-xs font-medium uppercase mb-0.5">Falla encontrada</dt>
+              <dd class="text-gray-800 whitespace-pre-line">{cierre.reparacion.falla_reportada}</dd>
+            </div>
+            <div>
+              <dt class="text-gray-500 text-xs font-medium uppercase mb-0.5">Solución aplicada</dt>
+              <dd class="text-gray-800 whitespace-pre-line">{cierre.reparacion.solucion_aplicada}</dd>
+            </div>
+            <div>
+              <dt class="text-gray-500 text-xs font-medium uppercase mb-0.5">Resultado</dt>
+              <dd class="text-gray-800">{ETIQUETA_RESULTADO[cierre.reparacion.resultado] ?? cierre.reparacion.resultado}</dd>
+            </div>
+          </dl>
+        {/if}
+
+        {#if equiposCierre.length > 0}
+          <div>
+            <p class="text-gray-500 text-xs font-medium uppercase mb-2">Equipos</p>
+            <ul class="divide-y divide-gray-100 text-sm">
+              {#each equiposCierre as e, i (i)}
+                <li class="py-2">
+                  <p class="text-gray-900">
+                    <span class="font-mono">{e.numero_serie}</span>
+                    <span class="text-gray-500"> · {e.grupo}</span>
+                    {#if e.diagnostico}<span class="text-gray-500"> · {e.diagnostico}</span>{/if}
+                  </p>
+                  {#if e.observacion_estado_fisico}
+                    <p class="text-gray-600 text-xs mt-0.5">Estado físico: {e.observacion_estado_fisico}</p>
+                  {/if}
+                  {#if e.motivo}
+                    <p class="text-gray-600 text-xs mt-0.5">Motivo: {e.motivo}</p>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+      </section>
     {/if}
 
     <!-- Materiales utilizados -->

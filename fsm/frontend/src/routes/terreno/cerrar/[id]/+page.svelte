@@ -85,6 +85,11 @@
     { valor: 'PARCIAL', etiqueta: 'Parcial — hay servicio, con una limitación' },
     { valor: 'SIN_SOLUCION', etiqueta: 'Sin solución — no se pudo arreglar en esta visita' },
   ];
+  // Comentario libre para el jefe que aprueba. Mismo maximo que el backend
+  // (LARGO_MAX_COMENTARIO_CIERRE).
+  const LARGO_MAX_COMENTARIO = 500;
+  let comentario = $state('');
+
   let alertaReparaciones = $state<{
     activa: boolean;
     total_reparaciones_30_dias: number;
@@ -295,6 +300,7 @@
       // van al cliente, las retiradas siguen la transicion de su accion.
       equipos_instalados: limpiarEquipos(equipos.filter((e) => !esRetiro(e.accion))),
       equipos_retirados: limpiarEquipos(equipos.filter((e) => esRetiro(e.accion))),
+      comentario_tecnico: comentario.trim() || undefined,
     };
   }
 
@@ -817,6 +823,25 @@
                 <p class="text-sm">Potencia fuera del rango normal (-19 a -24 dBm)</p>
               </div>
             {/if}
+          </div>
+
+          <!-- Lo que el tecnico quiera dejarle dicho al jefe que aprueba. -->
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="comentario-cierre">
+              Comentarios del cierre (opcional)
+            </label>
+            <textarea
+              id="comentario-cierre"
+              bind:value={comentario}
+              rows="3"
+              maxlength={LARGO_MAX_COMENTARIO}
+              placeholder="Ej: el cliente pidió dejar el router en el living"
+              class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
+                     focus:outline-none focus:ring-2 focus:ring-blue-500"
+            ></textarea>
+            <p class="text-xs text-slate-400 mt-1 text-right">
+              {comentario.trim().length}/{LARGO_MAX_COMENTARIO}
+            </p>
           </div>
 
 

@@ -27,6 +27,7 @@ import {
   RESULTADO_REPARACION,
   type ResultadoReparacion,
 } from '../reparacion-cierre.constants.js';
+import { LARGO_MAX_COMENTARIO_CIERRE } from '../comentario-cierre.constants.js';
 
 /**
  * Recorta los espacios ANTES de validar el largo.
@@ -251,4 +252,14 @@ export class CerrarOtDto {
   @IsOptional()
   @IsIn(Object.values(RESULTADO_REPARACION))
   resultado_reparacion?: ResultadoReparacion;
+
+  /**
+   * Comentario libre del tecnico para el jefe que aprueba. Opcional y en todo
+   * tipo de OT. No viaja a G1/G8 (ver comentario-cierre.constants.ts).
+   */
+  @IsOptional()
+  @IsString()
+  @recortado()
+  @MaxLength(LARGO_MAX_COMENTARIO_CIERRE)
+  comentario_tecnico?: string;
 }

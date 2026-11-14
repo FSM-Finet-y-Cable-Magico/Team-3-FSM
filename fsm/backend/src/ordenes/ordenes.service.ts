@@ -934,7 +934,13 @@ export class OrdenesService {
           // equipos habria dejado la columna en null y los tres datos se
           // habrian perdido entre el cierre y la aprobacion, que es cuando se
           // leen para avisarle a G1.
-          cierre_equipos: cierreGuardado(equipos_instalados, equipos_retirados, reparacion, equipos_faltantes),
+          cierre_equipos: cierreGuardado(
+            equipos_instalados,
+            equipos_retirados,
+            reparacion,
+            equipos_faltantes,
+            dto.comentario_tecnico?.trim() || null,
+          ),
         },
       });
 

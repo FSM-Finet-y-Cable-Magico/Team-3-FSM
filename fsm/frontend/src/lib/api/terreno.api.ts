@@ -69,6 +69,8 @@ export interface CerrarOTDto {
   equipos_instalados?: EquipoOt[];
   /** G1 aplica la transicion segun `accion` (bodega, revision o baja). */
   equipos_retirados?: EquipoOt[];
+  /** Comentario libre para el jefe que aprueba. Interno: no viaja a G1/G8. */
+  comentario_tecnico?: string;
 }
 
 /** Delega en el envoltorio compartido, que ademas cierra la sesion en un 401. */
