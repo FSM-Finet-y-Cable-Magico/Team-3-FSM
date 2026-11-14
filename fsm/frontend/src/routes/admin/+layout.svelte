@@ -145,7 +145,7 @@
         </svg>
       </button>
       <a href="/admin/dashboard" class="flex items-center">
-        <img src="/logo_finet.png" alt="FiNet" class="h-6 w-auto" />
+        <img src="/logo_finet.png?v=2" alt="FiNet" class="h-6 w-auto" />
       </a>
     </header>
 
@@ -173,7 +173,7 @@
           onclick={() => (menuMovil = false)}
           class="flex items-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >
-          <img src="/logo_finet.png" alt="FiNet" class="h-7 w-auto" />
+          <img src="/logo_finet.png?v=2" alt="FiNet" class="h-7 w-auto" />
         </a>
       </div>
 

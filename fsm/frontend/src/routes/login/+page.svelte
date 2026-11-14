@@ -55,7 +55,7 @@
     <!-- Header con logo real -->
     <div class="text-center mb-8">
       <img
-        src="/logo_finet.png"
+        src="/logo_finet.png?v=2"
         alt="FiNet Limitada"
         class="h-20 w-auto mx-auto mb-5"
       />
