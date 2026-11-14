@@ -49,9 +49,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // lectura por clave primaria por peticion.
     const cuenta = await this.prisma.usuario.findUnique({
       where: { id_usuario: payload.userId },
-      select: { activo: true },
+      select: { activo: true, fecha_eliminacion: true },
     });
-    if (!cuenta?.activo) throw new UnauthorizedException('La cuenta está desactivada');
+    // Una cuenta eliminada (borrado logico de la base global) tampoco sirve.
+    if (!cuenta?.activo || cuenta.fecha_eliminacion) throw new UnauthorizedException('La cuenta está desactivada');
 
     const usuario = {
       userId: payload.userId,

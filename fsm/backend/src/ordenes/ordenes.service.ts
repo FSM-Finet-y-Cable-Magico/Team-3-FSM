@@ -188,7 +188,7 @@ export class OrdenesService {
     let estado = 'PENDIENTE';
     if (dto.id_tecnico) {
       const tecnico = await this.prisma.usuario.findFirst({
-        where: { id_usuario: dto.id_tecnico, id_empresa, activo: true },
+        where: { id_usuario: dto.id_tecnico, id_empresa, activo: true, fecha_eliminacion: null },
       });
       if (!tecnico) throw new NotFoundException('Técnico no encontrado');
       estado = 'ASIGNADA';
@@ -441,7 +441,7 @@ export class OrdenesService {
     }
 
     const tecnico = await this.prisma.usuario.findFirst({
-      where: { id_usuario: dto.id_tecnico, id_empresa, activo: true },
+      where: { id_usuario: dto.id_tecnico, id_empresa, activo: true, fecha_eliminacion: null },
     });
     if (!tecnico) throw new NotFoundException('Técnico no encontrado');
 
@@ -603,6 +603,7 @@ export class OrdenesService {
       where: {
         id_empresa,
         activo: true,
+        fecha_eliminacion: null,
         // Acepta 'TECNICO' y 'Terreno': la base compartida nombra los roles
         // distinto. Ver src/auth/roles.constants.ts
         roles: { some: { rol: { nombre_rol: { in: nombresEnBase(ROL.TECNICO) } } } },
@@ -644,7 +645,7 @@ export class OrdenesService {
     }
 
     const tecnico = await this.prisma.usuario.findFirst({
-      where: { id_usuario: dto.id_tecnico, id_empresa, activo: true },
+      where: { id_usuario: dto.id_tecnico, id_empresa, activo: true, fecha_eliminacion: null },
     });
     if (!tecnico) throw new NotFoundException('Técnico no encontrado');
 

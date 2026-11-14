@@ -1049,6 +1049,39 @@ test('CU-43: el ADMIN desactiva una cuenta, ve sus OT pendientes y la reactiva',
   expect(cambios).toEqual([false, true]);
 });
 
+// La tabla `usuario` de la base global tiene RUT y email; los otros grupos
+// buscan al tecnico por RUT. La zona del formulario nunca se guardaba.
+test('crear usuario: acepta tecnico.prueba1 y manda RUT y email, sin zona', async ({ page }) => {
+  await preparar(page);
+  const creados: Record<string, unknown>[] = [];
+  await page.route('http://127.0.0.1:3000/api/auth/usuarios', route => {
+    if (route.request().method() === 'POST') {
+      creados.push(route.request().postDataJSON());
+      return route.fulfill({ status: 201, json: { id_usuario: 20 } });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await login(page, 'admin'); await page.goto('/admin/usuarios');
+
+  await page.getByRole('button', { name: 'Nuevo Usuario' }).click();
+  // InputField no asocia su label al input: se ubican por name.
+  const campo = (name: string) => page.getByRole('dialog').locator(`input[name="${name}"]`);
+  await campo('nombre_completo').fill('Tecnico de Prueba Uno');
+  await campo('nombre_usuario').fill('tecnico.prueba1');
+  await expect(page.getByText('Formato válido')).toBeVisible();
+  await campo('password_temporal').fill('Temporal.2026');
+  await campo('rut').fill('12.345.678-5');
+  await campo('email').fill('tecnico.prueba1@finet.cl');
+  await expect(campo('zona')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Crear usuario' }).click();
+
+  await expect(page.getByText('Usuario creado correctamente')).toBeVisible();
+  expect(creados).toEqual([{
+    nombre_completo: 'Tecnico de Prueba Uno', nombre_usuario: 'tecnico.prueba1', password_temporal: 'Temporal.2026',
+    rol: 'TECNICO', id_empresa: 1, rut: '12.345.678-5', email: 'tecnico.prueba1@finet.cl',
+  }]);
+});
+
 // CU-14: historial de microdesconexiones de una ONT.
 const historialOnt = (interrupciones: unknown[]) => ({
   numero_serie: 'ZTEG1234', nombre_cliente_ext: 'Ana Soto',

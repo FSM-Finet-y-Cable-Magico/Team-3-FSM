@@ -60,6 +60,7 @@ export class DashboardService {
         where: {
           id_empresa,
           activo: true,
+          fecha_eliminacion: null,
           // Acepta 'TECNICO' y 'Terreno': la base compartida nombra los roles
           // distinto. Ver src/auth/roles.constants.ts
           roles: { some: { rol: { nombre_rol: { in: nombresEnBase(ROL.TECNICO) } } } },

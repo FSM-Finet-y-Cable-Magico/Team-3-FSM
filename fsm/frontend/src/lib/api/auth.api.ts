@@ -14,8 +14,9 @@ export interface CrearUsuarioDto {
   password_temporal: string;
   rol: string;
   id_empresa: number;
-  zona?: string;
-  empresa_contratista?: string;
+  /** Opcional. Los otros grupos identifican al tecnico por RUT. */
+  rut?: string;
+  email?: string;
 }
 
 export async function login(nombre_usuario: string, password: string): Promise<LoginResponse> {

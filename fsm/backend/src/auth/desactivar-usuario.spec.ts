@@ -98,7 +98,8 @@ describe('CU-43: desactivar y reactivar una cuenta', () => {
       { id_usuario: 14, id_empresa: 1, nombre_completo: 'Pedro', nombre_usuario: 'p', email: null, fecha_creacion: new Date(), activo: false, roles: [] },
     ]);
     const lista = await service.listarUsuarios(1);
-    expect(findMany.mock.calls[0][0].where).toEqual({ id_empresa: 1 });
+    // Las desactivadas si; las eliminadas (borrado logico de la global) no.
+    expect(findMany.mock.calls[0][0].where).toEqual({ id_empresa: 1, fecha_eliminacion: null });
     expect(lista[0]).toMatchObject({ id_usuario: 14, activo: false });
   });
 
@@ -117,7 +118,7 @@ describe('CU-43: un token de una cuenta desactivada deja de servir', () => {
 
   it('una cuenta activa pasa', async () => {
     await expect(strategy.validate({ headers: {} }, payload)).resolves.toMatchObject({ userId: 14 });
-    expect(findUnique).toHaveBeenCalledWith({ where: { id_usuario: 14 }, select: { activo: true } });
+    expect(findUnique).toHaveBeenCalledWith({ where: { id_usuario: 14 }, select: { activo: true, fecha_eliminacion: true } });
   });
 
   it.each([{ activo: false }, null])('una cuenta desactivada o borrada es 401 (%p)', async (fila) => {
