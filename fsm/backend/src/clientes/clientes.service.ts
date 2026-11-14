@@ -338,6 +338,12 @@ export class ClientesService {
    * Catalogo de planes, en solo lectura (acta con FiNet). El alta y la edicion
    * quedan pendientes de B-01: de quien son `plan` y `contrato`. El precio es
    * Decimal y Prisma lo entrega como string: se normaliza a numero aca.
+   *
+   * El catalogo no es nuestro: contra la base compartida lo carga el CRM de G8
+   * (ver estado-activo.util.ts), igual que los contratos. `contratos_activos`
+   * no es un campo del catalogo sino un conteo que hace el FSM sobre esos
+   * contratos: le dice al jefe tecnico cuanta gente hay en cada plan, no solo
+   * que el plan existe.
    */
   async listarPlanes(id_empresa: number) {
     const planes = await this.prisma.plan.findMany({
@@ -354,8 +360,20 @@ export class ClientesService {
         velocidad_mbps: true,
         precio_mensual: true,
         descripcion: true,
+        _count: {
+          select: {
+            // "Activo" en la base global, "ACTIVO" en la nuestra: ver
+            // estado-activo.util.ts. El contrato lleva su propia empresa, asi
+            // que se acota igual que el plan y no se cuentan cruzados.
+            contratos: { where: { estado: FILTRO_ESTADO_ACTIVO, id_empresa } },
+          },
+        },
       },
     });
-    return planes.map((p) => ({ ...p, precio_mensual: Number(p.precio_mensual) }));
+    return planes.map(({ _count, ...p }) => ({
+      ...p,
+      precio_mensual: Number(p.precio_mensual),
+      contratos_activos: _count?.contratos ?? 0,
+    }));
   }
 }
