@@ -153,7 +153,7 @@
     <div class="flex-1 min-w-[180px]">
       <!-- RutInput ya rotula su propio campo: un label aca lo duplicaba en pantalla. -->
       {#key rutInputKey}
-        <RutInput onchange={handleRutChange} />
+        <RutInput onchange={handleRutChange} compacto />
       {/key}
     </div>
     <div class="flex-1 min-w-[180px]">
