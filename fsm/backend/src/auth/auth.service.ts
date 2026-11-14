@@ -15,6 +15,7 @@ import { CambiarPasswordDto } from './dto/cambiar-password.dto.js';
 import { CrearUsuarioDto } from './dto/crear-usuario.dto.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 import { codigoDeRol, nombresEnBase, type CodigoRol } from './roles.constants.js';
+import { limpiarRut, validarRut, variantesRut } from '../common/utils/rut.util.js';
 
 @Injectable()
 export class AuthService {
@@ -32,7 +33,9 @@ export class AuthService {
       omit: { password_hash: false },
     });
 
-    if (!usuario) {
+    // Una cuenta con fecha de eliminacion (borrado logico de la base global)
+    // responde igual que una que no existe: no se revela que estuvo.
+    if (!usuario || usuario.fecha_eliminacion) {
       await this.registrarIntentoFallido(null, ip, dto.nombre_usuario);
       throw new UnauthorizedException('Usuario o contraseña incorrectos');
     }
@@ -85,7 +88,8 @@ export class AuthService {
       token,
       rol: nombreRol,
       id_empresa: usuario.id_empresa,
-      cambiar_password: usuario.es_password_temporal,
+      // Cualquiera de las dos marcas: la nuestra o la de los otros grupos.
+      cambiar_password: usuario.es_password_temporal || usuario.debe_cambiar_password === true,
     };
   }
 
@@ -101,6 +105,7 @@ export class AuthService {
       data: {
         password_hash: passwordHash,
         es_password_temporal: false,
+        debe_cambiar_password: false,
       },
     });
 
@@ -124,6 +129,34 @@ export class AuthService {
       throw new ConflictException('El nombre de usuario ya está registrado. Elige uno diferente');
     }
 
+    // RUT opcional, como en las cuentas que creo el administrador de la base.
+    // Se guarda sin puntos ni guion (§11 del Documento 0) y no se repite entre
+    // cuentas vigentes, en ninguna de sus grafias.
+    const rutTexto = dto.rut?.trim();
+    let rut: string | null = null;
+    if (rutTexto) {
+      if (!validarRut(rutTexto)) throw new BadRequestException('RUT inválido. Verifique el número');
+      rut = limpiarRut(rutTexto);
+      const conEseRut = await this.prisma.usuario.findFirst({
+        where: { rut: { in: variantesRut(rutTexto) }, fecha_eliminacion: null },
+        select: { id_usuario: true },
+      });
+      if (conEseRut) throw new ConflictException('Ese RUT ya tiene una cuenta');
+    }
+
+    // `dto.rol` es el codigo interno (ADMIN, TECNICO...). En la base
+    // compartida la fila se llama distinto, asi que se buscan todos los
+    // nombres equivalentes. findFirst y no findUnique: `in` devuelve lista.
+    // Se busca ANTES de crear: si el rol no existe en esta base (JEFE_TECNICO
+    // y COORDINADOR en la global), la cuenta quedaba creada sin rol y la
+    // persona no podia hacer nada.
+    const rol = await this.prisma.rol.findFirst({
+      where: { nombre_rol: { in: nombresEnBase(dto.rol as CodigoRol) } },
+    });
+    if (!rol) {
+      throw new BadRequestException(`El rol ${dto.rol} no existe en esta base. Elija otro rol.`);
+    }
+
     const passwordHash = await bcrypt.hash(dto.password_temporal, 12);
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -131,28 +164,23 @@ export class AuthService {
         data: {
           nombre_completo: dto.nombre_completo,
           nombre_usuario: dto.nombre_usuario,
+          email: dto.email?.trim().toLowerCase() || null,
+          rut,
           password_hash: passwordHash,
           activo: true,
+          // Las dos marcas: la nuestra y la que leen los otros grupos.
           es_password_temporal: true,
+          debe_cambiar_password: true,
           empresa: { connect: { id_empresa: dto.id_empresa } },
         },
       });
 
-      // `dto.rol` es el codigo interno (ADMIN, TECNICO...). En la base
-      // compartida la fila se llama distinto, asi que se buscan todos los
-      // nombres equivalentes. findFirst y no findUnique: `in` devuelve lista.
-      const rol = await tx.rol.findFirst({
-        where: { nombre_rol: { in: nombresEnBase(dto.rol as CodigoRol) } },
+      await tx.usuario_rol.create({
+        data: {
+          usuario: { connect: { id_usuario: nuevoUsuario.id_usuario } },
+          rol: { connect: { id_rol: rol.id_rol } },
+        },
       });
-
-      if (rol) {
-        await tx.usuario_rol.create({
-          data: {
-            usuario: { connect: { id_usuario: nuevoUsuario.id_usuario } },
-            rol: { connect: { id_rol: rol.id_rol } },
-          },
-        });
-      }
 
       await tx.log_auditoria.create({
         data: {
@@ -172,8 +200,9 @@ export class AuthService {
 
   async listarUsuarios(id_empresa: number) {
     // CU-43: tambien las desactivadas. Si no aparecen, no hay como reactivarlas.
+    // Las eliminadas (borrado logico de la base global) no: ya no existen.
     const usuarios = await this.prisma.usuario.findMany({
-      where: { id_empresa },
+      where: { id_empresa, fecha_eliminacion: null },
       include: {
         roles: {
           include: {

@@ -58,6 +58,13 @@ model usuario {
   activo               Boolean  @default(true)
   fecha_creacion       DateTime @default(now())
   es_password_temporal Boolean  @default(true)
+  // Columnas que la base global ya tenia (medido el 14-11). `rut` sin puntos
+  // ni guion; `debe_cambiar_password` es nuestro `es_password_temporal` con el
+  // nombre que usan los otros grupos, y se escriben los dos; con
+  // `fecha_eliminacion` (borrado logico) la cuenta no entra ni aparece.
+  rut                   String?   @db.VarChar(12)
+  debe_cambiar_password Boolean?  @default(false)
+  fecha_eliminacion     DateTime? @db.Timestamptz(6)
 
   empresa              empresa?                  @relation(fields: [id_empresa], references: [id_empresa])
   roles                usuario_rol[]
