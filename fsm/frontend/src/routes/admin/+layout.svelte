@@ -167,7 +167,7 @@
              md:translate-x-0
              {menuMovil ? 'translate-x-0' : '-translate-x-full'}"
     >
-      <div class="h-16 flex items-center px-4 shrink-0">
+      <div class="h-16 flex items-center justify-center px-4 shrink-0">
         <a
           href="/admin/dashboard"
           onclick={() => (menuMovil = false)}

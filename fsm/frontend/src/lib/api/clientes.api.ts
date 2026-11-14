@@ -71,6 +71,9 @@ export interface PlanResumen {
   velocidad_mbps: number | null;
   precio_mensual: number;
   descripcion?: string | null;
+  /** Contratos vigentes de la empresa en este plan. No viene del catalogo:
+   *  lo cuenta el FSM sobre los contratos, que tambien carga el CRM de G8. */
+  contratos_activos: number;
 }
 
 interface ClientesPaginados {
