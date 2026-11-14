@@ -131,21 +131,13 @@
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
   <div>
     <h2 class="text-2xl font-bold text-slate-800">Clientes</h2>
-    <p class="text-slate-500 text-sm mt-0.5">Gestión de clientes y fichas</p>
+    <!-- Los clientes los administra el CRM de G8: el FSM solo los consulta. -->
+    <p class="text-slate-500 text-sm mt-0.5">Clientes activos y suspendidos del CRM</p>
   </div>
   {#if rol !== 'TECNICO'}
     <div class="flex items-center gap-3">
     <!-- CU-07 -->
     <a href="/admin/clientes/direccion" class="btn btn-secundario">Buscar por dirección</a>
-    <a
-      href="/admin/clientes/nuevo"
-      class="btn btn-primario"
-    >
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-      </svg>
-      Nuevo Cliente
-    </a>
     </div>
   {/if}
 </div>

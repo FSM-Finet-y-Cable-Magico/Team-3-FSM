@@ -3,7 +3,6 @@ import { FILTRO_ESTADO_ACTIVO } from '../common/utils/estado-activo.util.js';
 import {
   Injectable,
   BadRequestException,
-  ConflictException,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client.js';
@@ -11,19 +10,11 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { ReparacionesRecurrentesService } from '../ordenes/reparaciones-recurrentes.service.js';
 import {
   filtroRut,
-  limpiarRut,
   validarRut,
   variantesRut,
 } from '../common/utils/rut.util.js';
-import { RegistrarClienteDto } from './dto/registrar-cliente.dto.js';
-import { EditarClienteDto } from './dto/editar-cliente.dto.js';
-import { MarcarConflictivoDto } from './dto/marcar-conflictivo.dto.js';
-import { MOTIVOS_BAJA, type MotivoBaja } from './dto/baja-servicio.dto.js';
 import {
   ADVERTENCIA_DIRECCION,
-  MENSAJE_JUSTIFICACION_RIESGO,
-  MIN_JUSTIFICACION_RIESGO,
-  NIVEL_RIESGO,
   direccionConAntecedentes,
   mensajeVetado,
   nivelVigente,
@@ -43,6 +34,19 @@ export interface FiltrosClientes {
 }
 const MAX_CONTRATOS_ACTIVOS = 50;
 
+/**
+ * El listado de clientes muestra la cartera vigente del CRM: activos y
+ * suspendidos por deuda. Las bajas quedan fuera, pero su ficha se sigue
+ * abriendo y la busqueda por direccion (CU-07) las muestra como anteriores.
+ *
+ * Insensible a mayusculas porque el CRM de G8 guarda 'Baja' y el FSM viejo
+ * guardaba 'BAJA'. `estado` es NOT NULL en el esquema, asi que el NOT no deja
+ * fuera a nadie por no tener estado.
+ */
+export const CLIENTE_SIN_BAJA = {
+  NOT: { estado: { equals: 'baja', mode: 'insensitive' } },
+} satisfies Prisma.clienteWhereInput;
+
 /** Texto de la excepcion 2 de CU-07. */
 export const MENSAJE_SIN_CLIENTES_EN_DIRECCION =
   'No se encontraron clientes en esa dirección. Verifique la información ingresada.';
@@ -51,81 +55,6 @@ export const MENSAJE_SIN_CLIENTES_EN_DIRECCION =
 export class ClientesService {
   constructor(private reparaciones: ReparacionesRecurrentesService,
     private prisma: PrismaService) {}
-
-  async registrarCliente(dto: RegistrarClienteDto, userId: number, id_empresa: number) {
-    if (!validarRut(dto.rut)) {
-      throw new BadRequestException('RUT inválido. Verifique el número');
-    }
-
-    // El @unique de la columna no alcanza: para la base, "12345678-5" y
-    // "123456785" son dos valores distintos, asi que deja entrar dos veces a
-    // la misma persona. El duplicado se busca en todas las grafias.
-    const existente = await this.prisma.cliente.findFirst({
-      where: { rut: { in: variantesRut(dto.rut) } },
-      select: { id_cliente: true },
-    });
-
-    if (existente) {
-      throw new ConflictException('Este RUT ya está registrado');
-    }
-
-    const resultado = await this.prisma.$transaction(async (tx) => {
-      const cliente = await tx.cliente.create({
-        data: {
-          id_empresa,
-          // Canonico, sin puntos ni guion: lo pide el §11 del Documento 0
-          // ("formatear solo en UI") y es lo que ya guarda G2. Hasta ahora se
-          // guardaba `dto.rut` crudo, asi que por API entraba cualquier grafia
-          // y el @unique de la columna no servia de nada: "12345678-5" y
-          // "123456785" son textos distintos para Postgres.
-          rut: limpiarRut(dto.rut),
-          nombre_completo: dto.nombre_completo,
-          email: dto.email,
-          telefono: dto.telefono,
-          estado: dto.estado ?? 'PENDIENTE',
-          es_conflictivo: false,
-          direcciones: {
-            create: {
-              direccion_completa: dto.direccion_completa,
-              comuna: dto.comuna,
-              ciudad: dto.ciudad,
-              es_principal: true,
-            },
-          },
-        },
-        include: {
-          direcciones: true,
-        },
-      });
-
-      if (dto.id_plan) {
-        await tx.contrato.create({
-          data: {
-            id_cliente: cliente.id_cliente,
-            id_plan: dto.id_plan,
-            id_empresa,
-            fecha_inicio: new Date(),
-            dia_vencimiento: 1,
-            estado: 'ACTIVO',
-          },
-        });
-      }
-
-      await tx.log_auditoria.create({
-        data: {
-          id_usuario: userId,
-          accion: 'REGISTRAR_CLIENTE',
-          entidad_afectada: 'cliente',
-          id_entidad_afectada: cliente.id_cliente,
-          fecha_hora: new Date(),
-        },
-      });
-
-      return cliente;
-    });
-
-    return resultado;
-  }
 
   async consultarPorRut(rut: string, id_empresa: number) {
     if (!validarRut(rut)) {
@@ -214,195 +143,6 @@ export class ClientesService {
     };
   }
 
-  async editarFicha(
-    id_cliente: number,
-    dto: EditarClienteDto,
-    userId: number,
-    id_empresa: number,
-  ) {
-    const cliente = await this.prisma.cliente.findFirst({
-      where: { id_cliente, id_empresa },
-      include: {
-        direcciones: {
-          where: { es_principal: true },
-        },
-      },
-    });
-
-    if (!cliente) {
-      throw new NotFoundException('Cliente no encontrado');
-    }
-
-    const valor_anterior = {
-      nombre_completo: cliente.nombre_completo,
-      email: cliente.email,
-      telefono: cliente.telefono,
-      estado: cliente.estado,
-      direccion: cliente.direcciones[0]
-        ? {
-            direccion_completa: cliente.direcciones[0].direccion_completa,
-            comuna: cliente.direcciones[0].comuna,
-            ciudad: cliente.direcciones[0].ciudad,
-          }
-        : null,
-    };
-
-    const resultado = await this.prisma.$transaction(async (tx) => {
-      await tx.cliente.update({
-        where: { id_cliente },
-        data: {
-          ...(dto.nombre_completo !== undefined && { nombre_completo: dto.nombre_completo }),
-          ...(dto.email !== undefined && { email: dto.email }),
-          ...(dto.telefono !== undefined && { telefono: dto.telefono }),
-          ...(dto.estado !== undefined && { estado: dto.estado }),
-        },
-      });
-
-      if (dto.direccion_completa || dto.comuna || dto.ciudad) {
-        const dirPrincipal = cliente.direcciones[0];
-        if (dirPrincipal) {
-          await tx.direccion_servicio.update({
-            where: { id_direccion: dirPrincipal.id_direccion },
-            data: {
-              ...(dto.direccion_completa !== undefined && { direccion_completa: dto.direccion_completa }),
-              ...(dto.comuna !== undefined && { comuna: dto.comuna }),
-              ...(dto.ciudad !== undefined && { ciudad: dto.ciudad }),
-            },
-          });
-        }
-      }
-
-      await tx.log_auditoria.create({
-        data: {
-          id_usuario: userId,
-          accion: 'EDITAR_CLIENTE',
-          entidad_afectada: 'cliente',
-          id_entidad_afectada: id_cliente,
-          valor_anterior: JSON.parse(JSON.stringify(valor_anterior)),
-          valor_nuevo: JSON.parse(JSON.stringify(dto)),
-          fecha_hora: new Date(),
-        },
-      });
-
-      return tx.cliente.findUnique({
-        where: { id_cliente },
-        include: {
-          direcciones: { where: { es_principal: true } },
-        },
-      });
-    });
-
-    return resultado;
-  }
-
-  /** CU-25: lo que muestra el formulario de baja antes de confirmar. */
-  async resumenBaja(id_cliente: number, id_empresa: number) {
-    const cliente = await this.prisma.cliente.findFirst({
-      where: { id_cliente, id_empresa },
-      include: { direcciones: { where: { es_principal: true }, take: 1 } },
-    });
-    if (!cliente) throw new NotFoundException('Cliente no encontrado');
-    const [onts, puertos] = await Promise.all([
-      this.prisma.registro_ont.findMany({ where: { id_cliente, id_empresa }, select: { numero_serie: true } }),
-      this.prisma.puerto_nap.findMany({
-        where: { id_cliente_asociado: id_cliente, estado: 'OCUPADO', caja_nap: { id_empresa } },
-        select: { id_puerto: true, numero_puerto: true, id_caja_nap: true, caja_nap: { select: { identificador_unico: true } } },
-      }),
-    ]);
-    const dir = cliente.direcciones[0];
-    return {
-      id_cliente,
-      nombre_completo: cliente.nombre_completo,
-      rut: cliente.rut,
-      estado: cliente.estado,
-      direccion: dir ? textoDireccion(dir) : null,
-      onts: onts.map((o) => o.numero_serie),
-      puertos: puertos.map((p) => ({
-        id_puerto: p.id_puerto,
-        numero_puerto: p.numero_puerto,
-        id_caja_nap: p.id_caja_nap,
-        caja: p.caja_nap?.identificador_unico ?? null,
-      })),
-      motivos: [...MOTIVOS_BAJA],
-    };
-  }
-
-  /**
-   * CU-25: baja de servicio. El cliente pasa a BAJA y se generan dos OT en
-   * PENDIENTE para el panel del jefe tecnico:
-   *  - OT-BAJA-PUERTO: desconectar el puerto NAP. Lleva la caja; al cerrarla,
-   *    el puerto del cliente queda LIBRE (OrdenesService.cerrarOT).
-   *  - OT-BAJA-EQUIPO: retirar la ONT. Al cerrarla el tecnico la declara
-   *    retirada para diagnostico, que G1 lleva a "En revision".
-   * Si el cliente esta ausente, esa OT sigue el flujo normal de cliente ausente
-   * (excepcion 2).
-   */
-  async darDeBaja(
-    id_cliente: number,
-    dto: { motivo: MotivoBaja; confirma_sin_deuda: boolean; observaciones?: string },
-    actor: { userId: number; id_empresa: number },
-  ) {
-    if (dto.confirma_sin_deuda !== true) {
-      throw new BadRequestException('Confirma que el cliente no tiene deuda pendiente antes de registrar la baja');
-    }
-    const resumen = await this.resumenBaja(id_cliente, actor.id_empresa);
-    if (resumen.estado === 'BAJA') throw new BadRequestException('El cliente ya está dado de baja');
-    const cliente = await this.prisma.cliente.findFirst({
-      where: { id_cliente, id_empresa: actor.id_empresa },
-      include: { direcciones: { where: { es_principal: true }, take: 1 } },
-    });
-    const id_direccion = cliente?.direcciones[0]?.id_direccion ?? null;
-    const puerto = resumen.puertos[0];
-    const extra = dto.observaciones?.trim() ? ` Observaciones: ${dto.observaciones.trim()}` : '';
-
-    const creadas = await this.prisma.$transaction(async (tx) => {
-      await tx.cliente.update({ where: { id_cliente }, data: { estado: 'BAJA' } });
-
-      const base = {
-        id_empresa: actor.id_empresa,
-        id_cliente,
-        id_direccion,
-        tipo_ot: 'BAJA',
-        prioridad: 'MEDIA',
-        estado: 'PENDIENTE',
-        fecha_creacion: new Date(),
-      };
-      const otPuerto = await tx.orden_trabajo.create({
-        data: {
-          ...base,
-          ...(puerto?.id_caja_nap && { id_caja_nap: puerto.id_caja_nap }),
-          observaciones: puerto
-            ? `OT-BAJA-PUERTO: desconectar el puerto ${puerto.numero_puerto} de la caja ${puerto.caja ?? puerto.id_caja_nap}. Motivo: ${dto.motivo}.${extra}`
-            : `OT-BAJA-PUERTO: desconectar el puerto NAP del cliente (sin puerto registrado). Motivo: ${dto.motivo}.${extra}`,
-        },
-      });
-      const otEquipo = await tx.orden_trabajo.create({
-        data: {
-          ...base,
-          observaciones: `OT-BAJA-EQUIPO: retirar la ONT ${resumen.onts.join(', ') || '(sin serie registrada)'} y declararla retirada para diagnostico. Motivo: ${dto.motivo}.${extra}`,
-        },
-      });
-      for (const ot of [otPuerto, otEquipo]) {
-        await tx.historial_ot.create({
-          data: { id_ot: ot.id_ot, id_usuario: actor.userId, estado_anterior: null, estado_nuevo: 'PENDIENTE', observaciones: `Baja de servicio: ${dto.motivo}` },
-        });
-      }
-      await tx.log_auditoria.create({
-        data: {
-          id_usuario: actor.userId,
-          accion: 'BAJA_SERVICIO',
-          entidad_afectada: 'cliente',
-          id_entidad_afectada: id_cliente,
-          valor_anterior: { estado: resumen.estado },
-          valor_nuevo: { estado: 'BAJA', motivo: dto.motivo, ot_baja_puerto: otPuerto.id_ot, ot_baja_equipo: otEquipo.id_ot },
-        },
-      });
-      return { ot_baja_puerto: otPuerto.id_ot, ot_baja_equipo: otEquipo.id_ot };
-    });
-
-    return { id_cliente, estado: 'BAJA', ...creadas };
-  }
-
   /**
    * CU-07: todos los clientes asociados a una direccion, actuales y anteriores
    * (una direccion que no es la principal es una anterior). Se elige uno y se
@@ -456,19 +196,6 @@ export class ClientesService {
   }
 
   /**
-   * "Marcar conflictivo" de CU-37 es, con el semaforo, pasar a ROJO. Se deja
-   * el endpoint viejo apuntando aca para no romper a quien lo use.
-   */
-  async marcarConflictivo(
-    id_cliente: number,
-    dto: MarcarConflictivoDto,
-    userId: number,
-    id_empresa: number,
-  ) {
-    return this.cambiarNivelRiesgo(id_cliente, { nivel: NIVEL_RIESGO.ROJO, motivo: dto.motivo }, userId, id_empresa);
-  }
-
-  /**
    * RF-53: zona del servicio del cliente. El catalogo de zonas es del Grupo 2
    * (acta, D-02) y todavia no se expone; mientras tanto la zona sale de lo que
    * G3 ya sabe, y se dice de donde:
@@ -498,71 +225,6 @@ export class ClientesService {
       select: { nivel: true },
     });
     return nivelVigente(filas);
-  }
-
-  /**
-   * MOD RF-32: semaforo de riesgo. AMARILLO y ROJO exigen justificacion de 20
-   * caracteres; VERDE no. Cada cambio es una fila nueva en lista_negra (D3), y
-   * `es_conflictivo` queda igual a (ROJO) para que lo que ya lo lee --el
-   * bloqueo de instalacion, la tarjeta de terreno-- siga funcionando.
-   *
-   * ROJO guarda la direccion principal del cliente: es lo que usa la lista
-   * roja por direccion de CU-35.
-   */
-  async cambiarNivelRiesgo(
-    id_cliente: number,
-    dto: { nivel: NivelRiesgo; motivo?: string },
-    userId: number,
-    id_empresa: number,
-  ) {
-    const cliente = await this.prisma.cliente.findFirst({
-      where: { id_cliente, id_empresa },
-      include: { direcciones: { where: { es_principal: true }, take: 1 } },
-    });
-    if (!cliente) throw new NotFoundException('Cliente no encontrado');
-
-    const motivo = dto.motivo?.trim() ?? '';
-    if (dto.nivel !== NIVEL_RIESGO.VERDE && motivo.length < MIN_JUSTIFICACION_RIESGO) {
-      throw new BadRequestException(MENSAJE_JUSTIFICACION_RIESGO);
-    }
-    const anterior = await this.nivelDe(id_cliente);
-    if (anterior === dto.nivel) {
-      throw new BadRequestException(`El cliente ya está en nivel ${dto.nivel}`);
-    }
-
-    const direccion = cliente.direcciones[0];
-    await this.prisma.$transaction(async (tx) => {
-      await tx.lista_negra.create({
-        data: {
-          id_cliente,
-          rut_vetado: cliente.rut ?? '',
-          nivel: dto.nivel,
-          motivo: motivo || 'Vuelve a VERDE',
-          direccion_vetada: dto.nivel === NIVEL_RIESGO.ROJO && direccion ? textoDireccion(direccion) : null,
-          fecha_registro: new Date(),
-          id_usuario_registro: userId,
-        },
-      });
-      await tx.cliente.update({
-        where: { id_cliente },
-        data: {
-          es_conflictivo: dto.nivel === NIVEL_RIESGO.ROJO,
-          obs_conflictivo: dto.nivel === NIVEL_RIESGO.VERDE ? null : motivo,
-        },
-      });
-      await tx.log_auditoria.create({
-        data: {
-          id_usuario: userId,
-          accion: 'CAMBIAR_NIVEL_RIESGO',
-          entidad_afectada: 'cliente',
-          id_entidad_afectada: id_cliente,
-          valor_anterior: { nivel: anterior },
-          valor_nuevo: { nivel: dto.nivel, ...(motivo && { motivo }) },
-        },
-      });
-    });
-
-    return { id_cliente, nivel_riesgo: dto.nivel, motivo: dto.nivel === NIVEL_RIESGO.VERDE ? null : motivo };
   }
 
   /**
@@ -633,6 +295,8 @@ export class ClientesService {
     // una empresa vea clientes de la otra, y ningun filtro puede relajarlo.
     const where: Prisma.clienteWhereInput = {
       id_empresa,
+      // En AND y no como OR suelto: el filtro de zona ya usa la clave OR.
+      AND: [CLIENTE_SIN_BAJA],
       ...(nombre && { nombre_completo: { contains: nombre, mode: 'insensitive' } }),
       // La columna guarda dos grafias a la vez --mitad "12345678-5" y mitad
       // "123456785"-- porque los cuatro grupos escriben en ella. filtroRut
