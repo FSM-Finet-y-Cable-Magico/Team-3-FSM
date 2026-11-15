@@ -214,7 +214,7 @@
               {clienteEncontrado.cliente.estado}
             </span>
           </div>
-          {#if clienteEncontrado.cliente.es_conflictivo}
+          {#if vetado}
             <span class="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700">CONFLICTIVO</span>
           {/if}
         </div>

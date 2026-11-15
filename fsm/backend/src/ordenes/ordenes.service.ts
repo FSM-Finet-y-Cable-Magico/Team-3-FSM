@@ -53,6 +53,7 @@ import {
   MIN_JUSTIFICACION_RIESGO,
   direccionConAntecedentes,
   mensajeVetado,
+  vetoDelCliente,
 } from '../clientes/lista-roja.js';
 import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
@@ -168,14 +169,15 @@ export class OrdenesService {
 
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
-    // CU-35: un cliente en ROJO (es_conflictivo, ver lista-roja.ts) no recibe
+    // CU-35: un cliente en ROJO (vetoDelCliente, ver lista-roja.ts) no recibe
     // instalacion. El administrador puede anular el bloqueo con una
     // justificacion escrita; queda en la auditoria con la OT creada.
+    const veto = await vetoDelCliente(this.prisma, cliente);
     const justificacion = dto.justificacion_lista_roja?.trim() ?? '';
-    const anulaBloqueo = cliente.es_conflictivo && dto.tipo_ot === 'INSTALACION';
+    const anulaBloqueo = veto !== null && dto.tipo_ot === 'INSTALACION';
     if (anulaBloqueo) {
       if (!justificacion) {
-        throw new BadRequestException(mensajeVetado(cliente.obs_conflictivo ?? 'CONFLICTIVO'));
+        throw new BadRequestException(mensajeVetado(veto.motivo));
       }
       if (opciones.rol !== 'ADMIN') throw new ForbiddenException(MENSAJE_SOLO_ADMIN);
       if (justificacion.length < MIN_JUSTIFICACION_RIESGO) {
@@ -228,7 +230,7 @@ export class OrdenesService {
     // CU-35, excepcion 2: la direccion es de un cliente en ROJO. No bloquea:
     // la OT se crea y vuelve con la advertencia para verificar la identidad.
     const advertencia_lista_roja =
-      !cliente.es_conflictivo && direccion && (await direccionConAntecedentes(this.prisma, id_empresa, direccion, cliente.id_cliente))
+      !veto && direccion && (await direccionConAntecedentes(this.prisma, id_empresa, direccion, cliente.id_cliente))
         ? ADVERTENCIA_DIRECCION
         : null;
 
@@ -284,7 +286,7 @@ export class OrdenesService {
             accion: 'ANULAR_BLOQUEO_LISTA_ROJA',
             entidad_afectada: 'orden_trabajo',
             id_entidad_afectada: ot.id_ot,
-            valor_nuevo: { justificacion, motivo_bloqueo: cliente.obs_conflictivo ?? 'CONFLICTIVO' },
+            valor_nuevo: { justificacion, motivo_bloqueo: veto?.motivo ?? 'CONFLICTIVO' },
           },
         });
       }
