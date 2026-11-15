@@ -58,6 +58,23 @@ describe('verificar la lista roja (CU-35)', () => {
     expect(r.mensaje).toContain('CLIENTE VETADO — Motivo: Deuda impaga de 3 meses sin acuerdo');
   });
 
+  it('un cliente en ROJO en el semaforo del FSM esta vetado aunque el CRM no lo marque', async () => {
+    // Desde que el FSM solo consulta la cartera, es_conflictivo lo cambia solo
+    // el CRM de G8; el nivel ROJO que ve la ficha vive en lista_negra.
+    clientePorRut.mockResolvedValueOnce({ id_cliente: 10, es_conflictivo: false, obs_conflictivo: null });
+    filasEmpresa.mockResolvedValueOnce([{ nivel: 'ROJO', motivo: 'Agredió al técnico en la última visita' }]);
+    const r = await service.verificarListaRoja(1, { rut: '12345678-5' });
+    expect(r.vetado).toEqual({ motivo: 'Agredió al técnico en la última visita' });
+    expect(filasEmpresa.mock.calls[0][0]).toMatchObject({ where: { id_cliente: 10 }, orderBy: { id_vetado: 'desc' }, take: 1 });
+  });
+
+  it('un cliente que volvio a VERDE en el semaforo no esta vetado', async () => {
+    clientePorRut.mockResolvedValueOnce({ id_cliente: 10, es_conflictivo: false, obs_conflictivo: null });
+    filasEmpresa.mockResolvedValueOnce([{ nivel: 'VERDE', motivo: 'Fin de la prueba' }]);
+    const r = await service.verificarListaRoja(1, { rut: '12345678-5' });
+    expect(r.vetado).toBeNull();
+  });
+
   it('una direccion con antecedentes da la advertencia del CU, sin bloquear', async () => {
     const fila = { id_vetado: 5, id_cliente: 20, nivel: 'ROJO', direccion_vetada: 'Av. Ejemplo 1234, La Pintana' };
     // Primero las direcciones vetadas de la empresa; despues, el nivel vigente

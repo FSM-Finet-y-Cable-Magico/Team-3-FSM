@@ -20,6 +20,7 @@ import {
   nivelVigente,
   normalizarDireccion,
   textoDireccion,
+  vetoDelCliente,
   type NivelRiesgo,
 } from './lista-roja.js';
 
@@ -242,7 +243,7 @@ export class ClientesService {
           select: { id_cliente: true, es_conflictivo: true, obs_conflictivo: true },
         })
       : null;
-    const vetado = cliente?.es_conflictivo ? { motivo: cliente.obs_conflictivo ?? 'CONFLICTIVO' } : null;
+    const vetado = cliente ? await vetoDelCliente(this.prisma, cliente) : null;
 
     const conAntecedentes =
       !vetado && q.direccion_completa && q.comuna

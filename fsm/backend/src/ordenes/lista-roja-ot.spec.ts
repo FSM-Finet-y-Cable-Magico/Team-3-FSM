@@ -42,7 +42,14 @@ describe('lista roja al crear una OT (CU-35)', () => {
             direccion_servicio: {
               findFirst: jest.fn(async (a: any) => (a.where.id_direccion === 56 && a.where.id_cliente === 10 ? { id_direccion: 56, direccion_completa: 'Otra 1', comuna: 'Maipú' } : null)),
             },
-            lista_negra: { findMany: jest.fn(async () => filasListaNegra) },
+            // Como la base: una consulta por un cliente trae solo sus filas.
+            lista_negra: {
+              findMany: jest.fn(async (a: any) =>
+                typeof a?.where?.id_cliente === 'number'
+                  ? filasListaNegra.filter((f) => f.id_cliente === a.where.id_cliente)
+                  : filasListaNegra,
+              ),
+            },
             orden_trabajo: { findUnique: jest.fn(async () => ({ id_ot: 900 })) },
             $transaction: jest.fn(async (fn: (tx: any) => Promise<unknown>) =>
               fn({ orden_trabajo: { create: crearOt }, historial_ot: { create: jest.fn() }, log_auditoria: { create: auditar } }),
@@ -95,6 +102,39 @@ describe('lista roja al crear una OT (CU-35)', () => {
         id_entidad_afectada: 900,
         valor_nuevo: { justificacion, motivo_bloqueo: 'Deuda impaga de tres meses sin acuerdo' },
       }),
+    });
+  });
+
+  describe('cliente en ROJO solo en el semaforo del FSM (lista_negra)', () => {
+    const motivo = 'Agredió al técnico en la última visita';
+    beforeEach(() => {
+      cliente.es_conflictivo = false;
+      cliente.obs_conflictivo = null;
+      filasListaNegra = [{ id_vetado: 3, id_cliente: 10, nivel: 'ROJO', motivo, direccion_vetada: 'Av. Ejemplo 1234, La Pintana' }];
+    });
+
+    it('bloquea la instalacion con el motivo de su fila', async () => {
+      await expect(service.crearOT(instalacion(), 3, 1, { rol: 'ADMIN' })).rejects.toThrow(mensajeVetado(motivo));
+      await expect(
+        service.crearOT(instalacion({ justificacion_lista_roja: justificacion }), 3, 1, { rol: 'JEFE_TECNICO' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(crearOt).not.toHaveBeenCalled();
+    });
+
+    it('el administrador la anula con justificacion, y la auditoria guarda ese motivo', async () => {
+      const ot = await service.crearOT(instalacion({ justificacion_lista_roja: justificacion }), 1, 1, { rol: 'ADMIN' });
+      expect(crearOt).toHaveBeenCalled();
+      expect(auditar).toHaveBeenCalledWith({
+        data: expect.objectContaining({ valor_nuevo: { justificacion, motivo_bloqueo: motivo } }),
+      });
+      // Es el propio cliente vetado: no corresponde ademas la advertencia por direccion.
+      expect(ot).toMatchObject({ advertencia_lista_roja: null });
+    });
+
+    it('si su ultima fila es VERDE, la instalacion se crea', async () => {
+      filasListaNegra = [{ id_vetado: 4, id_cliente: 10, nivel: 'VERDE', motivo: 'Fin de la prueba', direccion_vetada: null }, ...filasListaNegra];
+      await service.crearOT(instalacion(), 3, 1, { rol: 'JEFE_TECNICO' });
+      expect(crearOt).toHaveBeenCalled();
     });
   });
 
