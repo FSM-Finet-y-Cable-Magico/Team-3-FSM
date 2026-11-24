@@ -14,7 +14,9 @@ import { FUENTE_MONITOREO } from './fuente/fuente-monitoreo.js';
  */
 describe('resumen y listado de ONT · posibles bajas', () => {
   const dias = (n: number) => new Date(Date.now() - n * 86_400_000);
+  let siguienteId = 1;
   const ont = (sn: string, estado: string, desde: Date, caidaEn?: Date, id_cliente: number | null = null) => ({
+    id_registro_ont: siguienteId++,
     numero_serie: sn,
     id_unidad: null,
     id_cliente,
@@ -38,7 +40,20 @@ describe('resumen y listado de ONT · posibles bajas', () => {
     const mod = await Test.createTestingModule({
       providers: [
         MonitoreoService,
-        { provide: PrismaService, useValue: { registro_ont: { findMany }, contrato: { findMany: contratoFindMany } } },
+        {
+          provide: PrismaService,
+          useValue: {
+            registro_ont: { findMany },
+            contrato: { findMany: contratoFindMany },
+            // `ultimasLecturas`: la lectura de cada registro del ultimo findMany.
+            $queryRaw: jest.fn(async () =>
+              ((await findMany.mock.results.at(-1)!.value) as ReturnType<typeof ont>[]).map((r) => ({
+                id_registro_ont: r.id_registro_ont,
+                ...r.monitoreos[0],
+              })),
+            ),
+          },
+        },
         { provide: RegistroOntService, useValue: {} },
         { provide: FUENTE_MONITOREO, useValue: { nombre: 'test' } },
         { provide: MonitoreoGateway, useValue: { publicar: jest.fn() } },

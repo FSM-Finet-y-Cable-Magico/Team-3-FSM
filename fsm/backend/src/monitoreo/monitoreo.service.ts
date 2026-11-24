@@ -11,6 +11,7 @@ import {
 import { ESTADO_CONEXION, potenciaFueraDeRango } from './monitoreo.constants.js';
 import { analizarInterrupciones } from './interrupciones.js';
 import { esInactiva } from './reglas-alerta.js';
+import { conUltimaLectura, ultimasLecturas } from './ultima-lectura.js';
 import { clientesSuspendidos } from '../cortes/suspendidos.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
 
@@ -111,25 +112,14 @@ export class MonitoreoService {
     const ids = [...new Set(filas.map((f) => f.id_registro_ont).filter((x): x is number => x != null))];
     if (ids.length === 0) return new Map();
 
-    const guardadas = await this.prisma.$queryRaw<
-      { id_registro_ont: number; estado_conexion: string | null; potencia: string | null; timestamp_medicion: Date }[]
-    >`
-      SELECT DISTINCT ON (m.id_registro_ont)
-             m.id_registro_ont,
-             m.estado_conexion,
-             m.potencia_actual_dbm::text AS potencia,
-             m.timestamp_medicion
-        FROM monitoreo_ont m
-       WHERE m.id_registro_ont = ANY(${ids})
-       ORDER BY m.id_registro_ont, m.id_monitoreo DESC
-    `;
+    const guardadas = await ultimasLecturas(this.prisma, ids);
 
     return new Map(
-      guardadas.map((g) => [
-        g.id_registro_ont,
+      [...guardadas].map(([id, g]) => [
+        id,
         {
           estado: g.estado_conexion,
-          potencia: g.potencia === null ? null : Number(g.potencia),
+          potencia: g.potencia_actual_dbm === null ? null : Number(g.potencia_actual_dbm),
           timestamp: g.timestamp_medicion.getTime(),
         },
       ]),
@@ -298,19 +288,20 @@ export class MonitoreoService {
    * visible para todos, que es el lado correcto en el que fallar.
    */
   async lecturasRecientes(id_empresa: number, page = 1, limit = 50) {
-    const registros = await this.prisma.registro_ont.findMany({
-      where: { id_empresa },
-      orderBy: { numero_serie: 'asc' },
-      skip: (page - 1) * limit,
-      take: limit,
-      include: {
-        // La ultima lectura es la ultima ESCRITA, no la de fecha mayor:
-        // `timestamp_medicion` guarda desde cuando la ONT esta en ese estado y
-        // no siempre crece. Ver la nota de `AlertasService.cargarEstado`.
-        monitoreos: { orderBy: { id_monitoreo: 'desc' }, take: 1 },
-        historial: ULTIMA_CAIDA,
-      },
-    });
+    // La ultima lectura es la ultima ESCRITA, no la de fecha mayor:
+    // `timestamp_medicion` guarda desde cuando la ONT esta en ese estado y
+    // no siempre crece. Ver la nota de `AlertasService.cargarEstado`. Va
+    // aparte del findMany: ver `ultimasLecturas`.
+    const registros = await conUltimaLectura(
+      this.prisma,
+      await this.prisma.registro_ont.findMany({
+        where: { id_empresa },
+        orderBy: { numero_serie: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { historial: ULTIMA_CAIDA },
+      }),
+    );
 
     const ahora = new Date();
     const suspendidos = await clientesSuspendidos(this.prisma, id_empresa, this.logger);
@@ -319,18 +310,16 @@ export class MonitoreoService {
 
   /** Detalle de una ONT por número de serie: última lectura + historial. */
   async detalleOnt(sn: string, id_empresa: number) {
-    const registro = await this.prisma.registro_ont.findUnique({
+    const base = await this.prisma.registro_ont.findUnique({
       where: { numero_serie: sn },
-      include: {
-        monitoreos: { orderBy: { id_monitoreo: 'desc' }, take: 1 },
-        historial: { orderBy: { timestamp: 'desc' }, take: 50 },
-      },
+      include: { historial: { orderBy: { timestamp: 'desc' }, take: 50 } },
     });
     // Mismo NotFoundException tanto si no existe como si es de otra empresa:
     // no hay que distinguirle a quien pregunta cuál de los dos casos es.
-    if (!registro || registro.id_empresa !== id_empresa) {
+    if (!base || base.id_empresa !== id_empresa) {
       throw new NotFoundException(`ONT ${sn} no vista por el monitoreo`);
     }
+    const [registro] = await conUltimaLectura(this.prisma, [base]);
 
     const suspendidos = await clientesSuspendidos(this.prisma, id_empresa, this.logger);
     return { ...this.aVista(registro, new Date(), suspendidos), historial_conexion: registro.historial };
@@ -408,10 +397,10 @@ export class MonitoreoService {
     });
     if (!cliente) throw new NotFoundException(`Cliente ${id_cliente} no encontrado`);
 
-    const registros = await this.prisma.registro_ont.findMany({
-      where: { id_cliente },
-      include: { monitoreos: { orderBy: { id_monitoreo: 'desc' }, take: 1 }, historial: ULTIMA_CAIDA },
-    });
+    const registros = await conUltimaLectura(
+      this.prisma,
+      await this.prisma.registro_ont.findMany({ where: { id_cliente }, include: { historial: ULTIMA_CAIDA } }),
+    );
     const ahora = new Date();
     const suspendidos = await clientesSuspendidos(this.prisma, id_empresa, this.logger);
     return { id_cliente, onts: registros.map((r) => this.aVista(r, ahora, suspendidos)) };

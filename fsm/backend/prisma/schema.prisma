@@ -873,6 +873,7 @@ model monitoreo_ont {
   registro            registro_ont?  @relation(fields: [id_registro_ont], references: [id_registro_ont])
 
   @@index([id_registro_ont, timestamp_medicion])
+  @@index([id_registro_ont, id_monitoreo(sort: Desc)])
 }
 
 model historial_conexion_ont {
