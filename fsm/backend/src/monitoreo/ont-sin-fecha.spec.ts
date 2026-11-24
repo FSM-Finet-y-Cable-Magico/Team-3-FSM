@@ -45,10 +45,10 @@ describe('ONT caida sin fecha de la fuente', () => {
 
   it('la lista de ONT la muestra como posible baja; si alguna vez la vimos caer, no', async () => {
     const primera = new Date('2026-11-13T18:59:18Z');
-    const ont = (sn: string, caidaEn?: Date) => ({
-      numero_serie: sn, id_unidad: null, id_cliente: null, zona: 'ZONA 3', olt_externo: '2', nombre_cliente_ext: null,
+    const lectura = { estado_conexion: 'OFFLINE', potencia_actual_dbm: null, timestamp_medicion: primera };
+    const ont = (id_registro_ont: number, sn: string, caidaEn?: Date) => ({
+      id_registro_ont, numero_serie: sn, id_unidad: null, id_cliente: null, zona: 'ZONA 3', olt_externo: '2', nombre_cliente_ext: null,
       primera_vez: primera,
-      monitoreos: [{ estado_conexion: 'OFFLINE', potencia_actual_dbm: null, timestamp_medicion: primera }],
       historial: caidaEn ? [{ evento: 'OFFLINE', timestamp: caidaEn }] : [],
     });
     const mod = await Test.createTestingModule({
@@ -57,8 +57,10 @@ describe('ONT caida sin fecha de la fuente', () => {
         {
           provide: PrismaService,
           useValue: {
-            registro_ont: { findMany: jest.fn(async () => [ont('FANTASMA'), ont('CAYO_HOY', new Date())]) },
+            registro_ont: { findMany: jest.fn(async () => [ont(1, 'FANTASMA'), ont(2, 'CAYO_HOY', new Date())]) },
             contrato: { findMany: jest.fn(async () => []) },
+            // `ultimasLecturas`
+            $queryRaw: jest.fn(async () => [{ id_registro_ont: 1, ...lectura }, { id_registro_ont: 2, ...lectura }]),
           },
         },
         { provide: RegistroOntService, useValue: {} },

@@ -6,6 +6,7 @@ import { evaluar, afectaAlGrupo, esInactiva, claveDeCaja, type EstadoOnt } from 
 import { ESTADO_CONEXION } from './monitoreo.constants.js';
 import { cabeceraDeCaja, capacidadDeCaja, type EntradaCatalogo } from './cajas-smartolt.js';
 import { clientesSuspendidos } from '../cortes/suspendidos.js';
+import { conUltimaLectura } from './ultima-lectura.js';
 import {
   DIAS_MAX_INCIDENTE,
   MIN_ONT_PARA_FALLA_CAJA,
@@ -260,7 +261,7 @@ export class AlertasService {
       filtro = { olt, board: Number(board), pon: Number(pon), caja };
     }
 
-    const candidatos = await this.prisma.registro_ont.findMany({
+    const candidatos = await conUltimaLectura(this.prisma, await this.prisma.registro_ont.findMany({
       where: {
         id_empresa,
         olt_externo: filtro.olt,
@@ -277,13 +278,8 @@ export class AlertasService {
         direccion_cliente_ext: true,
         id_caja_nap: true,
         caja_confirmada_por: true,
-        monitoreos: {
-          orderBy: { id_monitoreo: 'desc' },
-          take: 1,
-          select: { estado_conexion: true, potencia_actual_dbm: true, timestamp_medicion: true },
-        },
       },
-    });
+    }));
 
     // `registro_ont.id_cliente` no es una relación de Prisma (apunta a la tabla
     // que mantiene otro grupo), así que los clientes se traen aparte y
@@ -786,14 +782,12 @@ export class AlertasService {
       -- porque un ingestor en otra zona horaria las habia fechado 3 h mas
       -- tarde; y las ONT sin fecha de SmartOLT quedaban atrapadas en las filas
       -- que la ingesta antigua fechaba con "ahora".
-      WITH ultima AS (
-        SELECT DISTINCT ON (m.id_registro_ont)
-               m.id_registro_ont, m.estado_conexion, m.potencia_actual_dbm, m.timestamp_medicion
-        FROM monitoreo_ont m
-        WHERE m.id_registro_ont IS NOT NULL
-        ORDER BY m.id_registro_ont, m.id_monitoreo DESC
-      ),
-      transicion AS (
+      --
+      -- Un LATERAL ... LIMIT 1 por ONT de la empresa, y no un DISTINCT ON
+      -- sobre toda monitoreo_ont: ese ordenaba la tabla entera en cada carga
+      -- (1,4 M de filas en la VPS el 24-11, 1,3 s solo esa parte). Entra por
+      -- el indice (id_registro_ont, id_monitoreo DESC).
+      WITH transicion AS (
         SELECT DISTINCT ON (h.id_registro_ont) h.id_registro_ont, h.timestamp
         FROM historial_conexion_ont h
         WHERE h.id_registro_ont IS NOT NULL AND h.evento <> 'ONLINE'
@@ -809,7 +803,13 @@ export class AlertasService {
              -- fecha que la ingesta pone cuando SmartOLT no informa ninguna.
              (t.timestamp IS NULL AND u.timestamp_medicion = r.primera_vez) AS sin_fecha
       FROM registro_ont r
-      JOIN ultima u ON u.id_registro_ont = r.id_registro_ont
+      JOIN LATERAL (
+        SELECT m.estado_conexion, m.potencia_actual_dbm, m.timestamp_medicion
+          FROM monitoreo_ont m
+         WHERE m.id_registro_ont = r.id_registro_ont
+         ORDER BY m.id_monitoreo DESC
+         LIMIT 1
+      ) u ON true
       LEFT JOIN transicion t ON t.id_registro_ont = r.id_registro_ont
       WHERE r.id_empresa = ${id_empresa}
     `;

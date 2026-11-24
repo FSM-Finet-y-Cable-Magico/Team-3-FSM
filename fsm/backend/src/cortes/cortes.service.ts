@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException, ServiceUnavailableExc
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ACCION_CORTE, ACCION_REACTIVACION, clasificarContrato, diaDeFecha, type RegistroCorte } from './cortes.js';
 import { esFaltaDePermiso } from './suspendidos.js';
+import { conUltimaLectura } from '../monitoreo/ultima-lectura.js';
 
 const ACCIONES = [ACCION_CORTE, ACCION_REACTIVACION];
 
@@ -68,9 +69,10 @@ export class CortesService {
 
     const idsCliente = [...new Set(contratos.map((c) => c.id_cliente).filter((x): x is number => x != null))];
     const onts = idsCliente.length
-      ? await this.prisma.registro_ont.findMany({
+      ? await conUltimaLectura(this.prisma, await this.prisma.registro_ont.findMany({
           where: { id_empresa, id_cliente: { in: idsCliente } },
           select: {
+            id_registro_ont: true,
             id_cliente: true,
             numero_serie: true,
             odb: true,
@@ -78,9 +80,8 @@ export class CortesService {
             olt_externo: true,
             board: true,
             puerto_pon: true,
-            monitoreos: { orderBy: { id_monitoreo: 'desc' }, take: 1, select: { estado_conexion: true } },
           },
-        })
+        }))
       : [];
 
     const fila = (c: (typeof contratos)[number]) => {

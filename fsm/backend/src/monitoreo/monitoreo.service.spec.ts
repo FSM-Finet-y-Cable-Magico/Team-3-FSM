@@ -34,7 +34,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
   let yaGuardado: {
     id_registro_ont: number;
     estado_conexion: string | null;
-    potencia: string | null;
+    potencia_actual_dbm: string | null;
     timestamp_medicion: Date;
   }[];
 
@@ -124,7 +124,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
 
     it('omite la lectura identica a la ultima guardada', async () => {
       yaGuardado = [
-        { id_registro_ont: 1, estado_conexion: 'ONLINE', potencia: '-21.50', timestamp_medicion: MEDIDO },
+        { id_registro_ont: 1, estado_conexion: 'ONLINE', potencia_actual_dbm: '-21.50', timestamp_medicion: MEDIDO },
       ];
       lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: MEDIDO }];
 
@@ -137,14 +137,14 @@ describe('MonitoreoService.ingestarLecturas', () => {
 
     it.each([
       ['cambia el estado', { estado_conexion: 'LOS' }],
-      ['cambia la potencia', { potencia: '-28.00' }],
+      ['cambia la potencia', { potencia_actual_dbm: '-28.00' }],
       ['cambia el timestamp', { timestamp_medicion: new Date('2026-09-28T15:00:00.000Z') }],
     ])('escribe cuando %s', async (_caso, distinto) => {
       yaGuardado = [
         {
           id_registro_ont: 1,
           estado_conexion: 'ONLINE',
-          potencia: '-21.50',
+          potencia_actual_dbm: '-21.50',
           timestamp_medicion: MEDIDO,
           ...distinto,
         },
@@ -171,7 +171,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
       // La columna es Decimal(5,2) y vuelve como texto: "-21.50" es el mismo
       // numero que -21.5, y sin la conversion el dedupe no omitiria nada.
       yaGuardado = [
-        { id_registro_ont: 1, estado_conexion: 'ONLINE', potencia: '-21.50', timestamp_medicion: MEDIDO },
+        { id_registro_ont: 1, estado_conexion: 'ONLINE', potencia_actual_dbm: '-21.50', timestamp_medicion: MEDIDO },
       ];
       lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: MEDIDO }];
 
@@ -180,7 +180,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
 
     it('distingue una potencia nula de un cero', async () => {
       yaGuardado = [
-        { id_registro_ont: 1, estado_conexion: 'LOS', potencia: null, timestamp_medicion: MEDIDO },
+        { id_registro_ont: 1, estado_conexion: 'LOS', potencia_actual_dbm: null, timestamp_medicion: MEDIDO },
       ];
       lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: 0, estado: 'LOS', medido_en: MEDIDO }];
 
@@ -194,7 +194,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
       await service.ingestarLecturas();
 
       yaGuardado = [
-        { id_registro_ont: 1, estado_conexion: 'LOS', potencia: null, timestamp_medicion: MEDIDO },
+        { id_registro_ont: 1, estado_conexion: 'LOS', potencia_actual_dbm: null, timestamp_medicion: MEDIDO },
       ];
       lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: null, estado: 'LOS', medido_en: MEDIDO }];
       const r = await service.ingestarLecturas();
@@ -227,7 +227,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
 
     it('no se reescribe en cada sondeo', async () => {
       yaGuardado = [
-        { id_registro_ont: 1, estado_conexion: 'OFFLINE', potencia: null, timestamp_medicion: PRIMERA_VEZ },
+        { id_registro_ont: 1, estado_conexion: 'OFFLINE', potencia_actual_dbm: null, timestamp_medicion: PRIMERA_VEZ },
       ];
       lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: null, estado: 'OFFLINE', medido_en: null }];
 
