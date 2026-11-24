@@ -15,9 +15,13 @@ export interface UltimaLectura {
  * con una en memoria. Con la purga apagada, en la VPS eran 1,4 M de filas
  * (24-11-2026) y la pantalla de monitoreo tardaba 15-30 s.
  *
- * Aca es un `LATERAL ... LIMIT 1` por ONT, que entra por el indice
- * (id_registro_ont, id_monitoreo DESC): cuesta lo mismo con 1 000 filas que
- * con millones.
+ * Aca la base devuelve UNA fila por ONT. Es `DISTINCT ON` y no un
+ * `LATERAL ... LIMIT 1` a proposito: el LATERAL solo es rapido con el indice
+ * (id_registro_ont, id_monitoreo DESC), y en la base global ese indice lo
+ * tiene que crear el admin (la tabla es de `finet_db_admin`). Sin el indice,
+ * el LATERAL recorria la tabla desde el final por cada ONT y no terminaba
+ * (VPS, 24-11). El DISTINCT ON ordena una vez (~1,3 s con 1,4 M de filas) y,
+ * cuando el indice exista, lo usa para no ordenar.
  */
 export async function ultimasLecturas(
   prisma: PrismaService,
@@ -27,16 +31,12 @@ export async function ultimasLecturas(
   if (unicos.length === 0) return new Map();
 
   const filas = await prisma.$queryRaw<({ id_registro_ont: number } & UltimaLectura)[]>`
-    SELECT r.id AS id_registro_ont, u.estado_conexion,
-           u.potencia_actual_dbm::text AS potencia_actual_dbm, u.timestamp_medicion
-      FROM unnest(${unicos}::int[]) AS r(id)
-      JOIN LATERAL (
-        SELECT m.estado_conexion, m.potencia_actual_dbm, m.timestamp_medicion
-          FROM monitoreo_ont m
-         WHERE m.id_registro_ont = r.id
-         ORDER BY m.id_monitoreo DESC
-         LIMIT 1
-      ) u ON true
+    SELECT DISTINCT ON (m.id_registro_ont)
+           m.id_registro_ont, m.estado_conexion,
+           m.potencia_actual_dbm::text AS potencia_actual_dbm, m.timestamp_medicion
+      FROM monitoreo_ont m
+     WHERE m.id_registro_ont = ANY(${unicos})
+     ORDER BY m.id_registro_ont, m.id_monitoreo DESC
   `;
   return new Map(
     filas.map((f) => [

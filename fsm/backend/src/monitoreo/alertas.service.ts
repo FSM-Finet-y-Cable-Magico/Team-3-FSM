@@ -783,11 +783,17 @@ export class AlertasService {
       -- tarde; y las ONT sin fecha de SmartOLT quedaban atrapadas en las filas
       -- que la ingesta antigua fechaba con "ahora".
       --
-      -- Un LATERAL ... LIMIT 1 por ONT de la empresa, y no un DISTINCT ON
-      -- sobre toda monitoreo_ont: ese ordenaba la tabla entera en cada carga
-      -- (1,4 M de filas en la VPS el 24-11, 1,3 s solo esa parte). Entra por
-      -- el indice (id_registro_ont, id_monitoreo DESC).
-      WITH transicion AS (
+      -- DISTINCT ON y no LATERAL ... LIMIT 1: el LATERAL sin el indice
+      -- (id_registro_ont, id_monitoreo DESC) no terminaba en la VPS (24-11),
+      -- y ese indice lo crea el admin de la base global. Ver ultima-lectura.ts.
+      WITH ultima AS (
+        SELECT DISTINCT ON (m.id_registro_ont)
+               m.id_registro_ont, m.estado_conexion, m.potencia_actual_dbm, m.timestamp_medicion
+        FROM monitoreo_ont m
+        WHERE m.id_registro_ont IN (SELECT id_registro_ont FROM registro_ont WHERE id_empresa = ${id_empresa})
+        ORDER BY m.id_registro_ont, m.id_monitoreo DESC
+      ),
+      transicion AS (
         SELECT DISTINCT ON (h.id_registro_ont) h.id_registro_ont, h.timestamp
         FROM historial_conexion_ont h
         WHERE h.id_registro_ont IS NOT NULL AND h.evento <> 'ONLINE'
@@ -803,13 +809,7 @@ export class AlertasService {
              -- fecha que la ingesta pone cuando SmartOLT no informa ninguna.
              (t.timestamp IS NULL AND u.timestamp_medicion = r.primera_vez) AS sin_fecha
       FROM registro_ont r
-      JOIN LATERAL (
-        SELECT m.estado_conexion, m.potencia_actual_dbm, m.timestamp_medicion
-          FROM monitoreo_ont m
-         WHERE m.id_registro_ont = r.id_registro_ont
-         ORDER BY m.id_monitoreo DESC
-         LIMIT 1
-      ) u ON true
+      JOIN ultima u ON u.id_registro_ont = r.id_registro_ont
       LEFT JOIN transicion t ON t.id_registro_ont = r.id_registro_ont
       WHERE r.id_empresa = ${id_empresa}
     `;
