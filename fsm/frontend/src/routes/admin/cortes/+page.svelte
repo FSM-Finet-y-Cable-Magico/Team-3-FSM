@@ -129,8 +129,11 @@
               {#each bloque.filas as f (f.id_contrato)}
                 <tr>
                   <td class="px-4 py-2.5">
-                    {#if f.cliente}
-                      <a href="/admin/clientes/{f.cliente.id_cliente}" class="btn-texto">{f.cliente.nombre_completo}</a>
+                    {#if f.cliente?.rut}
+                      <a href={`/admin/clientes/${encodeURIComponent(f.cliente.rut)}`} class="btn-texto">{f.cliente.nombre_completo}</a>
+                      <span class="block text-xs text-slate-500">{f.cliente.rut}{f.cliente.telefono ? ` · ${f.cliente.telefono}` : ''}</span>
+                    {:else if f.cliente}
+                      <span class="text-slate-700">{f.cliente.nombre_completo}</span>
                       <span class="block text-xs text-slate-500">{f.cliente.rut ?? ''}{f.cliente.telefono ? ` · ${f.cliente.telefono}` : ''}</span>
                     {:else}
                       <span class="text-slate-500">Cliente no registrado (contrato #{f.id_contrato})</span>

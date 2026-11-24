@@ -122,6 +122,8 @@ export async function saludCajas(token: string): Promise<{ resumen: ResumenSalud
 export interface OntDeCaja {
   numero_serie: string;
   id_cliente: number | null;
+  /** Para abrir la ficha: `/admin/clientes/[rut]`. */
+  rut_cliente: string | null;
   nombre_cliente: string | null;
   estado_conexion: string | null;
   potencia_dbm: number | null;
