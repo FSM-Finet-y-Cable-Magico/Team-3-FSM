@@ -37,7 +37,9 @@ export class SaludCajasService {
     const caja = salud.find((c) => c.id_caja_nap === id_caja_nap)!;
     const suyas = onts.filter((o) => o.id_caja_nap === id_caja_nap);
 
-    const [alertasCaja, otsCaja] = await Promise.all([
+    const idsCliente = [...new Set(suyas.map((o) => o.id_cliente).filter((id): id is number => id != null))];
+
+    const [alertasCaja, otsCaja, clientes] = await Promise.all([
       this.prisma.alerta_monitoreo.findMany({
         where: { id_empresa, id_caja_nap, resuelta: false },
         orderBy: { creada_en: 'desc' },
@@ -65,7 +67,15 @@ export class SaludCajasService {
           tecnico: { select: { nombre_completo: true } },
         },
       }),
+      // La ficha del cliente se abre por RUT (`/admin/clientes/[rut]`), no por id.
+      idsCliente.length
+        ? this.prisma.cliente.findMany({
+            where: { id_cliente: { in: idsCliente }, id_empresa },
+            select: { id_cliente: true, rut: true },
+          })
+        : Promise.resolve([] as { id_cliente: number; rut: string | null }[]),
     ]);
+    const rutPorCliente = new Map(clientes.map((c) => [c.id_cliente, c.rut]));
 
     return {
       caja: {
@@ -76,6 +86,7 @@ export class SaludCajasService {
         .map((o) => ({
           numero_serie: o.numero_serie,
           id_cliente: o.id_cliente,
+          rut_cliente: o.id_cliente != null ? (rutPorCliente.get(o.id_cliente) ?? null) : null,
           nombre_cliente: o.nombre_cliente ?? null,
           estado_conexion: o.estado_conexion,
           potencia_dbm: o.potencia_dbm,

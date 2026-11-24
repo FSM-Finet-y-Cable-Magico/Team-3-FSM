@@ -382,8 +382,8 @@
                   <span class="block text-xs text-slate-500">OLT {o.olt_externo ?? '?'} · {o.board ?? '?'}/{o.puerto_pon ?? '?'}{o.odb ? ` · ${o.odb}` : ''}</span>
                 </td>
                 <td class="px-4 py-2.5 text-slate-700 max-w-64">
-                  {#if o.id_cliente}
-                    <a href="/admin/clientes/{o.id_cliente}" class="btn-texto">{o.nombre_cliente ?? `Cliente #${o.id_cliente}`}</a>
+                  {#if o.rut_cliente}
+                    <a href={`/admin/clientes/${encodeURIComponent(o.rut_cliente)}`} class="btn-texto">{o.nombre_cliente ?? `Cliente #${o.id_cliente}`}</a>
                   {:else}
                     <span class="truncate block" title={o.nombre_cliente ?? ''}>{o.nombre_cliente ?? '—'}</span>
                   {/if}
