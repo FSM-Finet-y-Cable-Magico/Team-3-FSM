@@ -192,8 +192,13 @@ export class AlertasService {
       // Las RESUELTAS si se cortan en SQL: la tabla no se purga y el motor
       // cierra alertas solas en cada corrida, asi que sin tope "Ver resueltas"
       // traia el historial entero, con sus cuatro relaciones, para mostrar 200.
-      // Se ven las mas recientes, ordenadas por severidad entre ellas.
-      orderBy: { creada_en: 'desc' },
+      // Se ven las resueltas mas recientemente --por `resuelta_en`, no por
+      // `creada_en`: una alerta vieja resuelta hoy tiene que aparecer--,
+      // ordenadas por severidad entre ellas. Las sin fecha de resolucion
+      // (filas viejas) van al final: en un DESC, Postgres pone los NULL primero.
+      orderBy: resuelta
+        ? [{ resuelta_en: { sort: 'desc', nulls: 'last' } }, { creada_en: 'desc' }]
+        : { creada_en: 'desc' },
       ...(resuelta ? { take: tope } : {}),
       include: {
         registro: { select: { numero_serie: true, zona: true, nombre_cliente_ext: true, direccion_cliente_ext: true } },
