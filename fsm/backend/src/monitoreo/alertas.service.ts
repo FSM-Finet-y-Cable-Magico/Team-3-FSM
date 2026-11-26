@@ -165,6 +165,9 @@ export class AlertasService {
     zona?: string,
     caja?: string,
   ) {
+    // `+limit` en el controlador deja NaN si no es numero, y `take: NaN` lo
+    // rechaza Prisma.
+    const tope = Number.isFinite(limit) ? Math.min(200, Math.max(1, Math.trunc(limit))) : 100;
     const filas = await this.prisma.alerta_monitoreo.findMany({
       where: {
         id_empresa,
@@ -185,7 +188,13 @@ export class AlertasService {
       // orden equivocado, una CRITICA vieja podia quedar fuera del listado.
       // Acotado igual por `where` (una empresa, solo abiertas), que sobre los
       // datos reales de FiNet son ~200 filas.
+      //
+      // Las RESUELTAS si se cortan en SQL: la tabla no se purga y el motor
+      // cierra alertas solas en cada corrida, asi que sin tope "Ver resueltas"
+      // traia el historial entero, con sus cuatro relaciones, para mostrar 200.
+      // Se ven las mas recientes, ordenadas por severidad entre ellas.
       orderBy: { creada_en: 'desc' },
+      ...(resuelta ? { take: tope } : {}),
       include: {
         registro: { select: { numero_serie: true, zona: true, nombre_cliente_ext: true, direccion_cliente_ext: true } },
         caja: { select: { identificador_unico: true, latitud: true, longitud: true } },
@@ -203,7 +212,7 @@ export class AlertasService {
       // Primero por urgencia, y a igual urgencia la mas reciente arriba.
       .sort((a, b) => rango(a.severidad) - rango(b.severidad) ||
         b.creada_en.getTime() - a.creada_en.getTime())
-      .slice(0, Math.min(200, Math.max(1, limit)))
+      .slice(0, tope)
       .map((a) => {
         if (!a.registro) return a;
         const f = descomponerFicha(a.registro.nombre_cliente_ext, a.registro.direccion_cliente_ext);
