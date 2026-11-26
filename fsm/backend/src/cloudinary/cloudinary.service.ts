@@ -26,6 +26,11 @@ export class CloudinaryService implements OnModuleInit {
       api_secret: config.get<string>('CLOUDINARY_API_SECRET')?.trim(),
       folder: 'fsm_evidencias',
       resource_type: 'image',
+      // Transformacion de ENTRADA: Cloudinary guarda esta version y no el
+      // original de la camara (3-8 MB). `limit` solo achica, nunca agranda, y
+      // acota el lado mayor, asi que sirve igual para fotos verticales. Con
+      // 1600 px se sigue leyendo una etiqueta o un numero de serie.
+      transformation: [{ width: 1600, height: 1600, crop: 'limit', quality: 'auto' }],
     };
     this.configurado = Boolean(this.opciones.cloud_name && this.opciones.api_key && this.opciones.api_secret);
   }
