@@ -75,22 +75,17 @@ export class InstalacionesService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const direccion = await tx.direccion_servicio.create({
-          data: {
-            id_cliente: null,
-            direccion_completa: dto.direccion.direccion_completa,
-            comuna: dto.direccion.comuna,
-            ciudad: dto.direccion.ciudad ?? null,
-            // No es la direccion principal de nadie: no hay cliente todavia.
-            es_principal: false,
-          },
-        });
-
+        // La direccion NO se guarda en `direccion_servicio`. Esa tabla es del
+        // CRM de G8 y en la base compartida solo tenemos SELECT, asi que el
+        // INSERT falla y con el toda la solicitud. Tampoco hacia falta: la
+        // misma direccion ya se guarda mas abajo, en la propia solicitud, y
+        // se arma al leer (ver ordenes/direccion-ot.ts). Antes estaba escrita
+        // dos veces.
         const ot = await tx.orden_trabajo.create({
           data: {
             id_empresa: dto.id_empresa,
             id_cliente: null,
-            id_direccion: direccion.id_direccion,
+            id_direccion: null,
             tipo_ot: 'INSTALACION',
             prioridad: 'MEDIA',
             estado: 'PENDIENTE',

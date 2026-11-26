@@ -65,6 +65,34 @@ export interface OT {
   }[];
   llamada?: { resultado: string; observaciones?: string | null; fecha_llamada: string } | null;
   potencia_optica_dbm?: number | null;
+  /** Lo que el tecnico declaro al cerrar. Null mientras no cierre o si no declaro nada. */
+  cierre_equipos?: CierreTecnico | null;
+}
+
+/** Un equipo declarado en el cierre, tal como lo guarda el backend. */
+export interface EquipoCierre {
+  numero_serie: string;
+  accion?: string;
+  diagnostico?: string;
+  motivo?: string;
+  observacion_estado_fisico?: string;
+}
+
+/**
+ * Forma de `orden_trabajo.cierre_equipos` (ver `CierreGuardado` en el
+ * backend). Cada seccion es opcional e independiente.
+ */
+export interface CierreTecnico {
+  comentario?: string;
+  reparacion?: {
+    falla_reportada: string;
+    solucion_aplicada: string;
+    resultado: 'RESUELTO' | 'PARCIAL' | 'SIN_SOLUCION';
+  };
+  instalados?: EquipoCierre[];
+  retirados?: EquipoCierre[];
+  /** Equipos que no se pudieron recuperar; el motivo es obligatorio. */
+  faltantes?: { numero_serie: string; motivo: string }[];
 }
 
 export interface Tecnico {

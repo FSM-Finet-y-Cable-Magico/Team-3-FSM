@@ -72,7 +72,7 @@ describe('modalidad de resolucion (CU-56)', () => {
   });
 
   const cierre = (extra: Record<string, unknown> = {}) => ({
-    fotos: [] as any[], materiales: [], potencia_optica_dbm: -21, resultado_llamada: 'CONFORME', ...extra,
+    fotos: [] as any[], materiales: [], potencia_optica_dbm: -21, ...extra,
   });
 
   describe('el tecnico cierra', () => {

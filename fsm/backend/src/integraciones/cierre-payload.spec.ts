@@ -30,7 +30,8 @@ describe('payload de cierre para los otros grupos', () => {
     cliente: { rut: '11111111-1', nombre_completo: 'Ana Soto' },
     direccion: { direccion_completa: 'Av. Ejemplo 123', comuna: 'La Pintana' },
     categoria_falla: { id_categoria: 3, nombre: 'Falla de planta externa' },
-    materiales: [{ id_tipo_equipo: 7, cantidad: 2 }],
+    materiales: [{ id_tipo_equipo: 7, cantidad: 2, tipo_equipo: { nombre: 'Cable drop 1 fibra' } }],
+    tecnico: { nombre_usuario: 'jperez' },
     llamada: { resultado: 'CONFORME' },
   };
 
@@ -59,13 +60,37 @@ describe('payload de cierre para los otros grupos', () => {
     expect(payload.id_tecnico).toBe(35);
   });
 
-  it('no expone mas que el id del tecnico', async () => {
-    // Minima exposicion: el nombre y el usuario del tecnico no viajan a otro
-    // sistema. Si G1 necesita mostrarlos, los consulta.
+  it('identifica al tecnico por clave natural, no solo por id', async () => {
+    // G8 reporto el 8-11 que la OT 56 traia el tecnico 4 y que ese usuario no
+    // existia en su base: `id_tecnico` es NUESTRO y no se puede resolver desde
+    // afuera. Va tambien `usuario_tecnico`, que si pueden cruzar.
+    const payload = await service.cierre(scope, 41, 1);
+
+    expect(payload.id_tecnico).toBe(35);
+    expect(payload.usuario_tecnico).toBe('jperez');
+  });
+
+  it('no expone el nombre completo del tecnico', async () => {
+    // Sigue valiendo la minima exposicion: lo que faltaba era un identificador
+    // resoluble, no la identidad del trabajador. El nombre legal no viaja --y
+    // menos en un payload que tambien recibe G8--.
     const payload = (await service.cierre(scope, 41, 1)) as unknown as Record<string, unknown>;
 
-    expect(JSON.stringify(payload)).not.toContain('nombre_usuario');
-    expect(Object.keys(payload).filter((k) => k.includes('tecnico'))).toEqual(['id_tecnico']);
+    expect(JSON.stringify(payload)).not.toContain('nombre_completo');
+    expect(Object.keys(payload).filter((k) => k.includes('tecnico')).sort()).toEqual([
+      'id_tecnico',
+      'usuario_tecnico',
+    ]);
+  });
+
+  it('manda el nombre del material, porque el id no sirve fuera del FSM', async () => {
+    // Mismo defecto que el del tecnico: los catalogos de G1 y G3 se cargaron
+    // por separado, asi que `id_tipo_equipo` no cruza. El nombre si.
+    const payload = await service.cierre(scope, 41, 1);
+
+    expect(payload.materiales).toEqual([
+      { id_tipo_equipo: 7, nombre: 'Cable drop 1 fibra', cantidad: 2 },
+    ]);
   });
 
   it('devuelve exactamente los campos que declara el contrato', async () => {

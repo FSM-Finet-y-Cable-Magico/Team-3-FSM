@@ -6,11 +6,13 @@ import {
   Body,
   Param,
   Query,
+  UseFilters,
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { ArchivoGrandeFilter, LIMITE_FOTO_BYTES, MENSAJE_FOTO_GRANDE } from '../common/http/limites-http.js';
 import { OrdenesService } from './ordenes.service.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
@@ -126,6 +128,16 @@ export class OrdenesController {
     };
   }
 
+  /**
+   * Los equipos que el tecnico lleva encima, para sugerirlos al cerrar. Solo
+   * del tecnico: es "lo mio", no una consulta de inventario. Antes de :id.
+   */
+  @Roles('TECNICO')
+  @Get('mis-equipos')
+  misEquipos(@CurrentUser() user: UsuarioAutenticado) {
+    return this.ordenesService.misEquipos(user);
+  }
+
   /** CU-31: OT completadas que esperan la llamada de cortesia. Antes de :id. */
   @Roles('ADMIN', 'JEFE_TECNICO')
   @Get('llamadas-cortesia')
@@ -178,7 +190,8 @@ export class OrdenesController {
 
   @Roles('TECNICO')
   @Post(':id/foto')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  @UseFilters(new ArchivoGrandeFilter(MENSAJE_FOTO_GRANDE))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: LIMITE_FOTO_BYTES } }))
   async subirFoto(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,

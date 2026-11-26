@@ -1,4 +1,15 @@
-import { IsString, IsNotEmpty, MaxLength, MinLength, Matches, IsIn, IsInt, IsPositive, IsOptional } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsPositive,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class CrearUsuarioDto {
   @IsString()
@@ -6,8 +17,11 @@ export class CrearUsuarioDto {
   @MaxLength(80)
   nombre_completo: string;
 
+  // "nombre.apellido" en minusculas; despues del punto se aceptan numeros
+  // para las cuentas que se repiten, como tecnico.prueba1.
   @IsString()
-  @Matches(/^[a-z]+\.[a-z]+$/, { message: 'Formato: nombre.apellido en minúsculas' })
+  @MaxLength(50)
+  @Matches(/^[a-z]+\.[a-z0-9]+$/, { message: 'Formato: nombre.apellido en minúsculas (puede terminar en número)' })
   nombre_usuario: string;
 
   @IsString()
@@ -21,11 +35,14 @@ export class CrearUsuarioDto {
   @IsPositive()
   id_empresa: number;
 
+  /** Los otros grupos identifican al tecnico por RUT. El digito se valida en el servicio. */
   @IsOptional()
   @IsString()
-  zona?: string;
+  @MaxLength(12)
+  rut?: string;
 
   @IsOptional()
-  @IsString()
-  empresa_contratista?: string;
+  @IsEmail({}, { message: 'Email inválido' })
+  @MaxLength(120)
+  email?: string;
 }

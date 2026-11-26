@@ -166,16 +166,21 @@
                  focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" />
       </div>
     {:else}
-      <div class="flex flex-col">
-        <label for="fecha" class="text-xs font-semibold text-slate-600 mb-0.5">
-          {tipo === 'diario' ? 'Día' : 'Un día del período'}
-        </label>
-        <input id="fecha" type="date" bind:value={fecha}
+      <!-- La ayuda va en la linea de la etiqueta y no debajo del campo: la fila
+           alinea por abajo (`items-end`), y una linea extra debajo dejaba el
+           campo mas arriba que las pestanas y el boton. -->
+      <div class="flex flex-col items-start">
+        <div class="mb-0.5 text-xs">
+          <label for="fecha" class="font-semibold text-slate-600">
+            {tipo === 'diario' ? 'Día' : 'Un día del período'}
+          </label>
+          <span id="fecha-ayuda" class="text-slate-500">
+            · {tipo === 'diario' ? 'vacío: ayer' : 'vacío: el período cerrado anterior'}
+          </span>
+        </div>
+        <input id="fecha" type="date" bind:value={fecha} aria-describedby="fecha-ayuda"
           class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm cursor-pointer
                  focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" />
-        <span class="text-xs text-slate-500 mt-0.5">
-          {tipo === 'diario' ? 'Vacío: ayer' : 'Vacío: el período cerrado anterior'}
-        </span>
       </div>
     {/if}
 
@@ -183,7 +188,7 @@
       type="button"
       onclick={generar}
       disabled={cargando}
-      class="px-4 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium cursor-pointer
+      class="px-4 py-1.5 rounded-lg border border-transparent bg-blue-600 text-white text-sm font-medium cursor-pointer
              transition-colors duration-200 hover:bg-blue-700 disabled:opacity-50
              focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
     >{cargando ? 'Generando…' : 'Generar reporte'}</button>

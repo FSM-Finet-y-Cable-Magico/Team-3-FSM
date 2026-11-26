@@ -20,10 +20,26 @@ export interface EquipoDeclarado {
   motivo?: string;
   observacion_estado_fisico?: string;
   /**
+   * El equipo volvio dañado. Nombre fijado por G1 el 12-11-2026: es el campo
+   * con el que ramifican entre `RECIBIDO` y `RECIBIDO_CON_DANO`.
+   */
+  con_dano?: boolean;
+  /**
    * Diagnostico de la lista fija de G1. Solo tiene sentido al retirar.
    * Si no viene, G1 asume "Causa desconocida" y usa `motivo` (acordado).
    */
   diagnostico?: string;
+}
+
+/**
+ * Un equipo que el tecnico no pudo recuperar del domicilio.
+ *
+ * No lleva `accion` ni `estado_g1`: no hubo movimiento de inventario que
+ * declarar. Lo unico que viaja es cual falta y por que.
+ */
+export interface EquipoFaltante {
+  numero_serie: string;
+  motivo: string;
 }
 
 export interface PayloadCierre {
@@ -41,20 +57,85 @@ export interface PayloadCierre {
    * movimiento de equipos a una persona.
    *
    * Es inequivoco: `cerrarOT` exige rol TECNICO y que `ot.id_tecnico` sea el
-   * usuario autenticado, asi que quien cierra ES el asignado. Va el id y no el
-   * nombre por minima exposicion; si G1 necesita mostrarlo, lo consulta.
+   * usuario autenticado, asi que quien cierra ES el asignado.
+   *
+   * ESTE ID NO SIRVE FUERA DEL FSM. Es nuestro `usuario.id_usuario` y no
+   * existe en la base de G1 ni en la de G8: G8 reporto el 8-11 que la OT 56
+   * venia con el tecnico 4 y que ese usuario no estaba registrado. Se mantiene
+   * por compatibilidad con lo que ya consumen, pero para cruzar va `tecnico`.
    *
    * Nullable porque el tipo del modelo lo es, aunque en la practica una OT
    * cerrada siempre lo trae: sin tecnico asignado no se puede cerrar.
    */
   id_tecnico: number | null;
+  /**
+   * El mismo tecnico, por clave natural: `usuario.nombre_usuario`, que es
+   * unico en el FSM y estable entre despliegues. Es con lo que los otros
+   * grupos pueden cruzar sin conocer nuestros ids.
+   *
+   * SE MANTIENE LA MINIMA EXPOSICION. No viaja el nombre completo: lo que
+   * faltaba no era la identidad de la persona sino un identificador que el
+   * receptor pudiera resolver, y un nombre de usuario alcanza para atribuir
+   * un movimiento de equipos sin mandar el nombre legal de un trabajador.
+   *
+   * El comentario anterior decia "si G1 necesita mostrarlos, los consulta",
+   * pero no hay con que: `IntegracionesController` expone doce endpoints y
+   * ninguno devuelve usuarios. Si G1 llega a necesitar el nombre para mostrar,
+   * se agrega ese endpoint y se decide ahi que exponer, en vez de meterlo en
+   * un payload que tambien recibe G8.
+   *
+   * Mismo criterio que el cliente, que viaja por `rut`, y que los equipos, que
+   * viajan por `numero_serie` y nunca por `id_unidad`.
+   */
+  usuario_tecnico: string | null;
   cliente: { rut: string | null; nombre: string } | null;
   direccion: { direccion_completa: string; comuna: string } | null;
   categoria_falla: { id_categoria: number; nombre: string } | null;
   categoria_falla_otro: string | null;
-  materiales: { id_tipo_equipo: number; cantidad: number }[];
+  /**
+   * Consumibles gastados en la visita (los equipos con numero de serie van en
+   * `equipos_instalados` / `equipos_retirados`).
+   *
+   * `id_tipo_equipo` es nuestro y no significa nada en el inventario de G1:
+   * sus catalogos se cargaron por separado y los ids no coinciden. Por eso va
+   * `nombre`, que es con lo que pueden cruzar contra su propio catalogo.
+   *
+   * `nombre` puede venir vacio si la fila de uso quedo apuntando a un tipo
+   * borrado; es una fila huerfana, no un caso normal.
+   */
+  materiales: { id_tipo_equipo: number; nombre: string; cantidad: number }[];
   equipos_instalados: EquipoDeclarado[];
   equipos_retirados: EquipoDeclarado[];
+  /**
+   * Equipos que debian retirarse y no se recuperaron. G1 los registra como
+   * `NO_RECIBIDO` con el `motivo` en su campo `detalle`, y G8 deja la baja
+   * bloqueada hasta una decision comercial (acuerdo del 12-11-2026).
+   *
+   * Siempre presente, aunque sea vacio: una lista ausente y una lista vacia
+   * significan lo mismo --no falto nada-- y obligar a G1 y G8 a tratar los dos
+   * casos no aporta nada. Es el mismo criterio de `equipos_retirados`.
+   */
+  equipos_faltantes: EquipoFaltante[];
+  /**
+   * Cierre de REPARACION: que fallaba, que se hizo y como quedo. Los pidio G1
+   * el 8-nov-2026; sin ellos no registra el cierre de la reparacion y lo anota
+   * como la discrepancia `DATOS_REPARACION_INCOMPLETOS`.
+   *
+   * VAN NULL EN TODO LO QUE NO SEA REPARACION, y eso es parte del contrato:
+   * una instalacion o una baja no tienen diagnostico que informar, y este
+   * mismo payload lo recibe G8. Si fueran obligatorios, cualquier cierre que
+   * no sea una reparacion quedaria invalido --el mismo criterio que ya se
+   * aplico a los campos de correlacion de G8--.
+   *
+   * `resultado` se llama asi porque es el nombre que fijo G1. No confundir con
+   * `resultado_llamada`, que es la llamada de cortesia (CU-31) y no tiene nada
+   * que ver. En nuestro propio DTO de entrada el campo se llama
+   * `resultado_reparacion`, justamente para que en el formulario no se
+   * confundan; la traduccion ocurre en `construirPayloadCierre`.
+   */
+  falla_reportada: string | null;
+  solucion_aplicada: string | null;
+  resultado: string | null;
   /**
    * P0-c del acuerdo con G8: correlacion con la solicitud de instalacion que
    * origino la OT. G8 la usa para activar al cliente del contrato correcto.
@@ -68,6 +149,19 @@ export interface PayloadCierre {
   id_prospecto: number | null;
   id_contrato: number | null;
   id_plan: number | null;
+  /**
+   * Correlacion de una OT de BAJA por morosidad (acuerdo del 12-11-2026). Van
+   * null en todo lo demas, por el mismo motivo que los de instalacion: el mismo
+   * payload lo recibe G1, que no conoce el CRM de G8.
+   *
+   * `id_solicitud_retiro` es la que G8 cierra con su `finalize`, y
+   * `id_servicio` la que pasa a `Baja`. Sin ellas el aviso llega y G8 no sabe a
+   * que servicio corresponde.
+   */
+  id_cliente_externo: number | null;
+  id_servicio: number | null;
+  id_solicitud_retiro: number | null;
+  id_ticket_externo: number | null;
 }
 
 export interface FanOutCierre {

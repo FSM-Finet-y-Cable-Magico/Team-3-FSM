@@ -42,6 +42,8 @@ describe('TicketsService', () => {
   const clientesEnBase = [
     { id_cliente: 10, rut: '123456785', estado: 'ACTIVO', nombre_completo: 'Ana Soto' },
     { id_cliente: 11, rut: '11111111-1', estado: 'SUSPENDIDO', nombre_completo: 'Luis Paz' },
+    // Como lo guarda la base global `finet_global_validacion`: "Activo", no "ACTIVO".
+    { id_cliente: 12, rut: '99999999-9', estado: 'Activo', nombre_completo: 'Cliente QA' },
   ];
 
   const prisma: any = {
@@ -147,6 +149,10 @@ describe('TicketsService', () => {
       await expect(crear({ rut_cliente: '11111111-1' })).rejects.toThrow(MENSAJE_SIN_SERVICIO);
     });
 
+    it('acepta un cliente activo aunque el estado venga como "Activo" (base global)', async () => {
+      await expect(crear({ rut_cliente: '99999999-9' })).resolves.toMatchObject({ id_cliente: 12 });
+    });
+
     it('encuentra al cliente aunque el RUT se haya guardado con otra grafia', async () => {
       // Ana esta guardada como "123456785" y Luis como "11111111-1". Cada uno
       // se encuentra escribiendo el RUT de las tres formas: el operador no
@@ -239,6 +245,58 @@ describe('TicketsService', () => {
       expect(prisma.log_auditoria.findMany.mock.calls[0][0]).toMatchObject({
         where: { entidad_afectada: 'ticket', id_entidad_afectada: 1 },
       });
+    });
+  });
+
+  describe('tickets que otro grupo escribe directo en la base global', () => {
+    // Asi llego el FIN-2026-000006 de G2 el 09-11-2026: su codigo, su estado
+    // "Escalado" y sin nadie asignado. Antes quedaba inerte en el panel.
+    const deG2 = (extra: Record<string, unknown> = {}) =>
+      tickets.push({
+        id_ticket: siguienteId++,
+        id_empresa: 1,
+        id_cliente: 10,
+        id_categoria: 1,
+        codigo_seguimiento: 'FIN-2026-000006',
+        estado: 'Escalado',
+        prioridad: 'MEDIA',
+        descripcion: 'Cambio de clave WiFi',
+        fecha_creacion: ahora,
+        fecha_cierre: null,
+        resuelto_remotamente: false,
+        id_usuario_asignado: null,
+        ...extra,
+      });
+
+    it('un "Escalado" sin asignar se muestra ABIERTO', async () => {
+      deG2();
+      const t = await service.obtener(1, 1, ahora);
+      expect(t.estado).toBe('ABIERTO');
+    });
+
+    it('se puede tomar, y la auditoría guarda el estado tal como venía', async () => {
+      deG2();
+      const t = await service.tomar(1, jefe);
+      expect(t).toMatchObject({ estado: 'EN_PROGRESO', id_usuario_asignado: 3 });
+      expect(auditoria.at(-1)).toMatchObject({ valor_anterior: { estado: 'Escalado' }, valor_nuevo: { estado: 'EN_PROGRESO' } });
+    });
+
+    it('se puede reclasificar', async () => {
+      deG2();
+      const t = await service.reclasificar(1, 2, jefe, ahora);
+      expect(t.categoria.id_categoria).toBe(2);
+    });
+
+    it('cuenta para el SLA como abierto', async () => {
+      deG2();
+      const t = await service.obtener(1, 1, new Date('2026-09-30T00:00:00Z'));
+      expect(t.sla_vencido).toBe(true);
+    });
+
+    it('un "Cerrado" se muestra RESUELTO y no se vuelve a tomar', async () => {
+      deG2({ estado: 'Cerrado' });
+      expect((await service.obtener(1, 1, ahora)).estado).toBe('RESUELTO');
+      await expect(service.tomar(1, jefe)).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 

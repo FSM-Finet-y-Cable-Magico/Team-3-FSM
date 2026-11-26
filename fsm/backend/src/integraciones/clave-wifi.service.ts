@@ -11,6 +11,10 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SolicitudClaveWifiDto } from './dto/solicitud-clave-wifi.dto.js';
 import { descifrarClave, huellaSolicitud } from './clave-wifi.crypto.js';
+import {
+  ESTADO_TICKET,
+  estadoCanonicoTicket,
+} from '../tickets/tickets.constants.js';
 
 export const MENSAJE_SIN_LLAVE =
   'El canal de claves WiFi no esta configurado. Reintente mas tarde.';
@@ -18,6 +22,13 @@ export const MENSAJE_NO_DESCIFRABLE =
   'ciphertext: no se pudo descifrar con la llave publica vigente';
 export const MENSAJE_YA_LEIDA =
   'La clave ya fue entregada una vez y no se puede volver a ver';
+export const MENSAJE_TOMAR_TICKET =
+  'Toma el ticket antes de ver la clave: tiene que estar EN_PROGRESO y a tu cargo';
+export const MENSAJE_SIN_TICKET =
+  'La solicitud no corresponde a ningun ticket de la empresa';
+
+/** El tope de un `Int` de Postgres: un id mas grande que esto no es un ticket. */
+const MAX_INT4 = 2_147_483_647;
 
 /**
  * Cambio de clave WiFi pedido desde el portal de G2 (acuerdo §6.4).
@@ -125,23 +136,110 @@ export class ClaveWifiService {
   }
 
   /**
+   * Las solicitudes de clave WiFi de uno de nuestros tickets, para el panel.
+   *
+   * La solicitud no apunta al ticket por llave foranea: trae el `id_ticket`
+   * que manda G2 como texto. Se busca por el codigo de seguimiento, que es lo
+   * que ve el cliente en el portal, y tambien por el id numerico, por si G2
+   * manda ese.
+   *
+   * Solo metadatos. Ni el ciphertext ni la huella salen de aca: la clave se
+   * pide aparte con `entregar`, que es la que la consume.
+   */
+  async porTicket(id_ticket: number, id_empresa: number) {
+    const t = await this.prisma.ticket.findFirst({
+      where: { id_ticket, id_empresa },
+      select: { id_ticket: true, codigo_seguimiento: true },
+    });
+    if (!t) throw new NotFoundException('Ticket no encontrado');
+
+    const claves = [String(t.id_ticket)];
+    if (t.codigo_seguimiento) claves.push(t.codigo_seguimiento);
+
+    const filas = await this.prisma.solicitud_clave_wifi.findMany({
+      where: { id_empresa, id_ticket: { in: claves } },
+      orderBy: { fecha_creacion: 'desc' },
+      select: {
+        id_solicitud: true,
+        id_contrato: true,
+        estado: true,
+        fecha_creacion: true,
+        leida_en: true,
+      },
+    });
+    // Se arma a mano y no se devuelve la fila tal cual: si alguien amplia el
+    // `select`, la clave cifrada no se cuela en la respuesta por accidente.
+    return filas.map((f) => ({
+      id_solicitud: f.id_solicitud,
+      id_contrato: f.id_contrato,
+      estado: f.estado,
+      fecha_creacion: f.fecha_creacion,
+      leida_en: f.leida_en,
+    }));
+  }
+
+  /**
+   * El ticket nuestro al que apunta una solicitud. G2 manda el id numerico
+   * como texto; se acepta tambien el codigo de seguimiento.
+   */
+  private ticketDeSolicitud(id_ticket_g2: string, id_empresa: number) {
+    const porCodigo = { codigo_seguimiento: id_ticket_g2 };
+    const n = /^\d+$/.test(id_ticket_g2) ? Number(id_ticket_g2) : null;
+    const OR =
+      n !== null && n <= MAX_INT4 ? [{ id_ticket: n }, porCodigo] : [porCodigo];
+    return this.prisma.ticket.findFirst({
+      where: { id_empresa, OR },
+      select: {
+        id_ticket: true,
+        estado: true,
+        id_usuario_asignado: true,
+        orden_trabajo: { select: { id_ot: true } },
+      },
+    });
+  }
+
+  /**
    * Entrega la clave en claro al tecnico, una sola vez.
    *
    * La lectura unica es a proposito: una clave de cliente que se puede volver a
    * mirar indefinidamente desde un panel es una clave filtrada con pasos
    * extra. Si el tecnico la pierde, el cliente la vuelve a pedir desde el
    * portal, que es mas barato que dejarla legible para siempre.
+   *
+   * Solo la ve quien tomo el ticket. Si cualquiera con acceso pudiera
+   * consumirla, dos personas mirando el mismo ticket podrian gastarse la unica
+   * lectura sin saber quien fue. Por eso la entrega queda tambien en el
+   * historial del ticket, con el usuario.
    */
-  async entregar(id_solicitud: number, id_empresa: number) {
+  async entregar(
+    id_solicitud: number,
+    actor: { userId: number; id_empresa: number },
+  ) {
     const s = await this.prisma.solicitud_clave_wifi.findUnique({
       where: { id_solicitud },
     });
-    if (!s || s.id_empresa !== id_empresa) {
+    if (!s || s.id_empresa !== actor.id_empresa) {
       // Mismo 404 para "no existe" y "es de otra empresa": distinguirlos deja
       // averiguar que solicitudes tiene la otra empresa.
       throw new NotFoundException('Solicitud no encontrada');
     }
     if (s.leida_en) throw new ConflictException(MENSAJE_YA_LEIDA);
+
+    const t = await this.ticketDeSolicitud(s.id_ticket, actor.id_empresa);
+    if (!t) throw new ConflictException(MENSAJE_SIN_TICKET);
+    // El estado del FSM, no el literal: G2 escribe "Escalado" directo en la
+    // base global (ver estadoCanonicoTicket), y el panel decide con el mismo.
+    const estado = estadoCanonicoTicket({
+      estado: t.estado,
+      id_usuario_asignado: t.id_usuario_asignado,
+      tieneOt: t.orden_trabajo != null,
+    });
+    if (
+      estado !== ESTADO_TICKET.EN_PROGRESO ||
+      t.id_usuario_asignado !== actor.userId
+    ) {
+      throw new ConflictException(MENSAJE_TOMAR_TICKET);
+    }
 
     const pem = this.llavePrivada();
     if (!pem) throw new ServiceUnavailableException(MENSAJE_SIN_LLAVE);
@@ -159,9 +257,23 @@ export class ClaveWifiService {
     // Se marca leida ANTES de devolverla: si el update falla, el tecnico no ve
     // la clave y puede reintentar. Al reves, un fallo aca la dejaria legible
     // otra vez despues de haberla mostrado.
-    await this.prisma.solicitud_clave_wifi.update({
-      where: { id_solicitud },
-      data: { leida_en: new Date(), estado: 'ENTREGADA' },
+    // La marca y la auditoria van juntas: una entrega sin rastro de quien la
+    // vio es justo lo que esta regla quiere evitar.
+    await this.prisma.$transaction(async (tx) => {
+      await tx.solicitud_clave_wifi.update({
+        where: { id_solicitud },
+        data: { leida_en: new Date(), estado: 'ENTREGADA' },
+      });
+      await tx.log_auditoria.create({
+        data: {
+          id_usuario: actor.userId,
+          accion: 'ENTREGAR_CLAVE_WIFI',
+          entidad_afectada: 'ticket',
+          id_entidad_afectada: t.id_ticket,
+          // Nunca la clave: el historial lo ve cualquiera que abra el ticket.
+          valor_nuevo: { id_solicitud },
+        },
+      });
     });
 
     return {

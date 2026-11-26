@@ -51,6 +51,26 @@ export interface EstadoOnt {
   potencia_dbm: number | null;
   /** Desde cuándo está en un estado distinto de ONLINE. Null si está online. */
   sin_senal_desde: Date | null;
+  /**
+   * Datos de SmartOLT que solo sirven para MOSTRAR (CU-15): el nombre de caja
+   * tal como lo escribió el instalador, la zona y el cliente. Las reglas no
+   * los usan; por eso son opcionales.
+   */
+  odb?: string | null;
+  /** Puerto de la ONT en su caja (SmartOLT `odb_port`). */
+  odb_puerto?: number | null;
+  zona?: string | null;
+  nombre_cliente?: string | null;
+  /**
+   * El cliente esta suspendido por deuda (contrato de G8 suspendido y ninguno
+   * activo). Su ONT caida es esperada: no es incidente. Ver `clientesSuspendidos`.
+   */
+  suspendido?: boolean;
+  /**
+   * SmartOLT no informa desde cuando esta en su estado y nunca la vimos cambiar:
+   * su fecha es solo la primera vez que la vimos. Ver `esInactiva`.
+   */
+  sin_fecha_de_fuente?: boolean;
 }
 
 export interface AlertaPropuesta {
@@ -74,7 +94,7 @@ export function claveDeCaja(o: EstadoOnt): string | null {
 const claveDePlaca = (o: EstadoOnt) => `OLT ${o.olt_externo ?? '?'} / placa ${o.board ?? '?'}`;
 const claveDeOlt = (o: EstadoOnt) => `OLT ${o.olt_externo ?? '?'}`;
 
-function estaCaida(o: EstadoOnt): boolean {
+function estaCaida(o: Pick<EstadoOnt, 'estado_conexion'>): boolean {
   return o.estado_conexion != null && o.estado_conexion !== ESTADO_CONEXION.ONLINE;
 }
 
@@ -114,8 +134,17 @@ export function afectaAlGrupo(o: EstadoOnt): boolean {
  * Equipo de un cliente dado de baja: sigue en SmartOLT, OFFLINE para siempre.
  * No es un incidente y no participa de ningún cálculo — ver `DIAS_MAX_INCIDENTE`.
  */
-export function esInactiva(o: EstadoOnt, ahora: Date): boolean {
+export function esInactiva(
+  o: Pick<EstadoOnt, 'estado_conexion' | 'sin_senal_desde' | 'suspendido' | 'sin_fecha_de_fuente'>,
+  ahora: Date,
+): boolean {
+  // Suspendido por deuda: fuera del padron igual que una baja, este o no en linea.
+  if (o.suspendido) return true;
   if (!estaCaida(o)) return false;
+  // Caida y sin fecha de SmartOLT: nunca le registro un cambio, asi que esta asi
+  // desde antes de que la vieramos. Medido el 13-11: las 63 ONT en ese caso eran
+  // equipos de baja. Sin esto, en una base nueva parecian caidas de hoy.
+  if (o.sin_fecha_de_fuente) return true;
   if (!o.sin_senal_desde) return false;
   return (ahora.getTime() - o.sin_senal_desde.getTime()) / 86_400_000 > DIAS_MAX_INCIDENTE;
 }
@@ -153,11 +182,12 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
     yaExplicado: (miembros: EstadoOnt[]) => boolean,
     marcar: (clave: string) => void,
     etiqueta: (clave: string) => string,
+    cuenta: { afectada: (o: EstadoOnt) => boolean; como: string },
   ) => {
     for (const [clave, miembros] of grupos) {
       if (miembros.length < minPadron) continue;
       if (yaExplicado(miembros)) continue;
-      const afectadas = miembros.filter(afectaAlGrupo).length;
+      const afectadas = miembros.filter(cuenta.afectada).length;
       const pct = Math.round((afectadas / miembros.length) * 100);
       if (pct < umbralPct) continue;
 
@@ -166,7 +196,7 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
       propuestas.push({
         tipo,
         severidad,
-        mensaje: `${afectadas} de ${miembros.length} ONT activas afectadas (${pct}%) en ${etiqueta(clave)}`,
+        mensaje: `${afectadas} de ${miembros.length} ONT activas ${cuenta.como} (${pct}%) en ${etiqueta(clave)}`,
         id_registro_ont: null,
         id_cliente: null,
         clave_caja: clave,
@@ -175,6 +205,14 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
       });
     }
   };
+
+  // OLT y placa caidas cuentan SOLO ONT sin servicio. Una placa con muchas ONT
+  // en linea pero con potencia fuera de rango no esta caida: es fibra con
+  // problemas en cada casa, y cada una ya tiene su alerta de potencia. Medido
+  // el 13-11 en la base real: las tres "Placa caida" al 25-39 % eran casi todas
+  // potencia (OLT 2/placa 1: 7 caidas, 52 por potencia). La caja (RF-15) si
+  // suma la potencia, porque el requisito lo pide; ver `afectaAlGrupo`.
+  const sinServicio = { afectada: estaCaida, como: 'sin servicio' };
 
   // --- Nivel 1: OLT completa ---
   evaluarNivel(
@@ -186,6 +224,7 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
     () => false,
     (k) => oltsCaidas.add(k),
     (k) => k,
+    sinServicio,
   );
 
   // --- Nivel 2: placa (CU-53 masivo) ---
@@ -198,6 +237,7 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
     (m) => oltsCaidas.has(claveDeOlt(m[0])),
     (k) => placasCaidas.add(k),
     (k) => k,
+    sinServicio,
   );
 
   // --- Nivel 3: caja NAP (CU-17) ---
@@ -210,6 +250,7 @@ export function evaluar(onts: EstadoOnt[], ahora: Date, umbralMin: number): Aler
     (m) => oltsCaidas.has(claveDeOlt(m[0])) || placasCaidas.has(claveDePlaca(m[0])),
     (k) => cajasCaidas.add(k),
     (k) => `${k.split('|')[1]} (puerto ${k.split('|')[0]})`,
+    { afectada: afectaAlGrupo, como: 'afectadas' },
   );
 
   // --- CU-16: candidatas a OT preventiva, AGREGADAS POR CAJA ---

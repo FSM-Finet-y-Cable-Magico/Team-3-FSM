@@ -2,8 +2,11 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizarNombreCaja } from './ligado-caja.js';
 import { descomponerFicha } from './ficha-cliente.js';
-import { evaluar, afectaAlGrupo, esInactiva, type EstadoOnt } from './reglas-alerta.js';
+import { evaluar, afectaAlGrupo, esInactiva, claveDeCaja, type EstadoOnt } from './reglas-alerta.js';
 import { ESTADO_CONEXION } from './monitoreo.constants.js';
+import { cabeceraDeCaja, capacidadDeCaja, type EntradaCatalogo } from './cajas-smartolt.js';
+import { clientesSuspendidos } from '../cortes/suspendidos.js';
+import { conUltimaLectura } from './ultima-lectura.js';
 import {
   DIAS_MAX_INCIDENTE,
   MIN_ONT_PARA_FALLA_CAJA,
@@ -162,6 +165,9 @@ export class AlertasService {
     zona?: string,
     caja?: string,
   ) {
+    // `+limit` en el controlador deja NaN si no es numero, y `take: NaN` lo
+    // rechaza Prisma.
+    const tope = Number.isFinite(limit) ? Math.min(200, Math.max(1, Math.trunc(limit))) : 100;
     const filas = await this.prisma.alerta_monitoreo.findMany({
       where: {
         id_empresa,
@@ -182,7 +188,18 @@ export class AlertasService {
       // orden equivocado, una CRITICA vieja podia quedar fuera del listado.
       // Acotado igual por `where` (una empresa, solo abiertas), que sobre los
       // datos reales de FiNet son ~200 filas.
-      orderBy: { creada_en: 'desc' },
+      //
+      // Las RESUELTAS si se cortan en SQL: la tabla no se purga y el motor
+      // cierra alertas solas en cada corrida, asi que sin tope "Ver resueltas"
+      // traia el historial entero, con sus cuatro relaciones, para mostrar 200.
+      // Se ven las resueltas mas recientemente --por `resuelta_en`, no por
+      // `creada_en`: una alerta vieja resuelta hoy tiene que aparecer--,
+      // ordenadas por severidad entre ellas. Las sin fecha de resolucion
+      // (filas viejas) van al final: en un DESC, Postgres pone los NULL primero.
+      orderBy: resuelta
+        ? [{ resuelta_en: { sort: 'desc', nulls: 'last' } }, { creada_en: 'desc' }]
+        : { creada_en: 'desc' },
+      ...(resuelta ? { take: tope } : {}),
       include: {
         registro: { select: { numero_serie: true, zona: true, nombre_cliente_ext: true, direccion_cliente_ext: true } },
         caja: { select: { identificador_unico: true, latitud: true, longitud: true } },
@@ -200,7 +217,7 @@ export class AlertasService {
       // Primero por urgencia, y a igual urgencia la mas reciente arriba.
       .sort((a, b) => rango(a.severidad) - rango(b.severidad) ||
         b.creada_en.getTime() - a.creada_en.getTime())
-      .slice(0, Math.min(200, Math.max(1, limit)))
+      .slice(0, tope)
       .map((a) => {
         if (!a.registro) return a;
         const f = descomponerFicha(a.registro.nombre_cliente_ext, a.registro.direccion_cliente_ext);
@@ -258,7 +275,7 @@ export class AlertasService {
       filtro = { olt, board: Number(board), pon: Number(pon), caja };
     }
 
-    const candidatos = await this.prisma.registro_ont.findMany({
+    const candidatos = await conUltimaLectura(this.prisma, await this.prisma.registro_ont.findMany({
       where: {
         id_empresa,
         olt_externo: filtro.olt,
@@ -275,13 +292,8 @@ export class AlertasService {
         direccion_cliente_ext: true,
         id_caja_nap: true,
         caja_confirmada_por: true,
-        monitoreos: {
-          orderBy: [{ timestamp_medicion: 'desc' }, { id_monitoreo: 'desc' }],
-          take: 1,
-          select: { estado_conexion: true, potencia_actual_dbm: true, timestamp_medicion: true },
-        },
       },
-    });
+    }));
 
     // `registro_ont.id_cliente` no es una relación de Prisma (apunta a la tabla
     // que mantiene otro grupo), así que los clientes se traen aparte y
@@ -617,7 +629,15 @@ export class AlertasService {
    * que todavia tienen servicio.
    */
   async criticosPorCaja(id_empresa: number, zona?: string) {
-    const todas = await this.cargarEstado(id_empresa);
+    const [todas, catalogo] = await Promise.all([
+      this.cargarEstado(id_empresa),
+      // Para mostrar la capacidad de la caja junto a las ONT conocidas. Es el
+      // mismo catalogo de la grilla de "Puertos por caja".
+      this.prisma.odb_smartolt.findMany({
+        where: { id_empresa },
+        select: { nombre: true, capacidad: true },
+      }) as Promise<EntradaCatalogo[]>,
+    ]);
 
     // Mismo padron que el motor de RF-15: fuera los equipos de clientes dados
     // de baja. Siguen en SmartOLT, OFFLINE para siempre, y si entran inflan el
@@ -636,57 +656,48 @@ export class AlertasService {
     // afectada mientras el motor no levantaba la alerta.
     const esCritica = afectaAlGrupo;
 
-    // Se agrupa por id_caja_nap y no por el nombre normalizado: dos cajas
-    // distintas pueden llamarse igual en zonas distintas -- la red real de FiNet
-    // tiene nueve "NAP 5" -- y juntarlas mezclaria clientes de barrios lejanos
-    // en una sola fila.
-    const porCaja = new Map<number, EstadoOnt[]>();
+    // La caja es la de SmartOLT, no la del KML de Tomodat: se agrupa con la
+    // MISMA clave que el motor de alertas (puerto PON + nombre normalizado).
+    //
+    // Antes se agrupaba por `id_caja_nap`, la caja de Tomodat que el ligado
+    // deduce por nombre y cercania. El panel mostraba entonces nombres que el
+    // tecnico no encontraba en SmartOLT ("nap 53" del KML contra "NAP53" del
+    // instalador), y podia contradecir a las alertas, que nunca usaron Tomodat.
+    //
+    // El puerto PON en la clave es lo que impide juntar homonimas: la red real
+    // de FiNet tiene nueve "NAP 5", en barrios distintos y splitters distintos.
+    const porCaja = new Map<string, EstadoOnt[]>();
     const sinCaja: EstadoOnt[] = [];
     for (const o of onts) {
-      if (o.id_caja_nap == null) {
+      const clave = claveDeCaja(o);
+      if (clave == null) {
         if (esCritica(o)) sinCaja.push(o);
         continue;
       }
-      const lista = porCaja.get(o.id_caja_nap);
+      const lista = porCaja.get(clave);
       if (lista) lista.push(o);
-      else porCaja.set(o.id_caja_nap, [o]);
+      else porCaja.set(clave, [o]);
     }
 
-    const cajas = await this.prisma.caja_nap.findMany({
-      where: { id_caja_nap: { in: [...porCaja.keys()] } },
-      select: {
-        id_caja_nap: true,
-        identificador_unico: true,
-        zona: true,
-        latitud: true,
-        longitud: true,
-        capacidad_puertos: true,
-      },
-    });
-    const infoCaja = new Map(cajas.map((c) => [c.id_caja_nap, c]));
-
     const filas = [...porCaja]
-      .map(([id, miembros]) => {
+      .map(([clave, miembros]) => {
         const criticos = miembros.filter(esCritica);
-        const info = infoCaja.get(id);
         const sinSenal = criticos.filter(
           (o) => o.estado_conexion != null && o.estado_conexion !== ESTADO_CONEXION.ONLINE,
         ).length;
         return {
-          id_caja_nap: id,
-          identificador_unico: info?.identificador_unico ?? null,
-          zona: info?.zona ?? null,
-          latitud: info?.latitud ?? null,
-          longitud: info?.longitud ?? null,
+          ...cabeceraDeCaja(clave, miembros),
           clientes_en_la_caja: miembros.length,
-          capacidad_puertos: info?.capacidad_puertos ?? null,
-          // El padron esta incompleto: 216 de las 262 cajas de FiNet tienen
-          // menos de cinco ONT registradas y capacidad declarada de 16 puertos.
-          // En esas, "100%" quiere decir "las dos que conocemos", no "la caja
+          // El padron esta incompleto: la mayoria de las cajas tienen menos de
+          // cinco ONT registradas de una capacidad tipica de 16 puertos. En
+          // esas, "100%" quiere decir "las dos que conocemos", no "la caja
           // entera". Es el mismo motivo por el que CU-17 no declara caida una
           // caja bajo `MIN_ONT_PARA_FALLA_CAJA`, y se marca para que el panel
           // no presente ese 100% como si fuera un dato firme.
           padron_chico: miembros.length < MIN_ONT_PARA_FALLA_CAJA,
+          // Contexto para ese porcentaje: "2 de 2 ONT conocidas" en una caja
+          // de 16 puertos no es lo mismo que la caja entera caida.
+          ...capacidadDeCaja(miembros, catalogo),
           criticos: criticos.length,
           sin_senal: sinSenal,
           potencia_fuera_de_rango: criticos.length - sinSenal,
@@ -694,6 +705,13 @@ export class AlertasService {
           // mandar una cuadrilla a la caja o tecnicos a cada domicilio: el
           // mismo criterio con el que CU-17 declara una falla de caja.
           pct_afectado: Math.round((criticos.length / miembros.length) * 100),
+          // Para desplegar bajo la fila a quien hay que ir a ver.
+          onts_criticas: criticos.map((o) => ({
+            numero_serie: o.numero_serie,
+            nombre_cliente: o.nombre_cliente ?? null,
+            estado_conexion: o.estado_conexion,
+            potencia_dbm: o.potencia_dbm,
+          })),
         };
       })
       .filter((f) => f.criticos > 0)
@@ -714,7 +732,7 @@ export class AlertasService {
       totales: {
         cajas_afectadas: filas.length,
         clientes_criticos: filas.reduce((n, f) => n + f.criticos, 0),
-        // Criticos que no se pudieron atribuir a ninguna caja: no participan de
+        // Criticos sin nombre de caja en SmartOLT: no participan de
         // la agrupacion, pero esconderlos daria un total que no cuadra.
         criticos_sin_caja: sinCaja.length,
       },
@@ -745,8 +763,11 @@ export class AlertasService {
    * medición. Si no hay evento (ONT que ya estaba caída antes del primer
    * arranque del poller) se usa la primera lectura conocida, que subestima la
    * antigüedad pero nunca la inventa.
+   *
+   * Publico: lo usan el motor, el panel de criticos y las cajas SmartOLT, y
+   * que lean del mismo lugar es lo que impide que se contradigan.
    */
-  private async cargarEstado(id_empresa: number): Promise<EstadoOnt[]> {
+  async cargarEstado(id_empresa: number): Promise<EstadoOnt[]> {
     const filas = await this.prisma.$queryRaw<
       {
         id_registro_ont: number;
@@ -757,26 +778,34 @@ export class AlertasService {
         board: number | null;
         puerto_pon: number | null;
         odb: string | null;
+        odb_puerto: number | null;
+        zona: string | null;
+        nombre_cliente_ext: string | null;
         estado_conexion: string | null;
         potencia_dbm: string | null;
         sin_senal_desde: Date | null;
+        sin_fecha: boolean | null;
       }[]
     >`
-      -- El desempate por id_monitoreo NO es cosmetico. timestamp_medicion
-      -- guarda el last_status_change de SmartOLT, o sea DESDE CUANDO la ONT
-      -- esta en ese estado, no cuando se leyo: es lo que hace falta para
-      -- horas_asi y para descartar equipos dados de baja. Pero eso significa
-      -- que una ONT con meses en linea escribe en cada sondeo una fila con el
-      -- MISMO timestamp. Sin desempate, DISTINCT ON elegia cualquiera de las
-      -- empatadas y la potencia podia venir de semanas atras: justo el dato
-      -- que CU-13 y CU-16 necesitan al dia, porque miden deriva.
-      -- id_monitoreo es autoincremental: el mayor es la lectura mas reciente.
+      -- La ultima lectura es la ultima ESCRITA (id_monitoreo, autoincremental),
+      -- igual que el dedupe y la purga. NO se ordena por timestamp_medicion:
+      -- esa columna guarda DESDE CUANDO la ONT esta en su estado (el
+      -- last_status_change de SmartOLT), no cuando se leyo, y no siempre crece
+      -- con el tiempo. Medido en la base de desarrollo el 13-11: ordenando por
+      -- fecha, 851 ONT devolvian una fila vieja (con la potencia de dias atras)
+      -- porque un ingestor en otra zona horaria las habia fechado 3 h mas
+      -- tarde; y las ONT sin fecha de SmartOLT quedaban atrapadas en las filas
+      -- que la ingesta antigua fechaba con "ahora".
+      --
+      -- DISTINCT ON y no LATERAL ... LIMIT 1: el LATERAL sin el indice
+      -- (id_registro_ont, id_monitoreo DESC) no terminaba en la VPS (24-11),
+      -- y ese indice lo crea el admin de la base global. Ver ultima-lectura.ts.
       WITH ultima AS (
         SELECT DISTINCT ON (m.id_registro_ont)
                m.id_registro_ont, m.estado_conexion, m.potencia_actual_dbm, m.timestamp_medicion
         FROM monitoreo_ont m
-        WHERE m.id_registro_ont IS NOT NULL
-        ORDER BY m.id_registro_ont, m.timestamp_medicion DESC, m.id_monitoreo DESC
+        WHERE m.id_registro_ont IN (SELECT id_registro_ont FROM registro_ont WHERE id_empresa = ${id_empresa})
+        ORDER BY m.id_registro_ont, m.id_monitoreo DESC
       ),
       transicion AS (
         SELECT DISTINCT ON (h.id_registro_ont) h.id_registro_ont, h.timestamp
@@ -785,17 +814,23 @@ export class AlertasService {
         ORDER BY h.id_registro_ont, h.timestamp DESC
       )
       SELECT r.id_registro_ont, r.numero_serie, r.id_cliente, r.id_caja_nap,
-             r.olt_externo, r.board, r.puerto_pon, r.odb,
+             r.olt_externo, r.board, r.puerto_pon, r.odb, r.odb_puerto, r.zona, r.nombre_cliente_ext,
              u.estado_conexion,
              u.potencia_actual_dbm::text AS potencia_dbm,
              CASE WHEN u.estado_conexion <> 'ONLINE'
-                  THEN COALESCE(t.timestamp, u.timestamp_medicion) END AS sin_senal_desde
+                  THEN COALESCE(t.timestamp, u.timestamp_medicion) END AS sin_senal_desde,
+             -- Sin evento y con la lectura fechada en su primera vez: es la
+             -- fecha que la ingesta pone cuando SmartOLT no informa ninguna.
+             (t.timestamp IS NULL AND u.timestamp_medicion = r.primera_vez) AS sin_fecha
       FROM registro_ont r
       JOIN ultima u ON u.id_registro_ont = r.id_registro_ont
       LEFT JOIN transicion t ON t.id_registro_ont = r.id_registro_ont
       WHERE r.id_empresa = ${id_empresa}
     `;
 
+    // Aparte de la consulta principal a proposito: si se pierde el permiso
+    // sobre `contrato` (de G8), el monitoreo no puede caerse. Ver `clientesSuspendidos`.
+    const suspendidos = await clientesSuspendidos(this.prisma, id_empresa, this.logger);
     return filas.map((f) => ({
       id_registro_ont: f.id_registro_ont,
       numero_serie: f.numero_serie,
@@ -808,6 +843,12 @@ export class AlertasService {
       estado_conexion: f.estado_conexion,
       potencia_dbm: f.potencia_dbm == null ? null : Number(f.potencia_dbm),
       sin_senal_desde: f.sin_senal_desde,
+      sin_fecha_de_fuente: f.sin_fecha === true,
+      odb: f.odb,
+      odb_puerto: f.odb_puerto,
+      zona: f.zona,
+      nombre_cliente: f.nombre_cliente_ext,
+      suspendido: f.id_cliente != null && suspendidos.has(f.id_cliente),
     }));
   }
 }

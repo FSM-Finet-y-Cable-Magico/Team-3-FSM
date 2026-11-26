@@ -1,7 +1,9 @@
 
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { MonitoreoService } from './monitoreo.service.js';
 import { CapacidadCajasService } from './capacidad-cajas.service.js';
+import { CajasSmartoltService } from './cajas-smartolt.service.js';
+import { CatalogoOdbService } from './catalogo-odb.service.js';
 import { PurgaMonitoreoService } from './purga-monitoreo.service.js';
 import { DescubrimientoService } from './descubrimiento.service.js';
 import { LigadoCajaService } from './ligado-caja.service.js';
@@ -29,6 +31,8 @@ export class MonitoreoController {
     private alertas: AlertasService,
     private capacidad: CapacidadCajasService,
     private purga: PurgaMonitoreoService,
+    private cajas: CajasSmartoltService,
+    private catalogo: CatalogoOdbService,
   ) {}
 
   // --- Alertas (CU-13 / CU-15 / CU-17 / CU-52 / CU-53) -----------------------
@@ -54,6 +58,38 @@ export class MonitoreoController {
   ) {
     const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
     return this.alertas.criticosPorCaja(id, zona);
+  }
+
+  /**
+   * Todas las cajas NAP de SmartOLT con la ocupacion de sus puertos.
+   * La caja es la misma del panel de criticos (puerto PON + nombre).
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('cajas-smartolt')
+  cajasSmartolt(
+    @CurrentUser() user: UserPayload,
+    @Query('zona') zona?: string,
+    @Query('empresa') empresa?: string,
+  ) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.cajas.listar(id, zona);
+  }
+
+  /**
+   * Grilla de puertos de una caja. La clave va en la query y no en la ruta:
+   * lleva espacios, "/" y "|" ("2/1/7|NAP 53"), que no sobreviven como
+   * segmento de URL.
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('cajas-smartolt/detalle')
+  cajaSmartolt(
+    @CurrentUser() user: UserPayload,
+    @Query('clave') clave?: string,
+    @Query('empresa') empresa?: string,
+  ) {
+    if (!clave) throw new BadRequestException('Falta la clave de la caja');
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.cajas.detalle(id, clave);
   }
 
   /** Zonas y cajas con alertas abiertas, para poblar los filtros del panel. */
@@ -244,6 +280,16 @@ export class MonitoreoController {
     @Query('aplicar') aplicar?: string,
   ) {
     return this.capacidad.completarCapacidades(user.id_empresa, aplicar === 'true');
+  }
+
+  /**
+   * Refresca ya la copia del catalogo de cajas de SmartOLT (el sondeo lo hace
+   * solo una vez al dia). Se guarda bajo la empresa duena de la fuente.
+   */
+  @Roles('ADMIN')
+  @Post('catalogo-odb')
+  catalogoOdb() {
+    return this.catalogo.refrescar();
   }
   /**
    * Acota monitoreo_ont a las ultimas N lecturas por ONT.

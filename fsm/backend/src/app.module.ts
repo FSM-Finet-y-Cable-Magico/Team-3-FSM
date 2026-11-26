@@ -16,6 +16,7 @@ import { RolesGuard } from './common/guards/roles.guard.js';
 import { ConfiguracionModule } from './configuracion/configuracion.module.js';
 import { TicketsModule } from './tickets/tickets.module.js';
 import { AuditoriaModule } from './auditoria/auditoria.module.js';
+import { CortesModule } from './cortes/cortes.module.js';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { AuditoriaModule } from './auditoria/auditoria.module.js';
     ConfiguracionModule,
     TicketsModule,
     AuditoriaModule,
+    CortesModule,
   ],
   providers: [
     // Ambos guards son globales: todo endpoint nace exigiendo token y rol, y

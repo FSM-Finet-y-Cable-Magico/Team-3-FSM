@@ -8,9 +8,22 @@ import {
   type FiltroConsulta,
   type EstadoConexion,
 } from './fuente/fuente-monitoreo.js';
-import { potenciaFueraDeRango } from './monitoreo.constants.js';
+import { ESTADO_CONEXION, potenciaFueraDeRango } from './monitoreo.constants.js';
 import { analizarInterrupciones } from './interrupciones.js';
+import { esInactiva } from './reglas-alerta.js';
+import { conUltimaLectura, ultimasLecturas } from './ultima-lectura.js';
+import { clientesSuspendidos } from '../cortes/suspendidos.js';
 import { rangoDiaOperacion } from '../common/utils/dia-habil.util.js';
+
+/**
+ * El ultimo evento de caida de una ONT, para saber desde cuando esta sin
+ * servicio. Mismo criterio que la CTE `transicion` de `cargarEstado`.
+ */
+const ULTIMA_CAIDA = {
+  where: { evento: { not: ESTADO_CONEXION.ONLINE } },
+  orderBy: { timestamp: 'desc' as const },
+  take: 1,
+};
 
 /** CU-14: la vista inicial comprende los ultimos 30 dias. */
 const DIAS_HISTORIAL_POR_DEFECTO = 30;
@@ -55,6 +68,8 @@ export interface ResumenIngesta {
   sin_unidad: number;
   cambios_estado: number;
   registros_enriquecidos: number;
+  /** ONT a las que el censo les cambio la caja o el puerto en este sondeo. */
+  ubicaciones_actualizadas: number;
   ms: number;
 }
 
@@ -97,25 +112,14 @@ export class MonitoreoService {
     const ids = [...new Set(filas.map((f) => f.id_registro_ont).filter((x): x is number => x != null))];
     if (ids.length === 0) return new Map();
 
-    const guardadas = await this.prisma.$queryRaw<
-      { id_registro_ont: number; estado_conexion: string | null; potencia: string | null; timestamp_medicion: Date }[]
-    >`
-      SELECT DISTINCT ON (m.id_registro_ont)
-             m.id_registro_ont,
-             m.estado_conexion,
-             m.potencia_actual_dbm::text AS potencia,
-             m.timestamp_medicion
-        FROM monitoreo_ont m
-       WHERE m.id_registro_ont = ANY(${ids})
-       ORDER BY m.id_registro_ont, m.id_monitoreo DESC
-    `;
+    const guardadas = await ultimasLecturas(this.prisma, ids);
 
     return new Map(
-      guardadas.map((g) => [
-        g.id_registro_ont,
+      [...guardadas].map(([id, g]) => [
+        id,
         {
           estado: g.estado_conexion,
-          potencia: g.potencia === null ? null : Number(g.potencia),
+          potencia: g.potencia_actual_dbm === null ? null : Number(g.potencia_actual_dbm),
           timestamp: g.timestamp_medicion.getTime(),
         },
       ]),
@@ -124,17 +128,25 @@ export class MonitoreoService {
 
   async ingestarLecturas(filtro?: FiltroConsulta): Promise<ResumenIngesta> {
     const t0 = Date.now();
-    const lecturas = await this.fuente.listarLecturas(filtro);
+    // El censo se pide JUNTO con las lecturas y antes de tocar la base.
+    // SmartOltClient responde los dos con una sola llamada a
+    // get_all_onus_details (la memoiza 10 s), que tiene cuota de 15 por hora;
+    // pedirlo despues de las consultas a la base arriesgaba una segunda llamada
+    // si la base tardaba. El censo hace falta en cada tick: de ahi sale la caja
+    // y el puerto de cada ONT.
+    const [lecturas, detalles] = await Promise.all([
+      this.fuente.listarLecturas(filtro),
+      this.fuente.listarOntDetalles(filtro),
+    ]);
     const sns = lecturas.map((l) => l.sn);
 
     const registros = await this.registro.asegurarRegistros(sns);
 
-    // Enriquecer (censo + cruce con unidad_equipo) solo si hay ONT que todavía
-    // no tienen unidad resuelta — evita pegarle a la fuente en cada tick.
+    // Enriquecer (cruce con unidad_equipo) solo las ONT que todavía no tienen
+    // unidad resuelta.
     let registros_enriquecidos = 0;
     const sinUnidad = sns.filter((sn) => registros.get(sn)?.id_unidad == null);
     if (sinUnidad.length > 0) {
-      const detalles = await this.fuente.listarOntDetalles(filtro);
       registros_enriquecidos = await this.registro.enriquecer(
         detalles.filter((d) => sinUnidad.includes(d.sn)),
       );
@@ -143,6 +155,20 @@ export class MonitoreoService {
       for (const [sn, r] of refrescados) registros.set(sn, r);
     }
 
+    // Caja y puerto de TODAS las ONT, no solo las que se enriquecieron. Es un
+    // dato de apoyo: si falla, se registra y las lecturas se guardan igual.
+    // Sin filtro el censo es completo y puede liberar puertos de ONT que ya no
+    // estan en SmartOLT.
+    let ubicaciones_actualizadas = 0;
+    try {
+      ubicaciones_actualizadas = await this.registro.sincronizarUbicacion(detalles, {
+        censoCompleto: !filtro,
+      });
+    } catch (e) {
+      this.logger.error(`No se pudo actualizar la ubicacion de las ONT: ${(e as Error).message}`);
+    }
+
+    const ahora = new Date();
     const filasMonitoreo = lecturas.map((l) => {
       const r = registros.get(l.sn);
       return {
@@ -152,7 +178,15 @@ export class MonitoreoService {
         id_caja_nap: r?.id_caja_nap ?? null,
         potencia_actual_dbm: l.potencia_rx_dbm,
         estado_conexion: l.estado,
-        timestamp_medicion: l.medido_en,
+        // Si la fuente no dice desde cuando esta asi, se usa la primera vez que
+        // la vimos: si SmartOLT nunca le registro un cambio, lleva en este
+        // estado AL MENOS desde entonces. Con "ahora" (lo de antes), un equipo
+        // dado de baja en 2021 parecia recien caido en cada sondeo y nunca
+        // llegaba a la regla de baja de 7 dias (`esInactiva`): en la base de
+        // FiNet eran 63 de las 85 "caidas recientes". Ademas, como la fecha
+        // cambiaba, el dedupe no la reconocia y se escribia una fila nueva cada
+        // 5 minutos por ONT.
+        timestamp_medicion: l.medido_en ?? r?.primera_vez ?? ahora,
       };
     });
 
@@ -172,7 +206,9 @@ export class MonitoreoService {
         id_registro_ont: r?.id_registro_ont ?? null,
         id_unidad: r?.id_unidad ?? null,
         evento: l.estado,
-        timestamp: l.medido_en,
+        // Aca NO va la primera vez: el cambio se acaba de ver, y fecharlo en
+        // el pasado haria que una caida de hoy pareciera una baja vieja.
+        timestamp: l.medido_en ?? ahora,
       });
     }
 
@@ -204,6 +240,7 @@ export class MonitoreoService {
       sin_unidad: [...registros.values()].filter((r) => r.id_unidad == null).length,
       cambios_estado: eventos.length,
       registros_enriquecidos,
+      ubicaciones_actualizadas,
       ms: Date.now() - t0,
     };
     this.logger.log(
@@ -251,39 +288,41 @@ export class MonitoreoService {
    * visible para todos, que es el lado correcto en el que fallar.
    */
   async lecturasRecientes(id_empresa: number, page = 1, limit = 50) {
-    const registros = await this.prisma.registro_ont.findMany({
-      where: { id_empresa },
-      orderBy: { numero_serie: 'asc' },
-      skip: (page - 1) * limit,
-      take: limit,
-      include: {
-        // Desempate por id_monitoreo: `timestamp_medicion` guarda desde cuando
-        // la ONT esta en ese estado, no cuando se leyo, asi que una ONT estable
-        // repite el mismo valor en cada sondeo. Sin desempatar, "la ultima
-        // lectura" salia arbitraria entre las empatadas.
-        monitoreos: { orderBy: [{ timestamp_medicion: 'desc' }, { id_monitoreo: 'desc' }], take: 1 },
-      },
-    });
+    // La ultima lectura es la ultima ESCRITA, no la de fecha mayor:
+    // `timestamp_medicion` guarda desde cuando la ONT esta en ese estado y
+    // no siempre crece. Ver la nota de `AlertasService.cargarEstado`. Va
+    // aparte del findMany: ver `ultimasLecturas`.
+    const registros = await conUltimaLectura(
+      this.prisma,
+      await this.prisma.registro_ont.findMany({
+        where: { id_empresa },
+        orderBy: { numero_serie: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: { historial: ULTIMA_CAIDA },
+      }),
+    );
 
-    return registros.map((r) => this.aVista(r));
+    const ahora = new Date();
+    const suspendidos = await clientesSuspendidos(this.prisma, id_empresa, this.logger);
+    return registros.map((r) => this.aVista(r, ahora, suspendidos));
   }
 
   /** Detalle de una ONT por número de serie: última lectura + historial. */
   async detalleOnt(sn: string, id_empresa: number) {
-    const registro = await this.prisma.registro_ont.findUnique({
+    const base = await this.prisma.registro_ont.findUnique({
       where: { numero_serie: sn },
-      include: {
-        monitoreos: { orderBy: [{ timestamp_medicion: 'desc' }, { id_monitoreo: 'desc' }], take: 1 },
-        historial: { orderBy: { timestamp: 'desc' }, take: 50 },
-      },
+      include: { historial: { orderBy: { timestamp: 'desc' }, take: 50 } },
     });
     // Mismo NotFoundException tanto si no existe como si es de otra empresa:
     // no hay que distinguirle a quien pregunta cuál de los dos casos es.
-    if (!registro || registro.id_empresa !== id_empresa) {
+    if (!base || base.id_empresa !== id_empresa) {
       throw new NotFoundException(`ONT ${sn} no vista por el monitoreo`);
     }
+    const [registro] = await conUltimaLectura(this.prisma, [base]);
 
-    return { ...this.aVista(registro), historial_conexion: registro.historial };
+    const suspendidos = await clientesSuspendidos(this.prisma, id_empresa, this.logger);
+    return { ...this.aVista(registro, new Date(), suspendidos), historial_conexion: registro.historial };
   }
 
   /**
@@ -358,20 +397,40 @@ export class MonitoreoService {
     });
     if (!cliente) throw new NotFoundException(`Cliente ${id_cliente} no encontrado`);
 
-    const registros = await this.prisma.registro_ont.findMany({
-      where: { id_cliente },
-      include: { monitoreos: { orderBy: [{ timestamp_medicion: 'desc' }, { id_monitoreo: 'desc' }], take: 1 } },
-    });
-    return { id_cliente, onts: registros.map((r) => this.aVista(r)) };
+    const registros = await conUltimaLectura(
+      this.prisma,
+      await this.prisma.registro_ont.findMany({ where: { id_cliente }, include: { historial: ULTIMA_CAIDA } }),
+    );
+    const ahora = new Date();
+    const suspendidos = await clientesSuspendidos(this.prisma, id_empresa, this.logger);
+    return { id_cliente, onts: registros.map((r) => this.aVista(r, ahora, suspendidos)) };
   }
 
-  /** Contadores para el dashboard de monitoreo. */
+  /**
+   * Contadores para el dashboard de monitoreo.
+   *
+   * `por_estado` cuenta solo las ONT activas. Las posibles bajas (caidas hace
+   * mas de 7 dias: equipos de clientes que se fueron y siguen en SmartOLT) van
+   * aparte en `posibles_bajas`: sumadas a "fuera de linea" eran ~200 de ~970 y
+   * tapaban las caidas que si hay que atender.
+   */
   async resumen(id_empresa: number) {
     const vistas = await this.lecturasRecientes(id_empresa, 1, 5000);
     const por_estado: Record<string, number> = { ONLINE: 0, OFFLINE: 0, LOS: 0, DESCONOCIDO: 0 };
     let potencia_fuera_de_rango = 0;
+    let posibles_bajas = 0;
+    let suspendidos = 0;
 
     for (const v of vistas) {
+      // Cortado por deuda: su caida es esperada, no es "fuera de linea".
+      if (v.suspendido) {
+        suspendidos++;
+        continue;
+      }
+      if (v.posible_baja) {
+        posibles_bajas++;
+        continue;
+      }
       const e = v.estado_conexion ?? 'DESCONOCIDO';
       por_estado[e] = (por_estado[e] ?? 0) + 1;
       if (v.potencia_fuera_de_rango) potencia_fuera_de_rango++;
@@ -380,6 +439,8 @@ export class MonitoreoService {
     return {
       total_ont: vistas.length,
       por_estado,
+      posibles_bajas,
+      suspendidos,
       potencia_fuera_de_rango,
       fecha_actualizacion: new Date(),
     };
@@ -394,15 +455,32 @@ export class MonitoreoService {
     zona: string | null;
     olt_externo: string | null;
     nombre_cliente_ext: string | null;
+    primera_vez?: Date;
     monitoreos: {
       potencia_actual_dbm: unknown;
       estado_conexion: string | null;
       timestamp_medicion: Date;
     }[];
-  }) {
+    /** Eventos de conexion, del mas nuevo al mas viejo. */
+    historial?: { evento: string | null; timestamp: Date }[];
+  }, ahora: Date, suspendidos: Set<number> = new Set()) {
     const ultima = r.monitoreos[0] ?? null;
     const potencia =
       ultima?.potencia_actual_dbm == null ? null : Number(ultima.potencia_actual_dbm);
+    const estado = ultima?.estado_conexion ?? null;
+    // Desde cuando esta caida: el ultimo evento de caida y, si no hay, la
+    // fecha de la lectura. Es el mismo criterio de `AlertasService.cargarEstado`.
+    const caida = r.historial?.find((h) => h.evento != null && h.evento !== ESTADO_CONEXION.ONLINE)?.timestamp ?? null;
+    const sin_senal_desde =
+      estado != null && estado !== ESTADO_CONEXION.ONLINE ? (caida ?? ultima?.timestamp_medicion ?? null) : null;
+    const suspendido = r.id_cliente != null && suspendidos.has(r.id_cliente);
+    // Sin evento y con la lectura fechada en su primera vez: SmartOLT no dio
+    // fecha. Mismo criterio que `sin_fecha` en `cargarEstado`.
+    const sin_fecha_de_fuente =
+      caida == null &&
+      ultima != null &&
+      r.primera_vez != null &&
+      ultima.timestamp_medicion.getTime() === r.primera_vez.getTime();
     return {
       numero_serie: r.numero_serie,
       id_unidad: r.id_unidad,
@@ -410,10 +488,14 @@ export class MonitoreoService {
       zona: r.zona,
       olt_externo: r.olt_externo,
       nombre_cliente_ext: r.nombre_cliente_ext,
-      estado_conexion: ultima?.estado_conexion ?? null,
+      estado_conexion: estado,
       potencia_actual_dbm: potencia,
       potencia_fuera_de_rango: potenciaFueraDeRango(potencia),
       medido_en: ultima?.timestamp_medicion ?? null,
+      /** Caida hace mas de 7 dias: equipo de un cliente que se fue. Ver `esInactiva`. */
+      posible_baja: !suspendido && esInactiva({ estado_conexion: estado, sin_senal_desde, sin_fecha_de_fuente }, ahora),
+      /** Cliente suspendido por deuda (contrato de G8): su caida es esperada. */
+      suspendido,
     };
   }
 }

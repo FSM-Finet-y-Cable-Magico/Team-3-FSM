@@ -1,0 +1,3 @@
+# Los scripts de shell SIEMPRE con LF: con CRLF, Alpine no los ejecuta
+# ("no such file or directory", que no dice nada sobre la causa real).
+*.sh text eol=lf

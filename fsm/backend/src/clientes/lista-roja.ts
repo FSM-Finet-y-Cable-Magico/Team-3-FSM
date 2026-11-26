@@ -15,10 +15,8 @@ export const NIVEL_RIESGO = { VERDE: 'VERDE', AMARILLO: 'AMARILLO', ROJO: 'ROJO'
 export type NivelRiesgo = (typeof NIVEL_RIESGO)[keyof typeof NIVEL_RIESGO];
 export const NIVELES_RIESGO: NivelRiesgo[] = [NIVEL_RIESGO.VERDE, NIVEL_RIESGO.AMARILLO, NIVEL_RIESGO.ROJO];
 
-/** MOD RF-32 y CU-37: AMARILLO y ROJO exigen justificacion de 20 caracteres. */
+/** CU-37: anular un bloqueo por lista roja exige justificacion de 20 caracteres. */
 export const MIN_JUSTIFICACION_RIESGO = 20;
-export const MENSAJE_JUSTIFICACION_RIESGO =
-  'Debe ingresar una descripción con al menos 20 caracteres para justificar el marcado.';
 
 /** Textos de CU-35. */
 export const mensajeVetado = (motivo: string) =>
@@ -53,6 +51,30 @@ export function normalizarDireccion(texto: string): string {
 
 export const textoDireccion = (d: { direccion_completa: string; comuna: string }) =>
   `${d.direccion_completa}, ${d.comuna}`;
+
+/**
+ * CU-35: ¿el cliente esta vetado? Lo esta si el CRM lo marca conflictivo o si
+ * su nivel vigente en el semaforo del FSM es ROJO. Las dos fuentes cuentan
+ * porque desde que el FSM solo consulta la cartera (e8458b6) ya no puede
+ * escribir `es_conflictivo`: si solo mirara ese campo, un cliente en ROJO en
+ * la ficha podria recibir una instalacion. Devuelve el motivo, o null.
+ *
+ * Gana el motivo del CRM cuando lo hay; si no, el de la ultima fila del semaforo.
+ */
+export async function vetoDelCliente(
+  prisma: Pick<PrismaService, 'lista_negra'>,
+  cliente: { id_cliente: number; es_conflictivo: boolean; obs_conflictivo: string | null },
+): Promise<{ motivo: string } | null> {
+  if (cliente.es_conflictivo) return { motivo: cliente.obs_conflictivo ?? 'CONFLICTIVO' };
+  const filas = await prisma.lista_negra.findMany({
+    where: { id_cliente: cliente.id_cliente },
+    orderBy: { id_vetado: 'desc' },
+    take: 1,
+    select: { nivel: true, motivo: true },
+  });
+  if (nivelVigente(filas) !== NIVEL_RIESGO.ROJO) return null;
+  return { motivo: filas[0].motivo?.trim() || 'CONFLICTIVO' };
+}
 
 /**
  * CU-35, excepcion 2: ¿la direccion es la de algun cliente que hoy esta en

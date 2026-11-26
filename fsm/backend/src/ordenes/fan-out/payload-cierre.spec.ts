@@ -25,9 +25,10 @@ const fila = (extra: Partial<OtParaPayload> = {}): OtParaPayload =>
     direccion: { direccion_completa: 'Av. Ejemplo 1234', comuna: 'La Pintana' },
     categoria_falla: null,
     materiales: [
-      { id_tipo_equipo: 7, cantidad: { toString: () => '2' } },
-      { id_tipo_equipo: null, cantidad: { toString: () => '1' } },
+      { id_tipo_equipo: 7, cantidad: { toString: () => '2' }, tipo_equipo: { nombre: 'Cable drop 1 fibra' } },
+      { id_tipo_equipo: null, cantidad: { toString: () => '1' }, tipo_equipo: null },
     ],
+    tecnico: { nombre_usuario: 'mrojas' },
     llamada: { resultado: 'CONFORME' },
     solicitud_integracion: null,
     ...extra,
@@ -45,20 +46,33 @@ describe('construirPayloadCierre', () => {
       potencia_optica_dbm: -21.5,
       resuelto_remotamente: false,
       id_tecnico: 14,
+      usuario_tecnico: 'mrojas',
       cliente: null,
       direccion: { direccion_completa: 'Av. Ejemplo 1234', comuna: 'La Pintana' },
       categoria_falla: null,
       categoria_falla_otro: null,
-      materiales: [{ id_tipo_equipo: 7, cantidad: 2 }],
+      materiales: [{ id_tipo_equipo: 7, nombre: 'Cable drop 1 fibra', cantidad: 2 }],
       equipos_instalados: [
         { numero_serie: 'ONT-123', accion: 'INSTALADO_EN_CLIENTE', estado_g1: 'Instalado en cliente' },
       ],
       equipos_retirados: [],
+      // Siempre presente, vacia si no falto nada: una lista ausente y una vacia
+      // significan lo mismo y G1 no tiene por que tratar dos casos.
+      equipos_faltantes: [],
+      falla_reportada: null,
+      solucion_aplicada: null,
+      resultado: null,
       request_id: null,
       trace_id: null,
       id_prospecto: null,
       id_contrato: null,
       id_plan: null,
+      // Correlacion de una BAJA por morosidad: null en todo lo demas, igual que
+      // los de instalacion, porque este payload tambien lo recibe G1.
+      id_cliente_externo: null,
+      id_servicio: null,
+      id_solicitud_retiro: null,
+      id_ticket_externo: null,
     });
   });
 
@@ -71,6 +85,8 @@ describe('construirPayloadCierre', () => {
           id_prospecto_externo: 45,
           id_contrato_externo: 92,
           id_plan_externo: 15,
+          direccion_completa: 'Los Alerces 455',
+          comuna: 'Quilpué',
         },
       }),
     );
@@ -84,9 +100,106 @@ describe('construirPayloadCierre', () => {
     });
   });
 
+  it('la OT de G8 informa la direccion aunque no tenga fila propia', () => {
+    // Desde que no escribimos `direccion_servicio` --tabla del CRM, sin
+    // permiso en la base compartida-- la direccion sale de la solicitud.
+    // Si esto se rompe, G1 recibe un cierre sin direccion y no se nota hasta
+    // que reclaman.
+    const p = construirPayloadCierre(
+      fila({
+        direccion: null,
+        solicitud_integracion: {
+          request_id: 'r', trace_id: 't',
+          id_prospecto_externo: 1, id_contrato_externo: 2, id_plan_externo: null,
+          direccion_completa: 'Los Alerces 455', comuna: 'Quilpué',
+        },
+      } as never),
+    );
+    expect(p.direccion).toEqual({ direccion_completa: 'Los Alerces 455', comuna: 'Quilpué' });
+  });
+
+  it('si la OT tiene direccion propia, la solicitud no la pisa', () => {
+    const p = construirPayloadCierre(
+      fila({
+        direccion: { direccion_completa: 'Av. Ejemplo 1234', comuna: 'La Pintana' },
+        solicitud_integracion: {
+          request_id: 'r', trace_id: 't',
+          id_prospecto_externo: 1, id_contrato_externo: 2, id_plan_externo: null,
+          direccion_completa: 'OTRA 999', comuna: 'Otra',
+        },
+      } as never),
+    );
+    expect(p.direccion).toEqual({ direccion_completa: 'Av. Ejemplo 1234', comuna: 'La Pintana' });
+  });
+
+  describe('datos de reparacion que pide G1', () => {
+    it('viajan los tres cuando la OT es una reparacion', () => {
+      const p = construirPayloadCierre(
+        fila({
+          tipo_ot: 'REPARACION',
+          cierre_equipos: {
+            reparacion: {
+              falla_reportada: 'Fibra cortada en el poste',
+              solucion_aplicada: 'Se empalmo la fibra',
+              resultado: 'PARCIAL',
+            },
+          },
+        } as never),
+      );
+      expect(p).toMatchObject({
+        falla_reportada: 'Fibra cortada en el poste',
+        solucion_aplicada: 'Se empalmo la fibra',
+        resultado: 'PARCIAL',
+      });
+    });
+
+    it('conviven con los equipos en la misma columna', () => {
+      // Las dos secciones comparten `cierre_equipos`. Si una pisa a la otra,
+      // G1 recibe el cierre a medias y no se nota hasta que reclaman.
+      const p = construirPayloadCierre(
+        fila({
+          tipo_ot: 'REPARACION',
+          cierre_equipos: {
+            retirados: [{ numero_serie: 'ONT-9', accion: 'RETIRADO_PARA_DIAGNOSTICO', estado_g1: 'En revisión' }],
+            reparacion: { falla_reportada: 'ONT quemada', solucion_aplicada: 'Se reemplazo', resultado: 'RESUELTO' },
+          },
+        } as never),
+      );
+      expect(p.equipos_retirados).toHaveLength(1);
+      expect(p.falla_reportada).toBe('ONT quemada');
+    });
+
+    it('van en null en una OT sin seccion de reparacion', () => {
+      // Parte del contrato: el mismo payload lo recibe G8, que no los usa.
+      const p = construirPayloadCierre(fila({ cierre_equipos: null } as never));
+      expect(p.falla_reportada).toBeNull();
+      expect(p.solucion_aplicada).toBeNull();
+      expect(p.resultado).toBeNull();
+    });
+  });
+
   it('con el cliente, lo informa con rut y nombre', () => {
     const p = construirPayloadCierre(fila({ cliente: { rut: '11111111-1', nombre_completo: 'Ana Soto' } } as never));
     expect(p.cliente).toEqual({ rut: '11111111-1', nombre: 'Ana Soto' });
+  });
+
+  it('sin tecnico asignado, la clave natural va en null y no rompe', () => {
+    // No deberia pasar --sin tecnico no se puede cerrar-- pero la columna es
+    // nullable y el payload no es lugar para caerse.
+    const p = construirPayloadCierre(fila({ tecnico: null, id_tecnico: null } as never));
+    expect(p.usuario_tecnico).toBeNull();
+    expect(p.id_tecnico).toBeNull();
+  });
+
+  it('si el tipo de equipo quedo huerfano, el nombre va vacio y la fila igual viaja', () => {
+    // Una fila de uso que apunta a un tipo borrado. Se informa la cantidad
+    // igual: perder el consumo es peor que informarlo sin nombre.
+    const p = construirPayloadCierre(
+      fila({
+        materiales: [{ id_tipo_equipo: 7, cantidad: { toString: () => '3' }, tipo_equipo: null }],
+      } as never),
+    );
+    expect(p.materiales).toEqual([{ id_tipo_equipo: 7, nombre: '', cantidad: 3 }]);
   });
 });
 

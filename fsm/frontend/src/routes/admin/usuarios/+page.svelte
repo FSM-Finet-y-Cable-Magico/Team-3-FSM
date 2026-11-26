@@ -56,7 +56,8 @@
   let formPasswordTemporal = $state('');
   let formRol = $state('TECNICO');
   let formIdEmpresa = $state(1);
-  let formZona = $state('');
+  let formRut = $state('');
+  let formEmail = $state('');
   let formError = $state('');
   let formSuccess = $state('');
   let formLoading = $state(false);
@@ -90,7 +91,8 @@
   }
 
   function validarNombreUsuario(val: string): boolean {
-    return /^[a-z]+\.[a-z]+$/.test(val);
+    // Despues del punto se aceptan numeros: tecnico.prueba1.
+    return /^[a-z]+\.[a-z0-9]+$/.test(val);
   }
 
   function abrirModal() {
@@ -99,7 +101,8 @@
     formPasswordTemporal = '';
     formRol = 'TECNICO';
     formIdEmpresa = 1;
-    formZona = '';
+    formRut = '';
+    formEmail = '';
     formError = '';
     formSuccess = '';
     showModal = true;
@@ -119,7 +122,7 @@
       return;
     }
     if (!validarNombreUsuario(formNombreUsuario)) {
-      formError = 'El nombre de usuario debe tener formato: nombre.apellido en minúsculas';
+      formError = 'El nombre de usuario debe tener formato: nombre.apellido en minúsculas (puede terminar en número)';
       return;
     }
     if (formPasswordTemporal.length < 8) {
@@ -136,9 +139,8 @@
         rol: formRol,
         id_empresa: formIdEmpresa,
       };
-      if (formRol === 'TECNICO' && formZona.trim()) {
-        dto.zona = formZona;
-      }
+      if (formRut.trim()) dto.rut = formRut.trim();
+      if (formEmail.trim()) dto.email = formEmail.trim();
 
       await authApi.crearUsuario(token, dto);
       formSuccess = 'Usuario creado correctamente';
@@ -283,7 +285,7 @@
 
         <InputField label="Nombre de usuario" name="nombre_usuario" bind:value={formNombreUsuario} required={true} />
         {#if formNombreUsuario && !validarNombreUsuario(formNombreUsuario)}
-          <p class="text-red-500 text-xs -mt-3 mb-3">Formato: nombre.apellido en minúsculas</p>
+          <p class="text-red-500 text-xs -mt-3 mb-3">Formato: nombre.apellido en minúsculas (puede terminar en número)</p>
         {:else if formNombreUsuario && validarNombreUsuario(formNombreUsuario)}
           <p class="text-green-500 text-xs -mt-3 mb-3">Formato válido ✓</p>
         {/if}
@@ -314,9 +316,10 @@
           </select>
         </div>
 
-        {#if formRol === 'TECNICO'}
-          <InputField label="Zona" name="zona" bind:value={formZona} />
-        {/if}
+        <!-- Opcionales, como en las cuentas que crea el administrador de la base.
+             El RUT lo usan los otros grupos para encontrar al tecnico. -->
+        <InputField label="RUT (opcional)" name="rut" bind:value={formRut} />
+        <InputField label="Email (opcional)" name="email" type="email" bind:value={formEmail} />
 
         {#if formError}
           <Alert class="rounded-lg mb-4 text-sm">{formError}</Alert>

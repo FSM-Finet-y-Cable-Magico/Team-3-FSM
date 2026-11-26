@@ -47,6 +47,7 @@ describe('IntegracionesController: forma del contrato', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const req = { apiScope: scopeG1 };
 
@@ -173,6 +174,10 @@ describe('IntegracionesService: aislamiento y topes', () => {
 
   // Cambio de contrato con MOD RF-04: con el aviso al cierre del tecnico (el
   // modo por defecto), una OT que espera aprobacion ya se aviso y se reconcilia.
+  //
+  // Desde el 12-11-2026 el filtro es un OR por tipo de OT, no una lista de
+  // estados: una BAJA avisa solo al aprobar, asi que una que espera aprobacion
+  // todavia no se aviso y no se puede reconciliar.
   it('cierres exige rango, lo limita a 90 dias y solo mira cierres ya avisados', async () => {
     await expect(service.cierres(scopeG1, { id_empresa: 1 })).rejects.toBeInstanceOf(BadRequestException);
     await expect(
@@ -181,7 +186,13 @@ describe('IntegracionesService: aislamiento y topes', () => {
 
     await service.cierres(scopeG1, { id_empresa: 1, desde: '2026-09-01', hasta: '2026-09-02' });
     expect(findMany.mock.calls[0][0]).toMatchObject({
-      where: { id_empresa: 1, estado: { in: ['COMPLETADA', 'PENDIENTE_APROBACION'] } },
+      where: {
+        id_empresa: 1,
+        OR: [
+          { tipo_ot: 'BAJA', estado: { in: ['COMPLETADA'] } },
+          { tipo_ot: { not: 'BAJA' }, estado: { in: ['COMPLETADA', 'PENDIENTE_APROBACION'] } },
+        ],
+      },
       take: 100,
     });
   });
@@ -189,7 +200,14 @@ describe('IntegracionesService: aislamiento y topes', () => {
   it('cierre responde 404 si la OT no esta cerrada en esa empresa', async () => {
     await expect(service.cierre(scopeG1, 41, 1)).rejects.toBeInstanceOf(NotFoundException);
     expect(findFirst.mock.calls[0][0]).toMatchObject({
-      where: { id_ot: 41, id_empresa: 1, estado: { in: ['COMPLETADA', 'PENDIENTE_APROBACION'] } },
+      where: {
+        id_ot: 41,
+        id_empresa: 1,
+        OR: [
+          { tipo_ot: 'BAJA', estado: { in: ['COMPLETADA'] } },
+          { tipo_ot: { not: 'BAJA' }, estado: { in: ['COMPLETADA', 'PENDIENTE_APROBACION'] } },
+        ],
+      },
     });
   });
 

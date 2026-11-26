@@ -39,20 +39,38 @@ export interface EquipoOt {
   observacion_estado_fisico?: string;
 }
 
+/**
+ * Como quedo una reparacion. Los tres literales los compara G1.
+ *
+ * Es la unica copia de la lista en el frontend, y es deliberada: a diferencia
+ * de las acciones de equipo --que el backend sirve por API justamente para que
+ * no se desincronicen-- estos tres son valores fijos del contrato y van en el
+ * formulario con su etiqueta en español, que el backend no tiene por que
+ * conocer.
+ */
+export type ResultadoReparacion = 'RESUELTO' | 'PARCIAL' | 'SIN_SOLUCION';
+
 export interface CerrarOTDto {
   fotos: { url_cloudinary: string; formato: string; tamano_kb: number }[];
   materiales: { id_tipo_equipo: number; cantidad: number; numero_serie?: string }[];
   potencia_optica_dbm: number;
-  /** CU-31: opcional; si no, la llamada la hace despues el jefe tecnico. */
-  resultado_llamada?: 'CONFORME' | 'NO_CONFORME';
-  obs_llamada?: string;
   resuelto_remotamente?: boolean;
   id_categoria_falla?: number;
   categoria_falla_otro?: string;
+  /**
+   * Los tres datos que G1 exige para registrar el cierre de una REPARACION.
+   * Obligatorios en ese tipo de OT y ausentes en los demas; el backend los
+   * valida segun `tipo_ot`.
+   */
+  falla_reportada?: string;
+  solucion_aplicada?: string;
+  resultado_reparacion?: ResultadoReparacion;
   /** G1 los pasa a "Instalado en cliente". */
   equipos_instalados?: EquipoOt[];
   /** G1 aplica la transicion segun `accion` (bodega, revision o baja). */
   equipos_retirados?: EquipoOt[];
+  /** Comentario libre para el jefe que aprueba. Interno: no viaja a G1/G8. */
+  comentario_tecnico?: string;
 }
 
 /** Delega en el envoltorio compartido, que ademas cierra la sesion en un 401. */
@@ -66,6 +84,17 @@ export async function obtenerMateriales(token: string): Promise<MaterialDisponib
 
 export async function obtenerOpcionesEquipo(token: string): Promise<OpcionesEquipo> {
   return fetchApi(token, `${API_URL}/api/ordenes/acciones-equipo`);
+}
+
+/** Un equipo que G1 le asigno al tecnico y que todavia lleva encima. */
+export interface EquipoAsignado {
+  numero_serie: string;
+  modelo: string | null;
+  tipo: string | null;
+}
+
+export async function obtenerMisEquipos(token: string): Promise<EquipoAsignado[]> {
+  return fetchApi(token, `${API_URL}/api/ordenes/mis-equipos`);
 }
 
 export async function cerrarOT(token: string, id_ot: number, dto: CerrarOTDto): Promise<Record<string, unknown>> {

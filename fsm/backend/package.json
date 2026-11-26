@@ -8,6 +8,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "postinstall": "prisma generate",
+    "seed:global": "tsx prisma/seed-global.ts",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -40,7 +41,7 @@
     "cloudinary": "^2.10.0",
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
-    "fast-xml-parser": "^5.11.1",
+    "fast-xml-parser": "^5.12.1",
     "multer": "^2.5.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

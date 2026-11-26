@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import { ZONA_OPERACION } from '../../common/utils/dia-habil.util.js';
+import { fechaDeFuente } from './fecha-fuente.js';
 import type {
   FuenteMonitoreo,
   FiltroConsulta,
@@ -47,6 +49,7 @@ interface RawOnu {
   port?: number | string;
   zone_name?: string;
   odb_name?: string;
+  odb_port?: number | string | null;
   name?: string;
   address?: string;
   onu_type_name?: string;
@@ -75,6 +78,9 @@ interface RespuestaSmartOlt<T> {
 
 const TTL_CACHE_ONUS_MS = 10_000;
 
+/** Ningun divisor tiene mas puertos; un numero mayor es un error de tipeo. */
+export const MAX_PUERTO_CAJA = 128;
+
 export class SmartOltClient implements FuenteMonitoreo {
   readonly nombre = 'smartolt';
   private readonly logger = new Logger(SmartOltClient.name);
@@ -88,6 +94,11 @@ export class SmartOltClient implements FuenteMonitoreo {
   constructor(
     private readonly baseUrl: string,
     private readonly token: string,
+    /**
+     * Zona en la que SmartOLT escribe sus fechas (la de la cuenta). Ver
+     * `fechaDeFuente`: sin esto, la hora dependia de la zona del servidor.
+     */
+    private readonly zona: string = ZONA_OPERACION,
   ) {
     if (!baseUrl || !token) {
       throw new Error(
@@ -154,6 +165,7 @@ export class SmartOltClient implements FuenteMonitoreo {
         puerto_pon: this.num(o.port),
         zona: o.zone_name ?? null,
         odb: o.odb_name ?? null,
+        odb_puerto: this.puertoDeCaja(o.odb_port),
         nombre_cliente: o.name ?? null,
         direccion_cliente: o.address ?? null,
         modelo: o.onu_type_name ?? null,
@@ -162,16 +174,31 @@ export class SmartOltClient implements FuenteMonitoreo {
 
   async listarLecturas(filtro?: FiltroConsulta): Promise<LecturaOnt[]> {
     const onus = await this.obtenerOnus(filtro);
-    return onus
+    const ilegibles: string[] = [];
+    const lecturas = onus
       .filter((o) => o.sn)
-      .map((o) => ({
-        sn: String(o.sn),
-        // 1490nm es la que "ve" la ONT (downstream) — la relevante para el
-        // cliente. 1310nm (upstream) es fallback si falta la primera.
-        potencia_rx_dbm: this.num(o.signal_1490 ?? o.signal_1310),
-        estado: this.mapearEstado(o.status),
-        medido_en: this.fecha(o.last_status_change) ?? new Date(),
-      }));
+      .map((o) => {
+        const medido_en = this.fecha(o.last_status_change);
+        if (medido_en == null && o.last_status_change?.trim()) ilegibles.push(o.last_status_change);
+        return {
+          sn: String(o.sn),
+          // 1490nm es la que "ve" la ONT (downstream) — la relevante para el
+          // cliente. 1310nm (upstream) es fallback si falta la primera.
+          potencia_rx_dbm: this.num(o.signal_1490 ?? o.signal_1310),
+          estado: this.mapearEstado(o.status),
+          medido_en,
+        };
+      });
+    // Una fecha que SmartOLT manda y no se puede leer termina fechada en la
+    // primera vez que se vio la ONT. Se avisa: el 13-11 un cambio de formato
+    // (microsegundos) dejo asi a las 883 ONT y nada lo dijo.
+    if (ilegibles.length > 0) {
+      this.logger.warn(
+        `SmartOLT: ${ilegibles.length} ONT con last_status_change en un formato que no se pudo leer ` +
+          `(ej. "${ilegibles[0]}"). Quedan fechadas en su primera vez.`,
+      );
+    }
+    return lecturas;
   }
 
   // ---- internos ----
@@ -254,6 +281,16 @@ export class SmartOltClient implements FuenteMonitoreo {
     return 'DESCONOCIDO';
   }
 
+  /**
+   * Un puerto de caja es un entero entre 1 y `MAX_PUERTO_CAJA`; cualquier otra
+   * cosa no se sabe. El tope no es decorativo: la columna es SMALLINT, y un
+   * "99999" tipeado a mano tumbaria la transaccion de la ingesta entera.
+   */
+  private puertoDeCaja(v: unknown): number | null {
+    const n = this.num(v);
+    return n != null && Number.isInteger(n) && n > 0 && n <= MAX_PUERTO_CAJA ? n : null;
+  }
+
   private num(v: unknown): number | null {
     if (v === null || v === undefined || v === '') return null;
     const n = Number(v);
@@ -261,8 +298,6 @@ export class SmartOltClient implements FuenteMonitoreo {
   }
 
   private fecha(v: string | undefined): Date | null {
-    if (!v) return null;
-    const d = new Date(v.replace(' ', 'T'));
-    return isNaN(d.getTime()) ? null : d;
+    return fechaDeFuente(v, this.zona);
   }
 }

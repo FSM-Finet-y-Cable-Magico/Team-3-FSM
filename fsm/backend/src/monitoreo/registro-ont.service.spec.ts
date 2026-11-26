@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RegistroOntService } from './registro-ont.service.js';
+import type { OntDetalle } from './fuente/fuente-monitoreo.js';
 
 /**
  * `asegurarRegistros` garantiza una fila de `registro_ont` por cada serial que
@@ -93,5 +94,153 @@ describe('registro_ont · alta de las ONT que faltan', () => {
 
     expect((updateMany.mock.calls[0][0] as any).where.numero_serie).toEqual({ in: ['A1'] });
     expect((updateMany.mock.calls[0][0] as any).data).toEqual({ id_empresa: 1 });
+  });
+});
+
+/**
+ * La caja y el puerto de cada ONT se mantienen al dia en CADA sondeo. Antes el
+ * censo solo se escribia para las ONT sin unidad: una ONT ya enriquecida nunca
+ * se enteraba de que la cambiaron de caja, y nunca recibiria su puerto.
+ */
+describe('registro_ont · caja y puerto de cada ONT segun la fuente', () => {
+  let service: RegistroOntService;
+  let actuales: any[];
+  const findMany = jest.fn(async (_a: unknown) => actuales);
+  const update = jest.fn((a: unknown) => a);
+  const updateMany = jest.fn((a: unknown) => a);
+  const $transaction = jest.fn(async (ops: unknown[]) => ops);
+
+  // Donde estan hoy en la base: el mismo PON y zona que trae `det`.
+  const PON = { olt_externo: '3', board: 12, puerto_pon: 1, zona: 'ZONA 6' };
+
+  const det = (sn: string, odb: string | null, odb_puerto?: number | null): OntDetalle => ({
+    sn,
+    id_externo: sn,
+    olt_externo: '3',
+    board: 12,
+    puerto_pon: 1,
+    zona: 'ZONA 6',
+    odb,
+    ...(odb_puerto === undefined ? {} : { odb_puerto }),
+    nombre_cliente: null,
+    direccion_cliente: null,
+    modelo: null,
+  });
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    actuales = [];
+    const mod = await Test.createTestingModule({
+      providers: [
+        RegistroOntService,
+        { provide: PrismaService, useValue: { registro_ont: { findMany, update, updateMany }, $transaction } },
+        { provide: ConfigService, useValue: { get: () => 1 } },
+      ],
+    }).compile();
+    service = mod.get(RegistroOntService);
+  });
+
+  it('escribe solo las ONT cuya caja o puerto cambio', async () => {
+    actuales = [
+      { numero_serie: 'A', odb: 'NAP203', odb_puerto: 3, ...PON },
+      { numero_serie: 'B', odb: 'NAP203', odb_puerto: null, ...PON },
+      { numero_serie: 'C', odb: 'NAP61', odb_puerto: 1, ...PON },
+    ];
+
+    const n = await service.sincronizarUbicacion([
+      det('A', 'NAP203', 3),
+      det('B', 'NAP203', 4),
+      det('C', 'NAP62', 1),
+    ]);
+
+    expect(n).toBe(2);
+    expect(update.mock.calls.map((c) => c[0])).toEqual([
+      { where: { numero_serie: 'B' }, data: { odb_puerto: 4 } },
+      { where: { numero_serie: 'C' }, data: { odb: 'NAP62' } },
+    ]);
+  });
+
+  it('busca por empresa de la fuente y no filtra por unidad: alcanza a las ONT de G1', async () => {
+    await service.sincronizarUbicacion([det('A', 'NAP203', 3)]);
+
+    expect((findMany.mock.calls[0][0] as any).where).toEqual({
+      numero_serie: { in: ['A'] },
+      id_empresa: 1,
+    });
+  });
+
+  it('borra el puerto cuando SmartOLT dice que ya no tiene', async () => {
+    actuales = [{ numero_serie: 'A', odb: 'NAP203', odb_puerto: 3, ...PON }];
+
+    await service.sincronizarUbicacion([det('A', 'NAP203', null)]);
+
+    expect(update.mock.calls[0][0]).toEqual({ where: { numero_serie: 'A' }, data: { odb_puerto: null } });
+  });
+
+  it('no toca el puerto si la fuente no lo informa (CSV, mock)', async () => {
+    actuales = [{ numero_serie: 'A', odb: 'NAP203', odb_puerto: 3, ...PON }];
+
+    const n = await service.sincronizarUbicacion([det('A', 'NAP203')]);
+
+    expect(n).toBe(0);
+    expect($transaction).not.toHaveBeenCalled();
+  });
+
+  it('si la ONT cambio de puerto PON, se actualiza junto con la caja', async () => {
+    // Si solo se actualizara el nombre, la clave de caja quedaria
+    // "PON viejo|caja nueva": una caja que no existe.
+    actuales = [
+      { numero_serie: 'A', odb: 'NAP203', odb_puerto: 3, olt_externo: '3', board: 12, puerto_pon: 1, zona: 'ZONA 6' },
+    ];
+
+    await service.sincronizarUbicacion([{ ...det('A', 'NAP61', 2), puerto_pon: 7, zona: 'ZONA 5' }]);
+
+    expect(update.mock.calls[0][0]).toEqual({
+      where: { numero_serie: 'A' },
+      data: { odb: 'NAP61', odb_puerto: 2, puerto_pon: 7, zona: 'ZONA 5' },
+    });
+  });
+
+  it('con el censo completo, libera el puerto de las ONT que SmartOLT ya no reporta', async () => {
+    // Una ONT reemplazada y borrada de SmartOLT dejaba su puerto tomado para
+    // siempre, y la grilla mostraba un conflicto fantasma con la nueva.
+    actuales = [{ numero_serie: 'A', odb: 'NAP203', odb_puerto: 3, olt_externo: '3', board: 12, puerto_pon: 1, zona: 'ZONA 6' }];
+
+    await service.sincronizarUbicacion([det('A', 'NAP203', 3)], { censoCompleto: true });
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id_empresa: 1, numero_serie: { notIn: ['A'] }, odb_puerto: { not: null } },
+      data: { odb_puerto: null },
+    });
+  });
+
+  it('no usa una transaccion: cientos de cambios no entran en los 5 s de Prisma', async () => {
+    // La primera vez que se cargan los puertos pueden cambiar cientos de ONT a
+    // la vez: en una sola transaccion pasaba el limite de 5 s de Prisma (P2028).
+    actuales = Array.from({ length: 120 }, (_, i) => ({
+      numero_serie: `S${i}`, odb: 'NAP1', odb_puerto: null, ...PON,
+    }));
+
+    const n = await service.sincronizarUbicacion(actuales.map((a, i) => det(a.numero_serie, 'NAP1', (i % 16) + 1)));
+
+    expect(n).toBe(120);
+    expect($transaction).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledTimes(120);
+  });
+
+  it('con un censo parcial o vacio no libera nada', async () => {
+    await service.sincronizarUbicacion([det('A', 'NAP203', 3)]);
+    await service.sincronizarUbicacion([], { censoCompleto: true });
+
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it('ignora ONT del censo que no estan registradas', async () => {
+    actuales = [];
+
+    const n = await service.sincronizarUbicacion([det('Z', 'NAP1', 2)]);
+
+    expect(n).toBe(0);
+    expect(update).not.toHaveBeenCalled();
   });
 });

@@ -118,14 +118,42 @@ describe('reserva de puerto NAP en la OT de instalacion (CU-20)', () => {
     });
   });
 
-  it('CU-25: cerrar la OT-BAJA-PUERTO deja LIBRE el puerto ocupado por el cliente', async () => {
+  /**
+   * CU-25 sigue valiendo: el puerto de una baja termina LIBRE. Lo que cambio el
+   * 12-11-2026 es CUANDO, y por eso son dos pruebas en vez de una.
+   *
+   * Antes se desconectaba al cerrar el tecnico. Eso dejaba el puerto libre
+   * mientras el equipo seguia en el domicilio, y si el jefe tecnico rechazaba el
+   * cierre quedaba libre para siempre, porque `rechazarCierre` no lo devolvia.
+   * Lo levanto G8 al proponer el flujo de baja por morosidad.
+   */
+  it('CU-25: cerrar la OT-BAJA-PUERTO todavia NO libera el puerto', async () => {
     ot.tipo_ot = 'BAJA';
     const foto = { url_cloudinary: 'https://res.cloudinary.com/x/y.jpg', formato: 'jpg', tamano_kb: 1 };
     await service.cerrarOT(900, { fotos: [foto], materiales: [], potencia_optica_dbm: -21 }, tecnico);
+
+    // El equipo sigue en la casa del cliente hasta que alguien apruebe.
+    expect(puertoUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('CU-25: aprobar el cierre de la OT-BAJA-PUERTO deja LIBRE el puerto del cliente', async () => {
+    ot.tipo_ot = 'BAJA';
+    ot.estado = 'PENDIENTE_APROBACION';
+    await service.aprobarCierre(900, {}, jefe);
 
     expect(puertoUpdateMany).toHaveBeenCalledWith({
       where: { id_caja_nap: 5, estado: 'OCUPADO', id_cliente_asociado: 10 },
       data: { estado: 'LIBRE', id_cliente_asociado: null },
     });
+  });
+
+  it('cancelar una BAJA no libera el puerto: el cliente sigue con servicio', async () => {
+    // Hallazgo del 12-11-2026, no estaba en la lista de G8: la rama de
+    // cancelacion liberaba el puerto sin mirar el tipo de OT.
+    ot.tipo_ot = 'BAJA';
+    ot.estado = 'ASIGNADA';
+    await service.actualizarEstado(900, { estado: 'CANCELADA', obs_cancelacion: 'El cliente pago' }, jefe);
+
+    expect(puertoUpdateMany).not.toHaveBeenCalled();
   });
 });

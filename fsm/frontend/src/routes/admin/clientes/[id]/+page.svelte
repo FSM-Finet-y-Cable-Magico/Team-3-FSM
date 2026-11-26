@@ -1,7 +1,6 @@
 <script lang="ts">
   import { formatearRut } from '$lib/utils/rut';
   import SemaforoRiesgo from '$lib/components/SemaforoRiesgo.svelte';
-  import { NIVELES_RIESGO, MIN_JUSTIFICACION_RIESGO, type NivelRiesgo } from '$lib/utils/riesgo';
   import Alert from '$lib/components/Alert.svelte';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
@@ -9,110 +8,15 @@
   import { page } from '$app/stores';
   import { authStore } from '$lib/stores/auth.store';
   import * as clientesApi from '$lib/api/clientes.api';
-  import InputField from '$lib/components/InputField.svelte';
   import HistorialFallasPanel from '$lib/components/HistorialFallasPanel.svelte';
 
   let token = '';
-  let rol = $state('');
   let loading = $state(true);
   let errorMsg = $state('');
 
   let cliente: clientesApi.ClienteFicha | null = $state(null);
   let historialOT: clientesApi.HistorialOT[] = $state([]);
   let alertaReparaciones: clientesApi.ClienteConHistorial['alerta_reparaciones_30_dias'] = $state(undefined);
-
-  let editMode = $state(false);
-  let editNombre = $state('');
-  let editEmail = $state('');
-  let editTelefono = $state('');
-  let editEstado = $state('');
-  let editDireccion = $state('');
-  let editComuna = $state('');
-  let editCiudad = $state('');
-  let editLoading = $state(false);
-  let editError = $state('');
-
-  // CU-25: baja de servicio.
-  let resumen = $state<clientesApi.ResumenBaja | null>(null);
-  let motivoBaja = $state('');
-  let sinDeuda = $state(false);
-  let obsBaja = $state('');
-  let bajaLoading = $state(false);
-  let bajaError = $state('');
-  let bajaHecha = $state<{ ot_baja_puerto: number; ot_baja_equipo: number } | null>(null);
-
-  async function abrirBaja() {
-    if (!cliente) return;
-    bajaError = '';
-    motivoBaja = '';
-    sinDeuda = false;
-    obsBaja = '';
-    try {
-      resumen = await clientesApi.resumenBaja(token, cliente.id_cliente);
-    } catch (err) {
-      bajaError = err instanceof Error ? err.message : 'Error al preparar la baja';
-    }
-  }
-
-  async function registrarBaja() {
-    if (!cliente || !motivoBaja || !sinDeuda) return;
-    bajaLoading = true;
-    bajaError = '';
-    try {
-      const r = await clientesApi.darDeBaja(token, cliente.id_cliente, {
-        motivo: motivoBaja,
-        confirma_sin_deuda: true,
-        ...(obsBaja.trim() && { observaciones: obsBaja.trim() }),
-      });
-      bajaHecha = { ot_baja_puerto: r.ot_baja_puerto, ot_baja_equipo: r.ot_baja_equipo };
-      cliente = { ...cliente, estado: 'BAJA' };
-      resumen = null;
-    } catch (err) {
-      bajaError = err instanceof Error ? err.message : 'Error al registrar la baja';
-    } finally {
-      bajaLoading = false;
-    }
-  }
-
-  // MOD RF-32: semaforo de riesgo.
-  let showRiesgoModal = $state(false);
-  let nivelNuevo = $state<NivelRiesgo>('VERDE');
-  let motivoRiesgo = $state('');
-  let riesgoLoading = $state(false);
-  let riesgoError = $state('');
-
-  function abrirRiesgo() {
-    nivelNuevo = cliente?.nivel_riesgo ?? 'VERDE';
-    motivoRiesgo = '';
-    riesgoError = '';
-    showRiesgoModal = true;
-  }
-
-  async function guardarRiesgo() {
-    if (!cliente) return;
-    const motivo = motivoRiesgo.trim();
-    // Mismo minimo y mismo texto que el Controlador (CU-37, MOD RF-32).
-    if (nivelNuevo !== 'VERDE' && motivo.length < MIN_JUSTIFICACION_RIESGO) {
-      riesgoError = 'Debe ingresar una descripción con al menos 20 caracteres para justificar el marcado.';
-      return;
-    }
-    riesgoLoading = true;
-    riesgoError = '';
-    try {
-      const r = await clientesApi.cambiarNivelRiesgo(token, cliente.id_cliente, nivelNuevo, motivo || undefined);
-      cliente = {
-        ...cliente,
-        nivel_riesgo: r.nivel_riesgo as NivelRiesgo,
-        es_conflictivo: r.nivel_riesgo === 'ROJO',
-        obs_conflictivo: r.motivo ?? undefined,
-      };
-      showRiesgoModal = false;
-    } catch (err) {
-      riesgoError = err instanceof Error ? err.message : 'Error al cambiar el nivel';
-    } finally {
-      riesgoLoading = false;
-    }
-  }
 
   onMount(() => {
     authStore.checkAuth();
@@ -128,7 +32,6 @@
     }
 
     token = state.token ?? '';
-    rol = state.usuario?.rol ?? '';
 
     const rut = $page.params.id;
     if (rut) {
@@ -148,46 +51,6 @@
       errorMsg = err instanceof Error ? err.message : 'Error al cargar cliente';
     } finally {
       loading = false;
-    }
-  }
-
-  function iniciarEdicion() {
-    if (!cliente) return;
-    editNombre = cliente.nombre_completo;
-    editEmail = cliente.email ?? '';
-    editTelefono = cliente.telefono ?? '';
-    editEstado = cliente.estado;
-    editDireccion = cliente.direccion_principal?.direccion_completa ?? '';
-    editComuna = cliente.direccion_principal?.comuna ?? '';
-    editCiudad = cliente.direccion_principal?.ciudad ?? '';
-    editError = '';
-    editMode = true;
-  }
-
-  function cancelarEdicion() {
-    editMode = false;
-  }
-
-  async function guardarEdicion() {
-    if (!cliente) return;
-    editLoading = true;
-    editError = '';
-    try {
-      await clientesApi.editarCliente(token, cliente.id_cliente, {
-        nombre_completo: editNombre,
-        email: editEmail || undefined,
-        telefono: editTelefono || undefined,
-        estado: editEstado,
-        direccion_completa: editDireccion,
-        comuna: editComuna,
-        ciudad: editCiudad || undefined,
-      });
-      editMode = false;
-      await cargarCliente(cliente.rut);
-    } catch (err) {
-      editError = err instanceof Error ? err.message : 'Error al guardar';
-    } finally {
-      editLoading = false;
     }
   }
 
@@ -224,13 +87,6 @@
       <a href="/admin/clientes" class="btn-texto mt-4">&larr; Volver a clientes</a>
     {:else if cliente}
       <a href="/admin/clientes" class="btn-texto mb-4">&larr; Volver a clientes</a>
-      {#if bajaHecha}
-        <div role="status" class="mt-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          Baja registrada. Quedaron pendientes
-          <a href={`/admin/ot/${bajaHecha.ot_baja_puerto}`} class="btn-texto">OT #{bajaHecha.ot_baja_puerto}</a> (desconexión del puerto) y
-          <a href={`/admin/ot/${bajaHecha.ot_baja_equipo}`} class="btn-texto">OT #{bajaHecha.ot_baja_equipo}</a> (retiro de la ONT).
-        </div>
-      {/if}
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-2">
         <!-- Columna izquierda: Datos del cliente -->
@@ -238,18 +94,8 @@
           <div class="bg-white rounded-xl shadow p-6">
             <div class="flex items-center justify-between mb-4">
               <h2 class="text-xl font-bold text-gray-800">{cliente.nombre_completo}</h2>
-              <div class="flex gap-2">
-                {#if rol !== 'TECNICO' && !editMode}
-                  <button onclick={iniciarEdicion} class="btn-texto">Editar ficha</button>
-                  <button onclick={abrirRiesgo} class="btn-texto">Cambiar nivel de riesgo</button>
-                  {#if cliente.estado !== 'BAJA'}
-                    <button onclick={abrirBaja} class="btn-texto-peligro">Dar de baja</button>
-                  {/if}
-                {/if}
-              </div>
             </div>
 
-            {#if !editMode}
               <div class="space-y-3">
                 <div>
                   <span class="text-xs text-gray-500 uppercase">RUT</span>
@@ -373,47 +219,6 @@
                   <p class="text-sm">{new Date(cliente.fecha_creacion).toLocaleDateString('es-CL')}</p>
                 </div>
               </div>
-            {:else}
-              <!-- Modo edición -->
-              <div class="space-y-4">
-                <InputField label="Nombre completo" bind:value={editNombre} />
-                <InputField label="Email" bind:value={editEmail} />
-                <InputField label="Teléfono" bind:value={editTelefono} />
-                <div class="mb-4">
-                  <label for="edit-estado" class="block text-sm font-medium text-gray-700 mb-1">Estado</label>
-                  <select id="edit-estado" bind:value={editEstado} class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                    <option value="ACTIVO">ACTIVO</option>
-                    <option value="SUSPENDIDO">SUSPENDIDO</option>
-                    <option value="CORTADO">CORTADO</option>
-                    <option value="BAJA">BAJA</option>
-                    <option value="PENDIENTE">PENDIENTE</option>
-                  </select>
-                </div>
-                <InputField label="Dirección" bind:value={editDireccion} />
-                <InputField label="Comuna" bind:value={editComuna} />
-                <InputField label="Ciudad" bind:value={editCiudad} />
-
-                {#if editError}
-                  <Alert class="rounded-lg text-sm">{editError}</Alert>
-                {/if}
-
-                <div class="flex gap-3">
-                  <button
-                    onclick={guardarEdicion}
-                    disabled={editLoading}
-                    class="btn btn-primario"
-                  >
-                    {editLoading ? 'Guardando...' : 'Guardar cambios'}
-                  </button>
-                  <button
-                    onclick={cancelarEdicion}
-                    class="btn btn-secundario"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            {/if}
           </div>
         </div>
 
@@ -465,70 +270,3 @@
         <HistorialFallasPanel id_cliente={cliente.id_cliente} compact={false} />
       </div>
     {/if}
-
-<!-- MOD RF-32: cambiar el nivel del semaforo -->
-{#if showRiesgoModal && cliente}
-  <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="titulo-riesgo">
-    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4 space-y-3">
-      <h3 id="titulo-riesgo" class="text-lg font-semibold text-gray-800">Nivel de riesgo de {cliente.nombre_completo}</h3>
-      <p class="text-sm text-gray-600">
-        AMARILLO y ROJO piden una justificación y el técnico los ve antes de la visita. ROJO además bloquea nuevas instalaciones.
-      </p>
-      <label class="block text-xs font-medium text-gray-600">Nivel
-        <select bind:value={nivelNuevo} class="mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-white">
-          {#each NIVELES_RIESGO as n (n)}<option value={n}>{n}</option>{/each}
-        </select>
-      </label>
-      <label class="block text-xs font-medium text-gray-600">Justificación
-        <textarea bind:value={motivoRiesgo} rows={3} maxlength={500} class="mt-1 w-full border rounded-lg px-3 py-2 text-sm resize-none"></textarea>
-      </label>
-      {#if riesgoError}
-        <Alert class="rounded-lg text-sm">{riesgoError}</Alert>
-      {/if}
-      <div class="flex gap-3">
-        <button onclick={() => (showRiesgoModal = false)} class="flex-1 btn btn-secundario text-sm">Volver</button>
-        <button onclick={guardarRiesgo} disabled={riesgoLoading} class="flex-1 btn btn-primario text-sm">
-          {riesgoLoading ? 'Guardando...' : 'Guardar nivel'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- CU-25: baja de servicio -->
-{#if resumen}
-  <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-labelledby="titulo-baja">
-    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4 space-y-3 text-sm">
-      <h3 id="titulo-baja" class="text-lg font-semibold text-gray-800">Dar de baja a {resumen.nombre_completo}</h3>
-      <dl class="grid grid-cols-3 gap-x-3 gap-y-1">
-        <dt class="text-gray-500">Dirección</dt><dd class="col-span-2">{resumen.direccion ?? '-'}</dd>
-        <dt class="text-gray-500">ONT</dt><dd class="col-span-2 font-mono">{resumen.onts.join(', ') || 'Sin registro'}</dd>
-        <dt class="text-gray-500">Puerto NAP</dt>
-        <dd class="col-span-2">
-          {#each resumen.puertos as p (p.id_puerto)}<span class="block">Puerto {p.numero_puerto} de {p.caja ?? p.id_caja_nap}</span>{:else}Sin registro{/each}
-        </dd>
-      </dl>
-      <p class="text-gray-600">Se generan dos OT pendientes: desconectar el puerto y retirar la ONT.</p>
-      <label class="block text-xs font-medium text-gray-600">Motivo
-        <select bind:value={motivoBaja} class="mt-1 w-full border rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="">Seleccione el motivo</option>
-          {#each resumen.motivos as m (m)}<option value={m}>{m}</option>{/each}
-        </select>
-      </label>
-      <label class="block text-xs font-medium text-gray-600">Observaciones (opcional)
-        <textarea bind:value={obsBaja} rows={2} maxlength={500} class="mt-1 w-full border rounded-lg px-3 py-2 text-sm resize-none"></textarea>
-      </label>
-      <label class="flex items-center gap-2 text-sm">
-        <input type="checkbox" bind:checked={sinDeuda} class="h-4 w-4" />
-        Confirmo que el cliente no tiene deuda pendiente
-      </label>
-      {#if bajaError}<Alert class="rounded-lg text-sm">{bajaError}</Alert>{/if}
-      <div class="flex gap-3">
-        <button onclick={() => (resumen = null)} class="flex-1 btn btn-secundario text-sm">Volver</button>
-        <button onclick={registrarBaja} disabled={bajaLoading || !motivoBaja || !sinDeuda} class="flex-1 btn btn-peligro text-sm">
-          {bajaLoading ? 'Registrando...' : 'Registrar baja'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}

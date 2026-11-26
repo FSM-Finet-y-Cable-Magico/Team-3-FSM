@@ -6,10 +6,15 @@
     required?: boolean;
     /** Texto de la etiqueta. Queda asociada al campo, para lectores de pantalla. */
     etiqueta?: string;
+    /**
+     * Para una fila de filtros: etiqueta e input del mismo tamano que los
+     * campos vecinos. Sin esto el RUT se veia mas grande y desalineado.
+     */
+    compacto?: boolean;
     onchange?: (detail: { rut: string; valido: boolean }) => void;
   }
 
-  let { value = '', error = '', required = false, etiqueta = 'RUT', onchange }: Props = $props();
+  let { value = '', error = '', required = false, etiqueta = 'RUT', compacto = false, onchange }: Props = $props();
   const uid = $props.id();
 
   let displayValue = $state('');
@@ -54,8 +59,11 @@
   }
 </script>
 
-<div class="mb-4">
-  <label for={uid} class="block text-sm font-medium text-gray-700 mb-1">
+<!-- Sin margen propio: dentro de una fila alineada por abajo (`items-end`)
+     un mb-4 dejaba el campo 16 px mas arriba que sus vecinos. El espacio de
+     alrededor lo pone quien usa el componente. -->
+<div>
+  <label for={uid} class="block font-medium mb-1 {compacto ? 'text-xs text-gray-500' : 'text-sm text-gray-700'}">
     {etiqueta}
     {#if required}
       <span class="text-red-500">*</span>
@@ -69,7 +77,7 @@
       oninput={handleInput}
       maxlength="12"
       placeholder="12.345.678-5"
-      class="w-full px-3 py-2 pr-8 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 {error ? 'border-red-500' : 'border-gray-300'}"
+      class="w-full px-3 py-2 pr-8 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 {compacto ? 'text-sm' : ''} {error ? 'border-red-500' : 'border-gray-300'}"
     />
     {#if isValid === true}
       <span class="absolute inset-y-0 right-0 pr-3 flex items-center text-green-500">&#10003;</span>

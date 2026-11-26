@@ -51,14 +51,15 @@
 
   // Paso 3 - Equipos individualizables (acuerdo con G1)
   let opcionesEquipo = $state<terrenoApi.OpcionesEquipo | null>(null);
+  // Lo que el tecnico lleva encima, para sugerirlo al escribir la serie. Solo
+  // sugiere: un equipo que se retira de la casa del cliente no esta aca.
+  let misEquipos = $state<terrenoApi.EquipoAsignado[]>([]);
   let equipos = $state<terrenoApi.EquipoOt[]>([]);
 
   // Paso 3 - Cierre
   let potencia = $state<string>('');
-  // CU-31: la llamada de cortesia la hace el jefe técnico con la OT completada.
-  // Si el tecnico hablo con el cliente en el domicilio, la puede dejar aca.
-  let resultadoLlamada = $state<'CONFORME' | 'NO_CONFORME' | null>(null);
-  let obsLlamada = $state('');
+  // CU-31: la llamada de cortesia NO se registra aca. La hace siempre el jefe
+  // tecnico, con la OT completada, desde su panel de llamadas.
   // CU-56: modalidad de resolucion. PRESENCIAL exige fotos; REMOTA no, pero
   // si hay fotos pide confirmar que no hubo visita (excepcion 1 del CU).
   let resueltoRemotamente = $state(false);
@@ -68,6 +69,27 @@
   );
   let idCategoriaFalla = $state('');
   let categoriaFallaOtro = $state('');
+
+  // Los tres datos que G1 exige para registrar el cierre de una REPARACION.
+  // Debe coincidir con LARGO_MIN_TEXTO_REPARACION del backend: si no, el
+  // boton deja cerrar y el servidor responde un 400 que el tecnico no espera.
+  const LARGO_MIN_REPARACION = 5;
+  const LARGO_MAX_REPARACION = 300;
+  let fallaReportada = $state('');
+  let solucionAplicada = $state('');
+  let resultadoReparacion = $state<terrenoApi.ResultadoReparacion | ''>('');
+
+  /** La etiqueta es nuestra; el valor lo compara G1 y va exacto. */
+  const RESULTADOS_REPARACION: { valor: terrenoApi.ResultadoReparacion; etiqueta: string }[] = [
+    { valor: 'RESUELTO', etiqueta: 'Resuelto — el problema quedó corregido' },
+    { valor: 'PARCIAL', etiqueta: 'Parcial — hay servicio, con una limitación' },
+    { valor: 'SIN_SOLUCION', etiqueta: 'Sin solución — no se pudo arreglar en esta visita' },
+  ];
+  // Comentario libre para el jefe que aprueba. Mismo maximo que el backend
+  // (LARGO_MAX_COMENTARIO_CIERRE).
+  const LARGO_MAX_COMENTARIO = 500;
+  let comentario = $state('');
+
   let alertaReparaciones = $state<{
     activa: boolean;
     total_reparaciones_30_dias: number;
@@ -88,7 +110,10 @@
   const categoriaSeleccionada = $derived(
     categoriasFalla.find((c) => c.id_categoria === Number(idCategoriaFalla)),
   );
-  const requiereCategoriaFalla = $derived(ot?.tipo_ot === 'REPARACION');
+  // La categoria de falla y los tres datos de reparacion aplican al mismo
+  // caso, asi que salen de la misma condicion y no de dos copias.
+  const esReparacion = $derived(ot?.tipo_ot === 'REPARACION');
+  const requiereCategoriaFalla = $derived(esReparacion);
 
   const esRetiro = (accion: string) =>
     opcionesEquipo?.acciones.find((a) => a.accion === accion)?.es_retiro ?? false;
@@ -131,6 +156,18 @@
     ) {
       falta.push('la descripción de la falla');
     }
+    // Los tres de G1. Se distingue "no lo escribió" de "lo escribió corto":
+    // con un solo mensaje el tecnico no sabe si le falta el campo o le falta
+    // texto, y lo reintenta a ciegas.
+    if (esReparacion) {
+      const falla = fallaReportada.trim();
+      const solucion = solucionAplicada.trim();
+      if (!falla) falta.push('qué falla encontró');
+      else if (falla.length < LARGO_MIN_REPARACION) falta.push(`describir la falla con al menos ${LARGO_MIN_REPARACION} caracteres`);
+      if (!solucion) falta.push('qué hizo para resolverla');
+      else if (solucion.length < LARGO_MIN_REPARACION) falta.push(`describir la solución con al menos ${LARGO_MIN_REPARACION} caracteres`);
+      if (!resultadoReparacion) falta.push('cómo quedó la reparación');
+    }
     equipos.forEach((e, i) => {
       const n = i + 1;
       if (!e.numero_serie.trim()) falta.push(`el número de serie del equipo ${n}`);
@@ -155,7 +192,7 @@
     userId = state.usuario?.userId ?? 0;
 
     try {
-      const [otData, matsData, catsData, opcEquipo] = await Promise.all([
+      const [otData, matsData, catsData, opcEquipo, asignados] = await Promise.all([
         ordenesApi.obtenerOT(token, idOT),
         terrenoApi.obtenerMateriales(token),
         ordenesApi.listarCategoriasFalla(token),
@@ -165,6 +202,8 @@
         // lista de opciones es peor que cerrar sin esa seccion. Es el mismo
         // criterio con el que el contrato con G1 no exige el diagnostico.
         terrenoApi.obtenerOpcionesEquipo(token).catch(() => null),
+        // Tampoco este: sin sugerencias se escribe la serie a mano, como antes.
+        terrenoApi.obtenerMisEquipos(token).catch(() => [] as terrenoApi.EquipoAsignado[]),
       ]);
       if (destruido) return;
       if (otData.id_tecnico !== userId) {
@@ -179,6 +218,7 @@
       materiales = matsData;
       categoriasFalla = catsData;
       opcionesEquipo = opcEquipo;
+      misEquipos = asignados;
     } catch (err) {
       errorInit = err instanceof Error ? err.message : 'Error al cargar datos';
     } finally {
@@ -246,14 +286,21 @@
         cantidad: cantidades[m.id_tipo_equipo],
       })),
       potencia_optica_dbm: parseFloat(potencia),
-      ...(resultadoLlamada && { resultado_llamada: resultadoLlamada, obs_llamada: obsLlamada || undefined }),
       resuelto_remotamente: resueltoRemotamente,
       id_categoria_falla: idCategoriaFalla ? Number(idCategoriaFalla) : undefined,
       categoria_falla_otro: categoriaFallaOtro.trim() || undefined,
+      // Solo en reparaciones: en los demas tipos viajan ausentes y G1 los
+      // recibe en null, que es lo que dice el contrato.
+      ...(esReparacion && {
+        falla_reportada: fallaReportada.trim(),
+        solucion_aplicada: solucionAplicada.trim(),
+        resultado_reparacion: resultadoReparacion || undefined,
+      }),
       // Se separan por accion porque G1 las procesa distinto: las instaladas
       // van al cliente, las retiradas siguen la transicion de su accion.
       equipos_instalados: limpiarEquipos(equipos.filter((e) => !esRetiro(e.accion))),
       equipos_retirados: limpiarEquipos(equipos.filter((e) => esRetiro(e.accion))),
+      comentario_tecnico: comentario.trim() || undefined,
     };
   }
 
@@ -528,7 +575,7 @@
       {#if paso === 3}
         <!-- Equipos individualizables (acuerdo con G1). Va ANTES de los datos de
              cierre porque es lo que el tecnico tiene en la mano en ese momento;
-             la potencia y la llamada de cortesia vienen despues.
+             la potencia viene despues.
              Si no se pudieron leer las opciones, la seccion no se dibuja y el
              cierre sigue disponible: se avisa, no se bloquea. -->
         {#if !opcionesEquipo}
@@ -554,6 +601,13 @@
             >+ Agregar</button>
           </div>
 
+          <!-- Una sola lista para todos los campos de serie (atributo `list`). -->
+          <datalist id="mis-equipos">
+            {#each misEquipos as e (e.numero_serie)}
+              <option value={e.numero_serie}>{[e.tipo, e.modelo].filter(Boolean).join(' · ')}</option>
+            {/each}
+          </datalist>
+
           {#each equipos as equipo, i (i)}
             <div class="border border-slate-200 rounded-xl p-3 space-y-3">
               <div class="flex items-center justify-between">
@@ -575,12 +629,18 @@
                   id="serie-{i}"
                   type="text"
                   autocapitalize="characters"
+                  list="mis-equipos"
                   value={equipo.numero_serie}
                   oninput={(e) => normalizarSerie(i, e.currentTarget.value)}
                   placeholder="Ej: ALTX1234ABCD"
                   class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base font-mono
                          focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                {#if misEquipos.length > 0}
+                  <p class="text-xs text-slate-500 mt-1">
+                    Al escribir le sugerimos los {misEquipos.length} equipos que lleva asignados.
+                  </p>
+                {/if}
               </div>
 
               <div>
@@ -682,6 +742,67 @@
             </div>
           {/if}
 
+          <!-- Los tres datos que G1 exige para registrar el cierre de una
+               reparacion. Van juntos y pegados a la categoria de falla porque
+               son el mismo momento mental: que pasaba, que hice, como quedo.
+               En los demas tipos de OT esta seccion no existe. -->
+          {#if esReparacion}
+            <div class="space-y-4 border-t border-slate-100 pt-4">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1" for="falla-reportada">
+                  ¿Qué falla encontró? *
+                </label>
+                <textarea
+                  id="falla-reportada"
+                  bind:value={fallaReportada}
+                  rows="3"
+                  maxlength={LARGO_MAX_REPARACION}
+                  placeholder="Ej: fibra cortada en el poste frente al domicilio"
+                  class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+                ></textarea>
+                <p class="text-xs text-slate-400 mt-1 text-right">
+                  {fallaReportada.trim().length}/{LARGO_MAX_REPARACION}
+                </p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1" for="solucion-aplicada">
+                  ¿Qué hizo para resolverla? *
+                </label>
+                <textarea
+                  id="solucion-aplicada"
+                  bind:value={solucionAplicada}
+                  rows="3"
+                  maxlength={LARGO_MAX_REPARACION}
+                  placeholder="Ej: se empalmó la fibra y se midió potencia en la ONT"
+                  class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+                ></textarea>
+                <p class="text-xs text-slate-400 mt-1 text-right">
+                  {solucionAplicada.trim().length}/{LARGO_MAX_REPARACION}
+                </p>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1" for="resultado-reparacion">
+                  ¿Cómo quedó? *
+                </label>
+                <select
+                  id="resultado-reparacion"
+                  bind:value={resultadoReparacion}
+                  class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
+                         focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Seleccione el resultado</option>
+                  {#each RESULTADOS_REPARACION as r}
+                    <option value={r.valor}>{r.etiqueta}</option>
+                  {/each}
+                </select>
+              </div>
+            </div>
+          {/if}
+
           <!-- Potencia óptica -->
           <div>
             <label class="block text-sm font-medium text-slate-700 mb-1">
@@ -704,44 +825,25 @@
             {/if}
           </div>
 
-          <!-- Resultado llamada -->
+          <!-- Lo que el tecnico quiera dejarle dicho al jefe que aprueba. -->
           <div>
-            <label class="block text-sm font-medium text-slate-700 mb-2">
-              Llamada de cortesía <span class="text-slate-400 text-xs">(opcional: si no, la hace el jefe técnico)</span>
-            </label>
-            <div class="grid grid-cols-2 gap-3">
-              <button
-                onclick={() => (resultadoLlamada = resultadoLlamada === 'CONFORME' ? null : 'CONFORME')}
-                aria-pressed={resultadoLlamada === 'CONFORME'}
-                class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
-                  {resultadoLlamada === 'CONFORME' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 text-slate-500'}"
-              >
-                Conforme
-              </button>
-              <button
-                onclick={() => (resultadoLlamada = resultadoLlamada === 'NO_CONFORME' ? null : 'NO_CONFORME')}
-                aria-pressed={resultadoLlamada === 'NO_CONFORME'}
-                class="cursor-pointer py-3 rounded-xl border-2 text-sm font-semibold transition-colors
-                  {resultadoLlamada === 'NO_CONFORME' ? 'border-red-500 bg-red-50 text-red-700' : 'border-slate-200 text-slate-500'}"
-              >
-                No conforme
-              </button>
-            </div>
-          </div>
-
-          <!-- Observaciones llamada -->
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">
-              Observaciones de llamada <span class="text-slate-400 text-xs">(opcional)</span>
+            <label class="block text-sm font-medium text-slate-700 mb-1" for="comentario-cierre">
+              Comentarios del cierre (opcional)
             </label>
             <textarea
-              bind:value={obsLlamada}
-              rows={3}
-              maxlength={500}
-              placeholder="Comentarios del cliente..."
-              class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              id="comentario-cierre"
+              bind:value={comentario}
+              rows="3"
+              maxlength={LARGO_MAX_COMENTARIO}
+              placeholder="Ej: el cliente pidió dejar el router en el living"
+              class="w-full border border-slate-200 rounded-xl px-4 py-3 text-base
+                     focus:outline-none focus:ring-2 focus:ring-blue-500"
             ></textarea>
+            <p class="text-xs text-slate-400 mt-1 text-right">
+              {comentario.trim().length}/{LARGO_MAX_COMENTARIO}
+            </p>
           </div>
+
 
           <!-- La modalidad (CU-56) se elige en el paso 1: de ella depende si las
                fotos son obligatorias. -->

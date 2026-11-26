@@ -19,7 +19,7 @@ import { ESTADO_PUERTO, type EditarCajaDto, type EditarPuertoDto } from './dto/e
 const RADIO_COLISION_M = 300;
 
 /** Distancia en linea recta (haversine), en metros. */
-function distanciaMetros(lat1: number, lng1: number, lat2: number, lng2: number): number {
+export function distanciaMetros(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const rad = (g: number) => (g * Math.PI) / 180;
   const a =
     Math.sin(rad(lat2 - lat1) / 2) ** 2 +

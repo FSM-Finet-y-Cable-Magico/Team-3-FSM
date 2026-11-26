@@ -1,8 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { json, urlencoded } from 'express';
 import { AppModule } from './app.module.js';
+import { configurarCuerpo } from './common/http/limites-http.js';
 
 // BigInt fields (e.g. historial_ot.id_historial_ot) must be serializable
 (BigInt.prototype as unknown as Record<string, unknown>).toJSON = function () {
@@ -11,8 +11,7 @@ import { AppModule } from './app.module.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  app.use(json({ limit: '20mb' }));
-  app.use(urlencoded({ extended: true, limit: '20mb' }));
+  configurarCuerpo(app);
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.enableCors({
@@ -36,6 +35,9 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
 
-  await app.listen(process.env.PORT ?? 3000);
+  // HOST existe para el despliegue en la red del host: ahi no hay mapeo de
+  // puertos de Docker que acote la escucha, asi que la acota el proceso.
+  // Sin la variable sigue escuchando en todas las interfaces, como antes.
+  await app.listen(process.env.PORT ?? 3000, process.env.HOST ?? '0.0.0.0');
 }
 bootstrap();

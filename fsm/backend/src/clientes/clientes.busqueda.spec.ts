@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ClientesService } from './clientes.service.js';
+import { CLIENTE_SIN_BAJA, ClientesService } from './clientes.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ReparacionesRecurrentesService } from '../ordenes/reparaciones-recurrentes.service.js';
 
@@ -86,7 +86,18 @@ describe('busqueda de clientes por criterios multiples', () => {
   it('ignora los filtros en blanco y devuelve el listado completo', async () => {
     await service.listarClientes(1, 1, 20, { nombre: '   ', rut: '', telefono: undefined });
 
-    expect(whereUsado()).toEqual({ id_empresa: 1 });
+    expect(whereUsado()).toEqual({ id_empresa: 1, AND: [CLIENTE_SIN_BAJA] });
+  });
+
+  it('no lista a los clientes dados de baja, con cualquier filtro', async () => {
+    // El FSM atiende la cartera vigente del CRM: activos y suspendidos por
+    // deuda (los que ve el panel de cortes). Las bajas siguen en su ficha y en
+    // la busqueda por direccion (CU-07), que muestra los clientes anteriores.
+    await service.listarClientes(1, 1, 20, { nombre: 'juan', telefono: '5678' });
+
+    expect(whereUsado().AND).toContainEqual(CLIENTE_SIN_BAJA);
+    // El estado lo escribe el CRM de G8 ('Baja') o el FSM viejo ('BAJA').
+    expect(CLIENTE_SIN_BAJA).toEqual({ NOT: { estado: { equals: 'baja', mode: 'insensitive' } } });
   });
 
   it('pone techo al limit para que no se pida la tabla entera', async () => {

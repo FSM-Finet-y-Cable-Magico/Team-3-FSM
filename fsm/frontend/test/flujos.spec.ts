@@ -211,7 +211,7 @@ test('paginación de clientes conserva mensajes y permite ir y volver', async ({
 });
 test('TECNICO no consulta Clientes mediante navegación directa', async ({ page }) => {
   const registro = await preparar(page); await login(page);
-  for (const ruta of ['/admin/clientes', '/admin/clientes/12345678-5', '/admin/clientes/nuevo']) {
+  for (const ruta of ['/admin/clientes', '/admin/clientes/12345678-5']) {
     await page.goto(ruta); await expect(page).toHaveURL(/\/terreno$/);
   }
   expect(registro.clientes).toBe(0);
@@ -317,6 +317,59 @@ test('el retiro de un equipo viaja con su diagnostico y separado de lo instalado
   });
 });
 
+test('el tecnico deja un comentario al cerrar y viaja recortado', async ({ page }) => {
+  // Opcional y en cualquier tipo de OT: la OT de prueba es una instalacion.
+  const registro = await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.locator('input[type=number]').fill('-21');
+  await page.getByLabel('Comentarios del cierre (opcional)').fill('  El cliente pidio el router en el living  ');
+  await page.getByRole('button', { name: 'Cerrar OT', exact: true }).click();
+  await expect(page).toHaveURL(/\/terreno$/);
+  expect(registro.cierres[0]).toMatchObject({ comentario_tecnico: 'El cliente pidio el router en el living' });
+});
+
+test('sin comentario, el cierre no manda el campo', async ({ page }) => {
+  const registro = await preparar(page); await login(page); await page.goto('/terreno/cerrar/1');
+  await page.locator('input[type=file]').setInputFiles(archivo);
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.getByRole('button', { name: 'Siguiente', exact: true }).click();
+  await page.locator('input[type=number]').fill('-21');
+  await page.getByRole('button', { name: 'Cerrar OT', exact: true }).click();
+  await expect(page).toHaveURL(/\/terreno$/);
+  expect(registro.cierres[0]).not.toHaveProperty('comentario_tecnico');
+});
+
+test('el detalle de la OT muestra lo que el tecnico escribio al cerrar', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes/1', route => route.fulfill({ json: {
+    ...ot, tipo_ot: 'REPARACION', estado: 'COMPLETADA',
+    cierre_equipos: {
+      comentario: 'Volver a revisar en una semana',
+      reparacion: { falla_reportada: 'Conector sucio en la roseta', solucion_aplicada: 'Se limpio y se volvio a medir', resultado: 'PARCIAL' },
+      retirados: [{ numero_serie: 'ONT-9', accion: 'RETIRADO_PARA_DIAGNOSTICO', diagnostico: 'Sin señal óptica', observacion_estado_fisico: 'Tapa quebrada' }],
+    },
+  } }));
+  await login(page, 'admin'); await page.goto('/admin/ot/1');
+
+  const tarjeta = page.locator('section', { has: page.getByRole('heading', { name: 'Cierre del técnico' }) });
+  await expect(tarjeta.getByText('Volver a revisar en una semana')).toBeVisible();
+  await expect(tarjeta.getByText('Conector sucio en la roseta')).toBeVisible();
+  await expect(tarjeta.getByText('Se limpio y se volvio a medir')).toBeVisible();
+  await expect(tarjeta.getByText('Parcial')).toBeVisible();
+  await expect(tarjeta.getByText('ONT-9')).toBeVisible();
+  await expect(tarjeta.getByText('Tapa quebrada')).toBeVisible();
+});
+
+test('sin nada escrito al cerrar, el detalle no muestra la tarjeta', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes/1', route => route.fulfill({ json: { ...ot, estado: 'COMPLETADA', cierre_equipos: null } }));
+  await login(page, 'admin'); await page.goto('/admin/ot/1');
+  await expect(page.getByRole('heading', { name: /Orden de Trabajo/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cierre del técnico' })).toHaveCount(0);
+});
+
 test('un retiro sin diagnostico no deja cerrar, y el boton dice que falta', async ({ page }) => {
   // El contrato con G1 acepta el retiro sin diagnostico --asume "Causa
   // desconocida"-- pero el formulario lo exige: el tecnico es el unico que
@@ -388,7 +441,7 @@ test('un token vencido devuelve al login en vez de dejar la pantalla con un erro
 
 test('sin sesión no se montan las vistas de Clientes antes de redirigir', async ({ page }) => {
   const registro = await preparar(page);
-  for (const ruta of ['/admin/clientes', '/admin/clientes/12345678-5', '/admin/clientes/nuevo']) {
+  for (const ruta of ['/admin/clientes', '/admin/clientes/12345678-5']) {
     await page.goto(ruta);
     await expect(page).toHaveURL(/\/login$/);
   }
@@ -887,6 +940,19 @@ test('P0-d: el detalle de la OT de G8 muestra nombre y telefono de la persona', 
   await expect(page.getByRole('link', { name: '+56912345678' })).toHaveAttribute('href', 'tel:+56912345678');
 });
 
+test('P0-d: el listado de OT muestra a la persona de la solicitud de G8', async ({ page }) => {
+  // Antes la columna Cliente decia "—": la OT no tiene cliente todavia y el
+  // listado no miraba la solicitud, aunque el detalle si (OT #5, 09-11-2026).
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/ordenes?*', route =>
+    route.fulfill({ json: { data: [otDeG8], page: 1, limit: 20, total: 1 } }));
+  await login(page, 'admin'); await page.goto('/admin/ot');
+
+  const fila = page.getByRole('row', { name: /#781/ });
+  await expect(fila.getByText('Juan Pérez Soto')).toBeVisible();
+  await expect(fila.getByText('Solicitud CRM')).toBeVisible();
+});
+
 // CU-33: el ADMIN elige con que empresa trabaja y TODA pantalla lo respeta. La
 // empresa viaja en un header que resuelve el backend en un solo lugar, asi que
 // basta con que la Vista lo mande en cada peticion.
@@ -1036,6 +1102,39 @@ test('CU-43: el ADMIN desactiva una cuenta, ve sus OT pendientes y la reactiva',
   expect(cambios).toEqual([false, true]);
 });
 
+// La tabla `usuario` de la base global tiene RUT y email; los otros grupos
+// buscan al tecnico por RUT. La zona del formulario nunca se guardaba.
+test('crear usuario: acepta tecnico.prueba1 y manda RUT y email, sin zona', async ({ page }) => {
+  await preparar(page);
+  const creados: Record<string, unknown>[] = [];
+  await page.route('http://127.0.0.1:3000/api/auth/usuarios', route => {
+    if (route.request().method() === 'POST') {
+      creados.push(route.request().postDataJSON());
+      return route.fulfill({ status: 201, json: { id_usuario: 20 } });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await login(page, 'admin'); await page.goto('/admin/usuarios');
+
+  await page.getByRole('button', { name: 'Nuevo Usuario' }).click();
+  // InputField no asocia su label al input: se ubican por name.
+  const campo = (name: string) => page.getByRole('dialog').locator(`input[name="${name}"]`);
+  await campo('nombre_completo').fill('Tecnico de Prueba Uno');
+  await campo('nombre_usuario').fill('tecnico.prueba1');
+  await expect(page.getByText('Formato válido')).toBeVisible();
+  await campo('password_temporal').fill('Temporal.2026');
+  await campo('rut').fill('12.345.678-5');
+  await campo('email').fill('tecnico.prueba1@finet.cl');
+  await expect(campo('zona')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Crear usuario' }).click();
+
+  await expect(page.getByText('Usuario creado correctamente')).toBeVisible();
+  expect(creados).toEqual([{
+    nombre_completo: 'Tecnico de Prueba Uno', nombre_usuario: 'tecnico.prueba1', password_temporal: 'Temporal.2026',
+    rol: 'TECNICO', id_empresa: 1, rut: '12.345.678-5', email: 'tecnico.prueba1@finet.cl',
+  }]);
+});
+
 // CU-14: historial de microdesconexiones de una ONT.
 const historialOnt = (interrupciones: unknown[]) => ({
   numero_serie: 'ZTEG1234', nombre_cliente_ext: 'Ana Soto',
@@ -1047,6 +1146,78 @@ const historialOnt = (interrupciones: unknown[]) => ({
     dias_con_varias_cortas: interrupciones.length ? [{ dia: '2026-09-20', cortas: 3 }] : [],
     horario_recurrente: interrupciones.length ? [{ hora: 3, dias: 4 }] : [],
   },
+});
+
+test('Monitoreo: las posibles bajas no cuentan como fuera de linea y se ocultan del listado por defecto', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/monitoreo/resumen', route => route.fulfill({ json: {
+    total_ont: 3, por_estado: { ONLINE: 1, OFFLINE: 1 }, posibles_bajas: 1, potencia_fuera_de_rango: 0, fecha_actualizacion: '2026-11-13T15:00:00Z',
+  } }));
+  const lectura = (sn: string, estado: string, posible_baja: boolean) => ({
+    numero_serie: sn, id_unidad: null, id_cliente: null, zona: 'ZONA 3', olt_externo: '2', nombre_cliente_ext: null,
+    estado_conexion: estado, potencia_actual_dbm: estado === 'ONLINE' ? -21 : null, potencia_fuera_de_rango: false,
+    medido_en: '2026-11-13T15:00:00Z', posible_baja,
+  });
+  await page.route('http://127.0.0.1:3000/api/monitoreo/ont?*', route => route.fulfill({ json: [
+    lectura('ACTIVA1', 'ONLINE', false), lectura('CAIDA1', 'OFFLINE', false), lectura('BAJA2021', 'OFFLINE', true),
+  ] }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/criticos-por-caja*', route => route.fulfill({ json: { cajas: [], totales: { cajas_afectadas: 0, clientes_criticos: 0, criticos_sin_caja: 0 } } }));
+  await login(page, 'admin'); await page.goto('/admin/monitoreo');
+
+  await expect(page.getByText('No incluye 1 posibles bajas (caídas hace más de 7 días)')).toBeVisible();
+
+  await page.getByRole('tab', { name: 'Todas las ONT' }).click();
+  await expect(page.getByRole('link', { name: 'CAIDA1' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'BAJA2021' })).toHaveCount(0);
+
+  await page.getByLabel('Mostrar posibles bajas y suspendidos (1)').check();
+  await expect(page.getByRole('link', { name: 'BAJA2021' })).toBeVisible();
+  await expect(page.getByRole('row', { name: /BAJA2021/ })).toContainText('Posible baja');
+});
+
+test('CU-15: cada caja dice cuantas ONT conocemos y de cuantos puertos es', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/monitoreo/resumen', route => route.fulfill({ json: {
+    total_ont: 2, por_estado: { ONLINE: 2 }, posibles_bajas: 0, potencia_fuera_de_rango: 2, fecha_actualizacion: '2026-11-13T15:00:00Z',
+  } }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/ont?*', route => route.fulfill({ json: [] }));
+  const caja = (clave: string, nombre: string, extra: Record<string, unknown>) => ({
+    clave, nombre, olt_externo: '2', board: 2, puerto_pon: 5, zona: 'ZONA 6', criticos: 2, sin_senal: 0,
+    potencia_fuera_de_rango: 2, pct_afectado: 100, onts_criticas: [], ...extra,
+  });
+  await page.route('http://127.0.0.1:3000/api/monitoreo/criticos-por-caja*', route => route.fulfill({ json: {
+    cajas: [
+      caja('2/2/5|86', '86', { clientes_en_la_caja: 2, padron_chico: true, capacidad: 16, capacidad_estimada: false }),
+      caja('2/1/7|NAP 9', 'NAP 9', { clientes_en_la_caja: 2, padron_chico: true, capacidad: 8, capacidad_estimada: true }),
+    ],
+    totales: { cajas_afectadas: 2, clientes_criticos: 4, criticos_sin_caja: 0 },
+  } }));
+  await login(page, 'admin'); await page.goto('/admin/monitoreo');
+
+  await expect(page.getByText('2 de 2 ONT conocidas · caja de 16 puertos')).toBeVisible();
+  // Sin entrada en el catalogo de SmartOLT, la capacidad es estimada y lo dice.
+  await expect(page.getByText('2 de 2 ONT conocidas · caja de ~8 puertos')).toBeVisible();
+  await expect(page.getByText('padrón parcial')).toHaveCount(0);
+});
+
+test('Monitoreo: un cliente suspendido por deuda se muestra con su etiqueta y no cuenta como fuera de linea', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/monitoreo/resumen', (route) => route.fulfill({ json: {
+    total_ont: 2, por_estado: { ONLINE: 1 }, posibles_bajas: 0, suspendidos: 1, potencia_fuera_de_rango: 0, fecha_actualizacion: '2026-11-13T15:00:00Z',
+  } }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/ont?*', (route) => route.fulfill({ json: [
+    { numero_serie: 'ACTIVA1', id_unidad: null, id_cliente: 1, zona: 'Z', olt_externo: '2', nombre_cliente_ext: null, estado_conexion: 'ONLINE', potencia_actual_dbm: -21, potencia_fuera_de_rango: false, medido_en: null, posible_baja: false, suspendido: false },
+    { numero_serie: 'MOROSO1', id_unidad: null, id_cliente: 9, zona: 'Z', olt_externo: '2', nombre_cliente_ext: null, estado_conexion: 'OFFLINE', potencia_actual_dbm: null, potencia_fuera_de_rango: false, medido_en: null, posible_baja: false, suspendido: true },
+  ] }));
+  await page.route('http://127.0.0.1:3000/api/monitoreo/criticos-por-caja*', (route) => route.fulfill({ json: { cajas: [], totales: { cajas_afectadas: 0, clientes_criticos: 0, criticos_sin_caja: 0 } } }));
+  await login(page, 'admin'); await page.goto('/admin/monitoreo');
+
+  await expect(page.getByText('ni 1 clientes suspendidos por deuda')).toBeVisible();
+  await page.getByRole('tab', { name: 'Todas las ONT' }).click();
+  // Oculto por defecto, y la casilla dice que tambien muestra a los suspendidos.
+  await expect(page.getByRole('link', { name: 'MOROSO1' })).toHaveCount(0);
+  await page.getByLabel('Mostrar posibles bajas y suspendidos (1)').check();
+  await expect(page.getByRole('row', { name: /MOROSO1/ })).toContainText('Suspendido por deuda');
 });
 
 test('CU-14: desde el monitoreo se abre el historial de interrupciones de una ONT', async ({ page }) => {
@@ -1152,7 +1323,8 @@ async function prepararTickets(page: Page) {
     if (route.request().method() !== 'GET') {
       const cuerpo = route.request().postData() ? route.request().postDataJSON() : null;
       registro.acciones.push({ ruta, cuerpo });
-      if (ruta.endsWith('/tomar')) registro.ticket.estado = 'EN_PROGRESO';
+      // Tomar lo deja a cargo de quien lo toma: el usuario 7 del login de prueba.
+      if (ruta.endsWith('/tomar')) Object.assign(registro.ticket, { estado: 'EN_PROGRESO', id_usuario_asignado: 7, usuario_asignado: { id_usuario: 7, nombre_completo: 'Usuario Prueba' } });
       if (ruta.endsWith('/resolver')) registro.ticket.estado = 'RESUELTO';
       if (ruta.endsWith('/reclasificar')) Object.assign(registro.ticket, { id_categoria: 2, categoria: categoriasTicket[1], prioridad: 'MEDIA', sla_horas: 24 });
       if (ruta.endsWith('/escalar')) Object.assign(registro.ticket, { estado: 'DERIVADO_OT', orden_trabajo: { id_ot: 500, estado: 'PENDIENTE' } });
@@ -1221,34 +1393,82 @@ test('CU-30: un ticket se deriva a una OT y queda el enlace a la OT', async ({ p
   expect(registro.acciones.at(-1)).toEqual({ ruta: '/api/tickets/7/escalar', cuerpo: { tipo_ot: 'REPARACION', observaciones: 'Revisar roseta' } });
 });
 
-// MOD RF-32: semaforo de riesgo del cliente, en la ficha y en terreno.
-test('MOD RF-32: la ficha muestra el semaforo y pide justificacion para subir el nivel', async ({ page }) => {
+// Acuerdo §6.4: la clave WiFi que el cliente pidio en el portal se ve una vez.
+test('clave WiFi: el detalle del ticket la muestra una sola vez y despues queda entregada', async ({ page }) => {
   await preparar(page);
-  const cambios: unknown[] = [];
-  let nivel = 'VERDE';
-  await page.route('http://127.0.0.1:3000/api/clientes/rut/12345678-5', route =>
-    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: nivel, contratos_activos: [] }, historial_ot: [] } }));
-  await page.route(/\/api\/clientes\/1\/riesgo$/, route => {
-    const cuerpo = route.request().postDataJSON();
-    cambios.push(cuerpo);
-    nivel = cuerpo.nivel;
-    return route.fulfill({ json: { id_cliente: 1, nivel_riesgo: cuerpo.nivel, motivo: cuerpo.motivo ?? null } });
+  const registro = await prepararTickets(page);
+  const entregas: string[] = [];
+  let solicitud = { id_solicitud: 3, id_contrato: 5, estado: 'PENDIENTE', fecha_creacion: '2026-11-09T01:27:50.000Z', leida_en: null as string | null };
+  await page.route('http://127.0.0.1:3000/api/clave-wifi/ticket/7', route => route.fulfill({ json: [solicitud] }));
+  await page.route('http://127.0.0.1:3000/api/clave-wifi/3/entregar', route => {
+    entregas.push(route.request().method());
+    solicitud = { ...solicitud, estado: 'ENTREGADA', leida_en: '2026-11-09T02:00:00.000Z' };
+    registro.ticket.historial = [{ accion: 'ENTREGAR_CLAVE_WIFI', valor_anterior: null, valor_nuevo: { id_solicitud: 3 }, fecha_hora: '2026-11-09T02:00:00.000Z', usuario: { nombre_completo: 'Usuario Prueba' } }];
+    return route.fulfill({ json: { id_solicitud: 3, id_ticket: 'TK-ABCDEFG', id_contrato: 5, clave: 'MiClaveNueva2026' } });
   });
+  await login(page, 'admin'); await page.goto('/admin/tickets/7');
+
+  // Con el ticket sin tomar no hay boton: primero hay que hacerse cargo.
+  await expect(page.getByText('Toma el ticket para poder ver la clave.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ver clave WiFi (una sola vez)' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Tomar para resolver a distancia' }).click();
+
+  await page.getByRole('button', { name: 'Ver clave WiFi (una sola vez)' }).click();
+  // Primero pide confirmacion: un clic suelto no debe quemar la unica lectura.
+  expect(entregas).toEqual([]);
+  await page.getByRole('button', { name: 'Mostrar clave' }).click();
+
+  await expect(page.getByLabel('Clave WiFi')).toHaveText('MiClaveNueva2026');
+  expect(entregas).toEqual(['POST']);
+  // La entrega queda en el historial con quien la vio, sin la clave.
+  await expect(page.getByRole('listitem').filter({ hasText: 'Clave WiFi entregada' })).toContainText('solicitud #3');
+
+  // Al volver a entrar ya no esta la clave, solo la constancia de entrega.
+  await page.reload();
+  await expect(page.getByText(/No se puede volver a ver \(se entregó el/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ver clave WiFi (una sola vez)' })).toHaveCount(0);
+  await expect(page.getByText('MiClaveNueva2026')).toHaveCount(0);
+});
+
+test('clave WiFi: si el ticket lo tomo otra persona, no se ofrece la clave', async ({ page }) => {
+  await preparar(page);
+  const registro = await prepararTickets(page);
+  Object.assign(registro.ticket, { estado: 'EN_PROGRESO', id_usuario_asignado: 99, usuario_asignado: { id_usuario: 99, nombre_completo: 'Otra Jefa' } });
+  await page.route('http://127.0.0.1:3000/api/clave-wifi/ticket/7', route => route.fulfill({ json: [
+    { id_solicitud: 3, id_contrato: 5, estado: 'PENDIENTE', fecha_creacion: '2026-11-09T01:27:50.000Z', leida_en: null },
+  ] }));
+  await login(page, 'admin'); await page.goto('/admin/tickets/7');
+
+  await expect(page.getByText('Solo la puede ver quien tiene el ticket a cargo: Otra Jefa.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ver clave WiFi (una sola vez)' })).toHaveCount(0);
+});
+
+test('clave WiFi: un ticket sin solicitudes no muestra la seccion', async ({ page }) => {
+  await preparar(page);
+  await prepararTickets(page);
+  await page.route('http://127.0.0.1:3000/api/clave-wifi/ticket/7', route => route.fulfill({ json: [] }));
+  await login(page, 'admin'); await page.goto('/admin/tickets/7');
+
+  await expect(page.getByRole('heading', { name: /TK-ABCDEFG/ })).toBeVisible();
+  await expect(page.getByText('Clave WiFi pedida por el cliente')).toHaveCount(0);
+});
+
+// MOD RF-32: semaforo de riesgo del cliente, en la ficha y en terreno.
+test('MOD RF-32: la ficha muestra el semaforo, pero es de solo lectura: el cliente lo administra el CRM', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/clientes/rut/12345678-5', route =>
+    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: 'AMARILLO', obs_conflictivo: 'Discusión fuerte con el técnico', contratos_activos: [] }, historial_ot: [] } }));
   await login(page, 'admin'); await page.goto('/admin/clientes/12345678-5');
 
-  await expect(page.getByText('Riesgo VERDE')).toBeVisible();
-  await page.getByRole('button', { name: 'Cambiar nivel de riesgo' }).click();
-  const dialogo = page.getByRole('dialog');
-  await dialogo.getByLabel('Nivel').selectOption('AMARILLO');
-  await dialogo.getByLabel('Justificación').fill('Muy corto');
-  await dialogo.getByRole('button', { name: 'Guardar nivel' }).click();
-  await expect(dialogo.getByText('al menos 20 caracteres')).toBeVisible();
-  expect(cambios).toEqual([]);
-
-  await dialogo.getByLabel('Justificación').fill('Discusión fuerte con el técnico en la última visita');
-  await dialogo.getByRole('button', { name: 'Guardar nivel' }).click();
   await expect(page.getByText('Riesgo AMARILLO')).toBeVisible();
-  expect(cambios).toEqual([{ nivel: 'AMARILLO', motivo: 'Discusión fuerte con el técnico en la última visita' }]);
+  await expect(page.getByText('Discusión fuerte con el técnico')).toBeVisible();
+  for (const accion of ['Editar ficha', 'Cambiar nivel de riesgo', 'Dar de baja']) {
+    await expect(page.getByRole('button', { name: accion })).toHaveCount(0);
+  }
+
+  await page.goto('/admin/clientes');
+  await expect(page.getByRole('link', { name: 'Buscar por dirección' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Nuevo Cliente/ })).toHaveCount(0);
 });
 
 test('MOD RF-32: la tarjeta de terreno muestra el nivel del cliente', async ({ page }) => {
@@ -1587,7 +1807,10 @@ test('CU-20: una caja sin puertos libres lo dice y sugiere las mas cercanas', as
 test('CU-20: el ADMIN ve lo que haria la reconciliacion de puertos antes de aplicarla', async ({ page }) => {
   await preparar(page);
   const llamadas: string[] = [];
-  await page.route('http://127.0.0.1:3000/api/planta-externa/cajas', route => route.fulfill({ json: [] }));
+  await page.route('http://127.0.0.1:3000/api/planta-externa/salud-cajas', route => route.fulfill({ json: {
+    resumen: { cajas: 0, por_estado: { CAIDA: 0, DEGRADADA: 0, OK: 0, SIN_ONT: 0 }, con_alerta_u_ot: 0, sin_ubicacion: 0, clientes_afectados: 0 },
+    cajas: [],
+  } }));
   await page.route(/\/api\/planta-externa\/puertos\/reconciliar/, route => {
     const url = new URL(route.request().url());
     llamadas.push(url.search);
@@ -1609,38 +1832,116 @@ test('CU-20: el ADMIN ve lo que haria la reconciliacion de puertos antes de apli
   expect(llamadas).toEqual(['', '?aplicar=true']);
 });
 
-// CU-25: baja de servicio.
-test('CU-25: la baja muestra lo que se desconecta, pide confirmar la deuda y enlaza las dos OT', async ({ page }) => {
+test('Topologia: el mapa de salud muestra las cajas de la mas grave a la mas sana y filtra por indicador', async ({ page }) => {
   await preparar(page);
-  const bajas: unknown[] = [];
-  await page.route('http://127.0.0.1:3000/api/clientes/rut/12345678-5', route =>
-    route.fulfill({ json: { cliente: { ...cliente, nivel_riesgo: 'VERDE', contratos_activos: [] }, historial_ot: [] } }));
-  await page.route(/\/api\/clientes\/1\/baja$/, route => {
-    if (route.request().method() === 'POST') {
-      bajas.push(route.request().postDataJSON());
-      return route.fulfill({ status: 201, json: { id_cliente: 1, estado: 'BAJA', ot_baja_puerto: 500, ot_baja_equipo: 501 } });
-    }
-    return route.fulfill({ json: {
-      id_cliente: 1, nombre_completo: 'Cliente de prueba', rut: '12345678-5', estado: 'ACTIVO', direccion: 'Calle de prueba 100, El Quisco',
-      onts: ['ZTEG1234'], puertos: [{ id_puerto: 23, numero_puerto: 3, id_caja_nap: 5, caja: 'NAP-B' }],
-      motivos: ['VOLUNTARIA', 'MOROSIDAD', 'FUERZA_MAYOR', 'MUDANZA_SIN_COBERTURA'],
-    } });
+  const onts = (total: number, en_linea: number, caidas = 0, potencia_fuera = 0) =>
+    ({ total, en_linea, caidas, potencia_fuera, afectadas: caidas + potencia_fuera, potencia_promedio: total ? -21 : null });
+  const caja = (id: number, nombre: string, estado: string, o: ReturnType<typeof onts>, extra = {}) => ({
+    id_caja_nap: id, identificador_unico: nombre, zona: 'ZONA 3', numero_poste: null,
+    latitud: -33.5 - id / 1000, longitud: -71.6, estado, onts: o, alertas_abiertas: 0, ots_abiertas: 0, ...extra,
   });
-  await login(page, 'admin'); await page.goto('/admin/clientes/12345678-5');
+  // Ya vienen ordenadas por gravedad: es el backend el que ordena.
+  await page.route('http://127.0.0.1:3000/api/planta-externa/salud-cajas', route => route.fulfill({ json: {
+    resumen: { cajas: 4, por_estado: { CAIDA: 1, DEGRADADA: 1, OK: 1, SIN_ONT: 1 }, con_alerta_u_ot: 1, sin_ubicacion: 1, clientes_afectados: 7 },
+    cajas: [
+      caja(1, 'NAP 1', 'CAIDA', onts(6, 0, 6), { alertas_abiertas: 1 }),
+      caja(2, 'NAP 2', 'DEGRADADA', onts(4, 3, 1)),
+      caja(3, 'NAP 3', 'OK', onts(5, 5)),
+      caja(4, 'NAP 4', 'SIN_ONT', onts(0, 0), { latitud: null, longitud: null }),
+    ],
+  } }));
+  // El mapa pide teselas a OpenStreetMap: en la prueba no hace falta salir a internet.
+  await page.route(/tile\.openstreetmap\.org/, route => route.fulfill({ status: 204 }));
+  await login(page, 'admin'); await page.goto('/admin/topologia');
 
-  await page.getByRole('button', { name: 'Dar de baja' }).click();
+  await expect(page.getByRole('button', { name: /Cajas caídas/ })).toContainText('1');
+  await expect(page.getByRole('button', { name: /Cajas caídas/ })).toContainText('7 ONT afectadas');
+  const enlaces = page.getByRole('listitem').getByRole('link', { name: /^NAP \d$/ });
+  await expect(enlaces).toHaveText(['NAP 1', 'NAP 2', 'NAP 3', 'NAP 4']);
+  await expect(page.getByText('Sin ubicación: no aparece en el mapa')).toBeVisible();
+  await expect(page.getByRole('region', { name: /Mapa de cajas NAP/ })).toBeVisible();
+
+  await page.getByRole('button', { name: /Cajas caídas/ }).click();
+  await expect(enlaces).toHaveText(['NAP 1']);
+  await page.getByRole('button', { name: /Cajas caídas/ }).click();
+  await expect(enlaces).toHaveCount(4);
+});
+
+test('Cortes: lista lo que falta cortar en SmartOLT, lo registra y pasa al historial', async ({ page }) => {
+  await preparar(page);
+  let cortado = false;
+  const cuerpos: unknown[] = [];
+  const fila = {
+    id_contrato: 5, estado_contrato: 'Suspendido', fecha_suspension: '2026-11-13', plan: 'FULL S',
+    cliente: { id_cliente: 55, nombre_completo: 'Cliente Moroso', rut: '11111111-1', telefono: '9 1234 5678' },
+    direccion: { direccion_completa: 'Calle 1', comuna: 'La Granja' }, onts: [], ultimo_registro: null,
+  };
+  await page.route('http://127.0.0.1:3000/api/cortes', (route) => route.fulfill({ json: {
+    por_cortar: cortado ? [] : [fila],
+    por_reactivar: [],
+    historial: cortado ? [{ id_log: 1, accion: 'CORTE_SMARTOLT', fecha_hora: '2026-11-13T15:00:00Z', usuario: 'Admin Prueba', id_contrato: 5, cliente: 'Cliente Moroso', observacion: 'listo' }] : [],
+  } }));
+  await page.route('http://127.0.0.1:3000/api/cortes/5/hecho', (route) => {
+    cuerpos.push(route.request().postDataJSON());
+    cortado = true;
+    return route.fulfill({ status: 201, json: { id_log: 1, accion: 'CORTE_SMARTOLT', fecha_hora: '2026-11-13T15:00:00Z' } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/cortes');
+
+  await expect(page.getByText('El corte y la reactivación se hacen en SmartOLT')).toBeVisible();
+  await expect(page.getByText('Cliente Moroso')).toBeVisible();
+  await expect(page.getByText('Buscar en SmartOLT por nombre o RUT')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Hecho en SmartOLT' }).click();
   const dialogo = page.getByRole('dialog');
-  await expect(dialogo).toContainText('ZTEG1234');
-  await expect(dialogo).toContainText('Puerto 3 de NAP-B');
-  await dialogo.getByLabel('Motivo').selectOption('MUDANZA_SIN_COBERTURA');
-  const confirmar = dialogo.getByRole('button', { name: 'Registrar baja' });
-  await expect(confirmar).toBeDisabled();
-  await dialogo.getByLabel('Confirmo que el cliente no tiene deuda pendiente').check();
-  await confirmar.click();
+  await dialogo.getByLabel('Observación (opcional)').fill('listo');
+  await dialogo.getByRole('button', { name: 'Registrar corte' }).click();
 
-  await expect(page.getByRole('link', { name: 'OT #500' })).toHaveAttribute('href', '/admin/ot/500');
-  await expect(page.getByRole('link', { name: 'OT #501' })).toBeVisible();
-  expect(bajas).toEqual([{ motivo: 'MUDANZA_SIN_COBERTURA', confirma_sin_deuda: true }]);
+  expect(cuerpos).toEqual([{ accion: 'CORTE', observacion: 'listo' }]);
+  await expect(page.getByText('No hay contratos por cortar.')).toBeVisible();
+  await page.getByText('Historial').click();
+  await expect(page.getByText('Admin Prueba')).toBeVisible();
+});
+
+test('Cortes: mientras se registra no se puede cancelar, y si otro ya lo hizo (409) el panel se refresca', async ({ page }) => {
+  await preparar(page);
+  let otroLoHizo = false;
+  let soltar: () => void = () => {};
+  const espera = new Promise<void>((ok) => (soltar = ok));
+  const fila = {
+    id_contrato: 5, estado_contrato: 'Suspendido', fecha_suspension: '2026-11-13', plan: null,
+    cliente: { id_cliente: 55, nombre_completo: 'Cliente Moroso', rut: null, telefono: null },
+    direccion: null, onts: [], ultimo_registro: null,
+  };
+  await page.route('http://127.0.0.1:3000/api/cortes', (route) => route.fulfill({ json: {
+    por_cortar: otroLoHizo ? [] : [fila], por_reactivar: [], historial: [],
+  } }));
+  await page.route('http://127.0.0.1:3000/api/cortes/5/hecho', async (route) => {
+    await espera;
+    otroLoHizo = true;
+    return route.fulfill({ status: 409, json: { codigo: 'NO_PENDIENTE', message: 'Este contrato no está pendiente de corte: ya se registró o G8 lo reactivó.' } });
+  });
+  await login(page, 'admin'); await page.goto('/admin/cortes');
+
+  await page.getByRole('button', { name: 'Hecho en SmartOLT' }).click();
+  const dialogo = page.getByRole('dialog');
+  await dialogo.getByRole('button', { name: 'Registrar corte' }).click();
+  await expect(dialogo.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
+  soltar();
+
+  await expect(dialogo.getByText('ya se registró')).toBeVisible();
+  await dialogo.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(page.getByText('No hay contratos por cortar.')).toBeVisible();
+});
+
+test('Cortes: sin permiso sobre contrato lo dice en vez de romperse', async ({ page }) => {
+  await preparar(page);
+  await page.route('http://127.0.0.1:3000/api/cortes', (route) => route.fulfill({ status: 503, json: {
+    codigo: 'SIN_PERMISO_CONTRATO',
+    message: 'El sistema no tiene permiso para leer los contratos de la base compartida. Hay que pedirle al admin: GRANT SELECT ON contrato TO g3_app.',
+  } }));
+  await login(page, 'admin'); await page.goto('/admin/cortes');
+  await expect(page.getByText('no tiene permiso para leer los contratos')).toBeVisible();
 });
 
 // RF-53 y RF-54: zona del cliente.

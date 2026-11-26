@@ -5,8 +5,12 @@ import { pedirJson } from './http.js';
 
 export interface ResumenMonitoreo {
   total_ont: number;
-  /** ONLINE / OFFLINE / LOS / DESCONOCIDO. */
+  /** ONLINE / OFFLINE / LOS / DESCONOCIDO. Solo ONT activas: sin las posibles bajas. */
   por_estado: Record<string, number>;
+  /** Caídas hace más de 7 días: equipos de clientes que se fueron. */
+  posibles_bajas: number;
+  /** Clientes suspendidos por deuda: su caída es esperada. */
+  suspendidos?: number;
   potencia_fuera_de_rango: number;
   fecha_actualizacion: string;
 }
@@ -22,28 +26,51 @@ export interface LecturaOnt {
   potencia_actual_dbm: number | null;
   potencia_fuera_de_rango: boolean;
   medido_en: string | null;
+  /** Caída hace más de 7 días: equipo de un cliente que se fue, no un incidente. */
+  posible_baja: boolean;
+  /** Cliente suspendido por deuda (contrato de G8). */
+  suspendido?: boolean;
 }
 
+/** Una ONT critica de la caja, para desplegarla bajo la fila. */
+export interface OntCriticaDeCaja {
+  numero_serie: string;
+  nombre_cliente: string | null;
+  estado_conexion: string | null;
+  potencia_dbm: number | null;
+}
+
+/**
+ * Caja segun SmartOLT (nombre que escribio el instalador + puerto PON), no la
+ * del KML de Tomodat. Es la misma clave con la que agrupa el motor de alertas.
+ */
 export interface CajaCritica {
-  id_caja_nap: number;
-  identificador_unico: string | null;
+  /** `olt/placa/puerto|NOMBRE NORMALIZADO`. Unica por fila. */
+  clave: string;
+  /** Nombre tal como aparece en SmartOLT. */
+  nombre: string;
+  olt_externo: string | null;
+  board: number | null;
+  puerto_pon: number | null;
+  /** Zona de SmartOLT, la mas frecuente entre las ONT de la caja. */
   zona: string | null;
-  latitud: string | null;
-  longitud: string | null;
   clientes_en_la_caja: number;
-  /** Puertos que declara la caja, para contrastar con lo que hay registrado. */
-  capacidad_puertos: number | null;
   /**
    * Menos de 5 ONT registradas: el "100%" de esa caja habla de lo poco que se
    * sabe de ella, no de la caja entera. Mismo umbral con el que CU-17 se niega
    * a declararla caida.
    */
   padron_chico: boolean;
+  /** Puertos de la caja según el catálogo de SmartOLT. */
+  capacidad: number;
+  /** No estaba en el catálogo: se estimó por el puerto más alto ocupado. */
+  capacidad_estimada: boolean;
   criticos: number;
   sin_senal: number;
   potencia_fuera_de_rango: number;
   /** Que porcentaje de la caja esta afectado. Decide cuadrilla vs. visitas. */
   pct_afectado: number;
+  onts_criticas: OntCriticaDeCaja[];
 }
 
 export interface CriticosPorCaja {
@@ -131,4 +158,61 @@ export function historialInterrupciones(token: string, sn: string, periodo?: { d
     token,
     `${API_URL}/api/monitoreo/ont/${encodeURIComponent(sn)}/interrupciones${qs}`,
   );
+}
+
+// --- Cajas SmartOLT y sus puertos -------------------------------------------
+
+export interface ResumenCajaSmartolt {
+  /** `olt/placa/puerto|NOMBRE NORMALIZADO`. */
+  clave: string;
+  nombre: string;
+  olt_externo: string | null;
+  board: number | null;
+  puerto_pon: number | null;
+  zona: string | null;
+  capacidad: number;
+  /** La capacidad no salio del catalogo de SmartOLT: se estimo. */
+  capacidad_estimada: boolean;
+  ocupados: number;
+  ont_total: number;
+  sin_puerto: number;
+}
+
+export interface OntDePuerto {
+  numero_serie: string;
+  nombre_cliente: string | null;
+  estado_conexion: string | null;
+  potencia_dbm: number | null;
+  posible_baja: boolean;
+  /** Cliente suspendido por deuda (contrato de G8). */
+  suspendido?: boolean;
+}
+
+export interface PuertoDeCaja {
+  numero: number;
+  estado: 'OCUPADO' | 'SIN_REGISTRO';
+  conflicto: boolean;
+  onts: OntDePuerto[];
+}
+
+export interface DetalleCajaSmartolt
+  extends Omit<ResumenCajaSmartolt, 'ont_total' | 'sin_puerto'> {
+  puertos: PuertoDeCaja[];
+  fuera_de_rango: (OntDePuerto & { odb_puerto: number })[];
+  sin_puerto: OntDePuerto[];
+}
+
+export function listarCajasSmartolt(token: string) {
+  return pedir<ResumenCajaSmartolt[]>(token, `${API_URL}/api/monitoreo/cajas-smartolt`);
+}
+
+/** La clave va en la query: lleva espacios, "/" y "|". */
+export function detalleCajaSmartolt(token: string, clave: string) {
+  const qs = new URLSearchParams({ clave });
+  return pedir<DetalleCajaSmartolt>(token, `${API_URL}/api/monitoreo/cajas-smartolt/detalle?${qs}`);
+}
+
+/** Ruta de la pagina de una caja. */
+export function urlCajaSmartolt(clave: string) {
+  return `/admin/monitoreo/caja?${new URLSearchParams({ clave })}`;
 }

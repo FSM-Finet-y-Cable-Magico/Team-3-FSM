@@ -11,6 +11,7 @@ import {
   FUENTE_MONITOREO,
   type FuenteMonitoreo,
   type LecturaOnt,
+  type OntDetalle,
 } from './fuente/fuente-monitoreo.js';
 
 /**
@@ -18,16 +19,22 @@ import {
  * y la detección de transición de estado (la 1ª lectura de una ONT no
  * historiza; el cambio posterior sí).
  */
+/** Cuando la ingesta vio la ONT por primera vez. */
+const PRIMERA_VEZ = new Date('2026-09-08T19:39:44.000Z');
+
 describe('MonitoreoService.ingestarLecturas', () => {
   let service: MonitoreoService;
   let monitoreoCreateMany: jest.Mock;
   let historialCreateMany: jest.Mock;
   let lecturas: LecturaOnt[];
+  let detalles: OntDetalle[];
+  let fuenteMock: FuenteMonitoreo;
+  let registroMock: any;
   /** Lo que el dedupe encuentra ya guardado. Vacío = tabla recién purgada. */
   let yaGuardado: {
     id_registro_ont: number;
     estado_conexion: string | null;
-    potencia: string | null;
+    potencia_actual_dbm: string | null;
     timestamp_medicion: Date;
   }[];
 
@@ -35,6 +42,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
     monitoreoCreateMany = jest.fn(async () => ({ count: 1 }));
     historialCreateMany = jest.fn(async () => ({ count: 1 }));
     yaGuardado = [];
+    detalles = [];
 
     const prismaMock = {
       monitoreo_ont: { createMany: monitoreoCreateMany },
@@ -44,28 +52,29 @@ describe('MonitoreoService.ingestarLecturas', () => {
       $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
     };
 
-    const fuenteMock: FuenteMonitoreo = {
+    fuenteMock = {
       nombre: 'test',
       listarOlts: jest.fn(async () => []),
-      listarOntDetalles: jest.fn(async () => []),
+      listarOntDetalles: jest.fn(async () => detalles),
       listarLecturas: jest.fn(async () => lecturas),
     };
 
     // SN-0001 resuelve a una unidad; SN-9999 no.
-    const registroMock = {
+    registroMock = {
       asegurarRegistros: jest.fn(async (sns: string[]) => {
         const m = new Map();
         for (const sn of sns) {
           m.set(
             sn,
             sn === 'SN-0001'
-              ? { id_registro_ont: 1, id_unidad: 10, id_cliente: 5, id_caja_nap: 2 }
-              : { id_registro_ont: 2, id_unidad: null, id_cliente: null, id_caja_nap: null },
+              ? { id_registro_ont: 1, id_unidad: 10, id_cliente: 5, id_caja_nap: 2, primera_vez: PRIMERA_VEZ }
+              : { id_registro_ont: 2, id_unidad: null, id_cliente: null, id_caja_nap: null, primera_vez: PRIMERA_VEZ },
           );
         }
         return m;
       }),
       enriquecer: jest.fn(async () => 0),
+      sincronizarUbicacion: jest.fn(async () => 0),
     };
 
     const mod: TestingModule = await Test.createTestingModule({
@@ -115,7 +124,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
 
     it('omite la lectura identica a la ultima guardada', async () => {
       yaGuardado = [
-        { id_registro_ont: 1, estado_conexion: 'ONLINE', potencia: '-21.50', timestamp_medicion: MEDIDO },
+        { id_registro_ont: 1, estado_conexion: 'ONLINE', potencia_actual_dbm: '-21.50', timestamp_medicion: MEDIDO },
       ];
       lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: MEDIDO }];
 
@@ -128,14 +137,14 @@ describe('MonitoreoService.ingestarLecturas', () => {
 
     it.each([
       ['cambia el estado', { estado_conexion: 'LOS' }],
-      ['cambia la potencia', { potencia: '-28.00' }],
+      ['cambia la potencia', { potencia_actual_dbm: '-28.00' }],
       ['cambia el timestamp', { timestamp_medicion: new Date('2026-09-28T15:00:00.000Z') }],
     ])('escribe cuando %s', async (_caso, distinto) => {
       yaGuardado = [
         {
           id_registro_ont: 1,
           estado_conexion: 'ONLINE',
-          potencia: '-21.50',
+          potencia_actual_dbm: '-21.50',
           timestamp_medicion: MEDIDO,
           ...distinto,
         },
@@ -162,7 +171,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
       // La columna es Decimal(5,2) y vuelve como texto: "-21.50" es el mismo
       // numero que -21.5, y sin la conversion el dedupe no omitiria nada.
       yaGuardado = [
-        { id_registro_ont: 1, estado_conexion: 'ONLINE', potencia: '-21.50', timestamp_medicion: MEDIDO },
+        { id_registro_ont: 1, estado_conexion: 'ONLINE', potencia_actual_dbm: '-21.50', timestamp_medicion: MEDIDO },
       ];
       lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: MEDIDO }];
 
@@ -171,7 +180,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
 
     it('distingue una potencia nula de un cero', async () => {
       yaGuardado = [
-        { id_registro_ont: 1, estado_conexion: 'LOS', potencia: null, timestamp_medicion: MEDIDO },
+        { id_registro_ont: 1, estado_conexion: 'LOS', potencia_actual_dbm: null, timestamp_medicion: MEDIDO },
       ];
       lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: 0, estado: 'LOS', medido_en: MEDIDO }];
 
@@ -185,7 +194,7 @@ describe('MonitoreoService.ingestarLecturas', () => {
       await service.ingestarLecturas();
 
       yaGuardado = [
-        { id_registro_ont: 1, estado_conexion: 'LOS', potencia: null, timestamp_medicion: MEDIDO },
+        { id_registro_ont: 1, estado_conexion: 'LOS', potencia_actual_dbm: null, timestamp_medicion: MEDIDO },
       ];
       lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: null, estado: 'LOS', medido_en: MEDIDO }];
       const r = await service.ingestarLecturas();
@@ -195,6 +204,50 @@ describe('MonitoreoService.ingestarLecturas', () => {
       expect(historialCreateMany).toHaveBeenCalledWith({
         data: [expect.objectContaining({ id_registro_ont: 1, evento: 'LOS' })],
       });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // La fuente no siempre dice desde cuando la ONT esta en su estado. Antes se
+  // rellenaba con "ahora": un equipo dado de baja en 2021 parecia recien caido
+  // en cada sondeo, nunca llegaba a la regla de baja de 7 dias, inundaba el
+  // panel por caja y la topologia, y escribia una fila nueva cada 5 minutos.
+  // -------------------------------------------------------------------------
+
+  describe('lectura sin fecha de la fuente', () => {
+    it('queda fechada en la primera vez que se vio la ONT: lleva asi al menos desde entonces', async () => {
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: null, estado: 'OFFLINE', medido_en: null }];
+
+      await service.ingestarLecturas();
+
+      expect(monitoreoCreateMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({ estado_conexion: 'OFFLINE', timestamp_medicion: PRIMERA_VEZ })],
+      });
+    });
+
+    it('no se reescribe en cada sondeo', async () => {
+      yaGuardado = [
+        { id_registro_ont: 1, estado_conexion: 'OFFLINE', potencia_actual_dbm: null, timestamp_medicion: PRIMERA_VEZ },
+      ];
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: null, estado: 'OFFLINE', medido_en: null }];
+
+      const r = await service.ingestarLecturas();
+
+      expect(r.omitidas).toBe(1);
+      expect(monitoreoCreateMany).toHaveBeenCalledWith({ data: [] });
+    });
+
+    it('un cambio de estado sin fecha se historiza con la hora del sondeo, no en el pasado', async () => {
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21, estado: 'ONLINE', medido_en: null }];
+      await service.ingestarLecturas();
+
+      const antes = Date.now();
+      lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: null, estado: 'LOS', medido_en: null }];
+      await service.ingestarLecturas();
+
+      const evento = (historialCreateMany.mock.calls[0][0] as any).data[0];
+      expect(evento.evento).toBe('LOS');
+      expect(evento.timestamp.getTime()).toBeGreaterThanOrEqual(antes);
     });
   });
 
@@ -223,5 +276,40 @@ describe('MonitoreoService.ingestarLecturas', () => {
     expect(historialCreateMany).toHaveBeenCalledWith({
       data: [expect.objectContaining({ id_registro_ont: 2, id_unidad: null, evento: 'OFFLINE' })],
     });
+  });
+
+  it('actualiza caja y puerto de todas las ONT del censo, con una sola consulta a la fuente', async () => {
+    lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: new Date() }];
+    detalles = [
+      {
+        sn: 'SN-0001', id_externo: '1', olt_externo: '3', board: 12, puerto_pon: 1,
+        zona: 'ZONA 6', odb: 'NAP203', odb_puerto: 3,
+        nombre_cliente: null, direccion_cliente: null, modelo: null,
+      },
+    ];
+
+    await service.ingestarLecturas();
+
+    // Sin filtro, el censo es completo: puede liberar puertos de ONT que ya no estan.
+    expect(registroMock.sincronizarUbicacion).toHaveBeenCalledWith(detalles, { censoCompleto: true });
+    expect(fuenteMock.listarOntDetalles).toHaveBeenCalledTimes(1);
+    // El censo se pide junto con las lecturas, antes de tocar la base: si se
+    // pidiera despues y la base tardara mas que la cache del cliente (10 s),
+    // SmartOLT cobraria una segunda llamada de su cuota de 15 por hora.
+    const pedidoCenso = (fuenteMock.listarOntDetalles as jest.Mock).mock.invocationCallOrder[0];
+    const primeraBase = (registroMock.asegurarRegistros as jest.Mock).mock.invocationCallOrder[0];
+    expect(pedidoCenso).toBeLessThan(primeraBase);
+  });
+
+  it('si falla la ubicacion, las lecturas se guardan igual', async () => {
+    // La ubicacion es un dato de apoyo: un valor que no cabe en la base no puede
+    // dejar al sondeo sin guardar lecturas ni levantar alertas.
+    lecturas = [{ sn: 'SN-0001', potencia_rx_dbm: -21.5, estado: 'ONLINE', medido_en: new Date() }];
+    registroMock.sincronizarUbicacion.mockRejectedValueOnce(new Error('value out of range for type smallint'));
+
+    const r = await service.ingestarLecturas();
+
+    expect(monitoreoCreateMany).toHaveBeenCalled();
+    expect(r.ubicaciones_actualizadas).toBe(0);
   });
 });

@@ -8,12 +8,15 @@ import {
   Post,
   Query,
   UploadedFile,
+  UseFilters,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { ArchivoGrandeFilter, LIMITE_KML_BYTES, MENSAJE_KML_GRANDE } from '../common/http/limites-http.js';
 import { PlantaExternaService } from './planta-externa.service.js';
 import { TopologiaService } from './topologia.service.js';
+import { SaludCajasService } from './salud-cajas.service.js';
 import {
   CrearCajaDto,
   CrearMufaDto,
@@ -36,6 +39,7 @@ export class PlantaExternaController {
   constructor(
     private planta: PlantaExternaService,
     private topologia: TopologiaService,
+    private salud: SaludCajasService,
   ) {}
 
   /** Árbol OLT → tarjetas → mufas → cajas. */
@@ -59,6 +63,25 @@ export class PlantaExternaController {
   caja(@CurrentUser() user: UserPayload, @Param('id') id: string, @Query('empresa') empresa?: string) {
     const idEmpresa = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
     return this.planta.detalleCaja(+id, idEmpresa);
+  }
+
+  /**
+   * Mapa de salud de la red: cada caja con el estado de sus ONT, sus alertas y
+   * sus OT abiertas, de la más grave a la más sana.
+   */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('salud-cajas')
+  saludCajas(@CurrentUser() user: UserPayload, @Query('empresa') empresa?: string) {
+    const id = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.salud.listar(id);
+  }
+
+  /** Una caja del mapa: sus ONT, alertas, OT y cajas cercanas. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('cajas/:id/salud')
+  saludCaja(@CurrentUser() user: UserPayload, @Param('id') id: string, @Query('empresa') empresa?: string) {
+    const idEmpresa = user.rol === 'ADMIN' && empresa ? +empresa : user.id_empresa;
+    return this.salud.detalle(+id, idEmpresa);
   }
 
   /** Cajas con coordenadas, para el mapa. */
@@ -193,7 +216,8 @@ export class PlantaExternaController {
 
   @Roles('ADMIN')
   @Post('importar-kml')
-  @UseInterceptors(FileInterceptor('kml', { storage: memoryStorage() }))
+  @UseFilters(new ArchivoGrandeFilter(MENSAJE_KML_GRANDE))
+  @UseInterceptors(FileInterceptor('kml', { storage: memoryStorage(), limits: { fileSize: LIMITE_KML_BYTES } }))
   importar(
     @UploadedFile() file: { buffer?: Buffer } | undefined,
     @CurrentUser() user: UserPayload,

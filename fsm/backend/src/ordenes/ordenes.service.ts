@@ -11,10 +11,22 @@ import { ReasignarTecnicoDto } from './dto/reasignar-tecnico.dto.js';
 import { CambiarPrioridadDto } from './dto/cambiar-prioridad.dto.js';
 import { ActualizarEstadoDto } from './dto/actualizar-estado.dto.js';
 import { CerrarOtDto } from './dto/cerrar-ot.dto.js';
-import { ACCION_A_ESTADO_G1 } from './estado-equipo.constants.js';
-import { FAN_OUT_CIERRE, type FanOutCierre, type EquipoDeclarado } from './fan-out/fan-out-cierre.js';
-import { construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payload-cierre.js';
-import { MOMENTO_FAN_OUT, type MomentoFanOut } from './fan-out/momento-fan-out.js';
+import { ACCION_A_ESTADO_G1, ORIGENES_VALIDOS_G1 } from './estado-equipo.constants.js';
+import { problemaDeEquipo, type EquipoAValidar } from './validar-equipos.js';
+import type { ReparacionDeclarada } from './reparacion-cierre.constants.js';
+import {
+  FAN_OUT_CIERRE,
+  type FanOutCierre,
+  type EquipoDeclarado,
+  type EquipoFaltante,
+} from './fan-out/fan-out-cierre.js';
+import { cierreGuardado, completarSolicitudBaja, construirPayloadCierre, INCLUDE_PAYLOAD_CIERRE } from './fan-out/payload-cierre.js';
+import {
+  MOMENTO_FAN_OUT,
+  TIPO_OT_BAJA,
+  momentoPara,
+  type MomentoFanOut,
+} from './fan-out/momento-fan-out.js';
 import { AprobarCierreDto } from './dto/aprobar-cierre.dto.js';
 import { RechazarCierreDto } from './dto/rechazar-cierre.dto.js';
 import { ResolverRemotoDto } from './dto/resolver-remoto.dto.js';
@@ -41,10 +53,13 @@ import {
   MIN_JUSTIFICACION_RIESGO,
   direccionConAntecedentes,
   mensajeVetado,
+  vetoDelCliente,
 } from '../clientes/lista-roja.js';
 import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import type { UsuarioAutenticado } from '../common/types/usuario-autenticado.js';
 import { DashboardGateway } from '../dashboard/dashboard.gateway.js';
+import { nombresEnBase, ROL } from '../auth/roles.constants.js';
+import { conDireccionResuelta } from './direccion-ot.js';
 
 /**
  * MOD RF-04: el cierre del tecnico deja la OT esperando que el jefe tecnico o
@@ -57,7 +72,7 @@ const TRANSICIONES_VALIDAS: Record<string, string[]> = {
   PENDIENTE: ['ASIGNADA', 'CANCELADA'],
   ASIGNADA: ['EN_CURSO', 'PENDIENTE', 'PENDIENTE_CLIENTE_AUSENTE', 'CANCELADA'],
   // A COMPLETADA no se llega por aca: solo por el cierre del tecnico
-  // (cerrarOT, que exige fotos, llamada y potencia) y la aprobacion del jefe
+  // (cerrarOT, que exige fotos y potencia) y la aprobacion del jefe
   // tecnico (aprobarCierre). Antes EN_CURSO → COMPLETADA estaba abierto y
   // salteaba las dos cosas.
   EN_CURSO: ['PENDIENTE_CLIENTE_AUSENTE', 'CANCELADA'],
@@ -78,7 +93,17 @@ const MAX_EVIDENCIAS_DETALLE = 50;
  * telefono --lo que el tecnico necesita para saber a quien visita y llamarlo
  * antes de marcar cliente ausente--; ni RUT ni email.
  */
-const CONTACTO_SOLICITUD = { select: { nombre_completo: true, telefono: true } } as const;
+const CONTACTO_SOLICITUD = {
+  select: {
+    nombre_completo: true,
+    telefono: true,
+    // La direccion a visitar. Desde que dejamos de crear una fila en
+    // `direccion_servicio` --tabla del CRM, sin permiso de escritura en la
+    // base compartida-- esta es la unica copia. Ver direccion-ot.ts.
+    direccion_completa: true,
+    comuna: true,
+  },
+} as const;
 
 /**
  * MOD RF-32: el nivel vigente del semaforo es la ultima fila del cliente en
@@ -144,14 +169,15 @@ export class OrdenesService {
 
     if (!cliente) throw new NotFoundException('Cliente no encontrado');
 
-    // CU-35: un cliente en ROJO (es_conflictivo, ver lista-roja.ts) no recibe
+    // CU-35: un cliente en ROJO (vetoDelCliente, ver lista-roja.ts) no recibe
     // instalacion. El administrador puede anular el bloqueo con una
     // justificacion escrita; queda en la auditoria con la OT creada.
+    const veto = await vetoDelCliente(this.prisma, cliente);
     const justificacion = dto.justificacion_lista_roja?.trim() ?? '';
-    const anulaBloqueo = cliente.es_conflictivo && dto.tipo_ot === 'INSTALACION';
+    const anulaBloqueo = veto !== null && dto.tipo_ot === 'INSTALACION';
     if (anulaBloqueo) {
       if (!justificacion) {
-        throw new BadRequestException(mensajeVetado(cliente.obs_conflictivo ?? 'CONFLICTIVO'));
+        throw new BadRequestException(mensajeVetado(veto.motivo));
       }
       if (opciones.rol !== 'ADMIN') throw new ForbiddenException(MENSAJE_SOLO_ADMIN);
       if (justificacion.length < MIN_JUSTIFICACION_RIESGO) {
@@ -164,7 +190,7 @@ export class OrdenesService {
     let estado = 'PENDIENTE';
     if (dto.id_tecnico) {
       const tecnico = await this.prisma.usuario.findFirst({
-        where: { id_usuario: dto.id_tecnico, id_empresa, activo: true },
+        where: { id_usuario: dto.id_tecnico, id_empresa, activo: true, fecha_eliminacion: null },
       });
       if (!tecnico) throw new NotFoundException('Técnico no encontrado');
       estado = 'ASIGNADA';
@@ -204,7 +230,7 @@ export class OrdenesService {
     // CU-35, excepcion 2: la direccion es de un cliente en ROJO. No bloquea:
     // la OT se crea y vuelve con la advertencia para verificar la identidad.
     const advertencia_lista_roja =
-      !cliente.es_conflictivo && direccion && (await direccionConAntecedentes(this.prisma, id_empresa, direccion, cliente.id_cliente))
+      !veto && direccion && (await direccionConAntecedentes(this.prisma, id_empresa, direccion, cliente.id_cliente))
         ? ADVERTENCIA_DIRECCION
         : null;
 
@@ -260,7 +286,7 @@ export class OrdenesService {
             accion: 'ANULAR_BLOQUEO_LISTA_ROJA',
             entidad_afectada: 'orden_trabajo',
             id_entidad_afectada: ot.id_ot,
-            valor_nuevo: { justificacion, motivo_bloqueo: cliente.obs_conflictivo ?? 'CONFLICTIVO' },
+            valor_nuevo: { justificacion, motivo_bloqueo: veto?.motivo ?? 'CONFLICTIVO' },
           },
         });
       }
@@ -273,7 +299,7 @@ export class OrdenesService {
       include: OT_INCLUDE,
     });
     // Recien creada en la transaccion de arriba: la relectura siempre la encuentra.
-    return { ...creada!, advertencia_lista_roja };
+    return { ...conDireccionResuelta(creada!), advertencia_lista_roja };
   }
 
   async listarOT(
@@ -358,7 +384,7 @@ export class OrdenesService {
     const filas = ids.length
       ? await this.prisma.orden_trabajo.findMany({ where: { id_ot: { in: ids } }, include: OT_INCLUDE })
       : [];
-    const porId = new Map(filas.map((ot) => [ot.id_ot, ot]));
+    const porId = new Map(filas.map((ot) => [ot.id_ot, conDireccionResuelta(ot)]));
 
     const enEspera = ids.filter((id) => porId.get(id)?.estado === ESTADO_SIN_REAGENDAR);
     // Una sola consulta para toda la pagina, no una por OT.
@@ -417,7 +443,7 @@ export class OrdenesService {
     }
 
     const tecnico = await this.prisma.usuario.findFirst({
-      where: { id_usuario: dto.id_tecnico, id_empresa, activo: true },
+      where: { id_usuario: dto.id_tecnico, id_empresa, activo: true, fecha_eliminacion: null },
     });
     if (!tecnico) throw new NotFoundException('Técnico no encontrado');
 
@@ -564,7 +590,7 @@ export class OrdenesService {
     // llegarian al front como "3.00" o "-21.50". Se normalizan a numero aqui
     // para que el tipo declarado en la vista sea el que realmente recibe.
     return {
-      ...ot,
+      ...conDireccionResuelta(ot),
       potencia_optica_dbm:
         ot.potencia_optica_dbm === null ? null : Number(ot.potencia_optica_dbm),
       materiales: ot.materiales.map((material) => ({
@@ -579,7 +605,10 @@ export class OrdenesService {
       where: {
         id_empresa,
         activo: true,
-        roles: { some: { rol: { nombre_rol: 'TECNICO' } } },
+        fecha_eliminacion: null,
+        // Acepta 'TECNICO' y 'Terreno': la base compartida nombra los roles
+        // distinto. Ver src/auth/roles.constants.ts
+        roles: { some: { rol: { nombre_rol: { in: nombresEnBase(ROL.TECNICO) } } } },
       },
       select: { id_usuario: true, nombre_completo: true, nombre_usuario: true },
     });
@@ -618,7 +647,7 @@ export class OrdenesService {
     }
 
     const tecnico = await this.prisma.usuario.findFirst({
-      where: { id_usuario: dto.id_tecnico, id_empresa, activo: true },
+      where: { id_usuario: dto.id_tecnico, id_empresa, activo: true, fecha_eliminacion: null },
     });
     if (!tecnico) throw new NotFoundException('Técnico no encontrado');
 
@@ -704,8 +733,17 @@ export class OrdenesService {
         },
       });
       if (soltarTicket) await this.moverTicket(tx, soltarTicket, id_ot, userId, 'cancelada');
-      // CU-20: una instalacion cancelada devuelve su puerto reservado.
-      if (dto.estado === 'CANCELADA') await this.moverPuerto(tx, ot, 'liberar');
+      // CU-20: una instalacion cancelada devuelve su puerto RESERVADO.
+      //
+      // Se excluye la BAJA a proposito. Cancelar una baja significa que el
+      // cliente sigue con servicio, y su puerto tiene que seguir OCUPADO. El
+      // `liberar` de aca actua sobre puertos RESERVADO, asi que hoy no tocaba
+      // uno ocupado --pero una baja sobre una instalacion todavia sin confirmar
+      // si tiene puerto reservado, y cancelarla lo soltaba--. Vale dejarlo
+      // explicito: es el tipo de OT, no el estado del puerto, lo que decide.
+      if (dto.estado === 'CANCELADA' && ot.tipo_ot !== TIPO_OT_BAJA) {
+        await this.moverPuerto(tx, ot, 'liberar');
+      }
 
       await tx.historial_ot.create({
         data: {
@@ -776,9 +814,43 @@ export class OrdenesService {
       }
     }
 
-    // ACUERDO G1↔G3: los equipos individualizables van sobre numero_serie (G3
-    // no lee unidad_equipo). Se mapean a la accion semantica + literal tentativo
-    // de G1 y viajan en el fan-out; G1 aplica la transicion.
+    // G1 (8-nov-2026) exige tres datos para registrar el cierre de una
+    // reparacion; sin ellos lo anota como DATOS_REPARACION_INCOMPLETOS. La
+    // obligatoriedad se impone aca y no en el DTO porque depende del
+    // `tipo_ot`, que el DTO no conoce --mismo caso que la categoria de falla--.
+    //
+    // El largo y los valores permitidos ya los valido el DTO. Aca solo se
+    // comprueba que esten: un mensaje por campo faltante, no uno generico, que
+    // es lo que el tecnico necesita leer desde el celular.
+    let reparacion: ReparacionDeclarada | null = null;
+    if (ot.tipo_ot === 'REPARACION') {
+      const falla = dto.falla_reportada?.trim();
+      const solucion = dto.solucion_aplicada?.trim();
+      if (!falla) {
+        throw new BadRequestException('Debe indicar qué falla encontró');
+      }
+      if (!solucion) {
+        throw new BadRequestException('Debe indicar qué hizo para resolverla');
+      }
+      if (!dto.resultado_reparacion) {
+        throw new BadRequestException('Debe indicar cómo quedó la reparación');
+      }
+      reparacion = {
+        falla_reportada: falla,
+        solucion_aplicada: solucion,
+        resultado: dto.resultado_reparacion,
+      };
+    }
+
+    // ACUERDO G1↔G3: los equipos individualizables van sobre numero_serie. Se
+    // mapean a la accion semantica + literal de G1 y viajan en el fan-out; G1
+    // aplica la transicion. Antes, la serie se valida aca contra el inventario
+    // (ver validar-equipos.ts): el tecnico se entera en el domicilio y no
+    // despues de que G1 procese el cierre.
+    await this.validarSeries([...(dto.equipos_instalados ?? []), ...(dto.equipos_retirados ?? [])], {
+      id_empresa,
+      id_tecnico: userId,
+    });
     const conEstadoG1 = (xs: CerrarOtDto['equipos_instalados']): EquipoDeclarado[] =>
       (xs ?? []).map((e) => ({
         numero_serie: e.numero_serie,
@@ -786,10 +858,18 @@ export class OrdenesService {
         estado_g1: ACCION_A_ESTADO_G1[e.accion],
         motivo: e.motivo,
         observacion_estado_fisico: e.observacion_estado_fisico,
+        con_dano: e.con_dano,
         diagnostico: e.diagnostico,
       }));
     const equipos_instalados = conEstadoG1(dto.equipos_instalados);
     const equipos_retirados = conEstadoG1(dto.equipos_retirados);
+    // NO pasan por `validarSeries`: esa comprueba que la serie este asignada al
+    // tecnico que cierra, y un equipo que no se recupero es exactamente el que
+    // el tecnico no tiene. Validarlos ahi haria imposible declarar un faltante.
+    const equipos_faltantes: EquipoFaltante[] = (dto.equipos_faltantes ?? []).map((e) => ({
+      numero_serie: e.numero_serie,
+      motivo: e.motivo.trim(),
+    }));
 
     // G3 valida que el material EXISTA en el catálogo de la empresa (input
     // propio); el SALDO lo valida G1 (ACUERDO G1↔G3). Sin esto, un id malo da
@@ -828,17 +908,8 @@ export class OrdenesService {
         });
       }
 
-      // CU-31: si el tecnico no llamo desde el domicilio, lo hace despues el
-      // jefe tecnico desde el panel de llamadas de cortesia.
-      if (dto.resultado_llamada) {
-        await tx.llamada_cortes.create({
-          data: {
-            id_ot,
-            resultado: dto.resultado_llamada,
-            observaciones: dto.obs_llamada ?? null,
-          },
-        });
-      }
+      // CU-31: la llamada de cortesia no se registra al cerrar. La hace siempre
+      // el jefe tecnico, con la OT completada, desde el panel de llamadas.
 
       await tx.orden_trabajo.update({
         where: { id_ot },
@@ -858,19 +929,30 @@ export class OrdenesService {
           categoria_falla_otro: dto.categoria_falla_otro?.trim() || null,
           resuelto_remotamente: dto.resuelto_remotamente ?? false,
           // Snapshot para la reconciliacion por GET (mismo contenido que el webhook).
-          cierre_equipos:
-            equipos_instalados.length || equipos_retirados.length
-              ? ({ instalados: equipos_instalados, retirados: equipos_retirados } as unknown as Prisma.InputJsonValue)
-              : Prisma.JsonNull,
+          //
+          // La columna lleva DOS secciones independientes --los equipos y los
+          // datos de reparacion-- y cada una puede venir sola. Se arma por
+          // partes a proposito: con el `||` anterior, una reparacion sin
+          // equipos habria dejado la columna en null y los tres datos se
+          // habrian perdido entre el cierre y la aprobacion, que es cuando se
+          // leen para avisarle a G1.
+          cierre_equipos: cierreGuardado(
+            equipos_instalados,
+            equipos_retirados,
+            reparacion,
+            equipos_faltantes,
+            dto.comentario_tecnico?.trim() || null,
+          ),
         },
       });
 
       // CU-20: el tecnico confirma la instalacion; el puerto reservado para el
       // cliente queda OCUPADO.
       if (ot.tipo_ot === 'INSTALACION') await this.moverPuerto(tx, ot, 'confirmar');
-      // CU-25: la OT-BAJA-PUERTO (la de baja que lleva caja) deja el puerto
-      // del cliente LIBRE al desconectarlo.
-      if (ot.tipo_ot === 'BAJA') await this.moverPuerto(tx, ot, 'desconectar');
+      // La BAJA ya NO desconecta aca: lo hace `aprobarCierre`. Desconectar al
+      // cerrar dejaba el puerto LIBRE mientras el equipo seguia en el domicilio
+      // --y si el jefe tecnico rechazaba el cierre, libre para siempre, porque
+      // `rechazarCierre` no lo devolvia--. Lo levanto G8 el 12-11-2026.
 
       await tx.historial_ot.create({
         data: {
@@ -903,6 +985,9 @@ export class OrdenesService {
         fotos: true,
         materiales: { include: { tipo_equipo: { select: { nombre: true } } } },
         llamada: true,
+        // Para resolver la direccion de una OT de G8, que no tiene fila en
+        // `direccion_servicio`. Ver direccion-ot.ts.
+        solicitud_integracion: CONTACTO_SOLICITUD,
       },
     });
 
@@ -915,8 +1000,9 @@ export class OrdenesService {
     // desde el celular, esperando por algo que ya estaba guardado -- y con el
     // riesgo de que reintentara el cierre creyendo que fallo.
     // Con el aviso movido a la aprobacion (CIERRE_FAN_OUT_MOMENTO), aca no se
-    // avisa: el jefe tecnico todavia puede rechazar.
-    if (this.momentoFanOut === 'CIERRE') void this.notificarCierre(id_ot);
+    // avisa: el jefe tecnico todavia puede rechazar. Una BAJA nunca avisa aca,
+    // sea cual sea la variable (ver momentoPara).
+    if (momentoPara(ot.tipo_ot, this.momentoFanOut) === 'CIERRE') void this.notificarCierre(id_ot);
 
     const advertencia_potencia =
       dto.potencia_optica_dbm < -24 || dto.potencia_optica_dbm > -19;
@@ -925,7 +1011,11 @@ export class OrdenesService {
       : null;
 
     this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
-    return { ...otActualizada, advertencia_potencia, alerta_reparaciones_30_dias };
+    return {
+      ...(otActualizada ? conDireccionResuelta(otActualizada) : otActualizada),
+      advertencia_potencia,
+      alerta_reparaciones_30_dias,
+    };
   }
 
   /**
@@ -1248,11 +1338,16 @@ export class OrdenesService {
           valor_nuevo: { estado: 'COMPLETADA', observaciones },
         },
       });
+      // CU-25: la baja desconecta el puerto del cliente recien aca, con el
+      // cierre aprobado. Antes se hacia en `cerrarOT`: ver el comentario de
+      // alla sobre el puerto que quedaba libre con el equipo aun instalado.
+      if (ot.tipo_ot === TIPO_OT_BAJA) await this.moverPuerto(tx, ot, 'desconectar');
+
       // CU-30: el ticket derivado se resuelve cuando su OT se completa.
       if (ot.id_ticket) await this.moverTicket(tx, ot.id_ticket, id_ot, userId, 'completada', ot.resuelto_remotamente);
     });
 
-    if (this.momentoFanOut === 'APROBACION') void this.notificarCierre(id_ot);
+    if (momentoPara(ot.tipo_ot, this.momentoFanOut) === 'APROBACION') void this.notificarCierre(id_ot);
 
     this.dashboardGateway.emitirActualizacion(id_empresa, { tipo: 'OT_ACTUALIZADA', id_ot });
     return this.obtenerDetalle(id_ot, id_empresa);
@@ -1338,7 +1433,7 @@ export class OrdenesService {
         include: INCLUDE_PAYLOAD_CIERRE,
       });
       if (!ot) throw new Error('la OT cerrada no se encontro al releerla');
-      await this.fanOut.notificar(construirPayloadCierre(ot));
+      await this.fanOut.notificar(construirPayloadCierre(await completarSolicitudBaja(this.prisma, ot, this.logger)));
     } catch (e) {
       this.logger.error(`fan-out del cierre ${id_ot}: ${(e as Error).message}`);
     }
@@ -1454,6 +1549,51 @@ export class OrdenesService {
           }
         : null,
     }));
+  }
+
+  /**
+   * Los equipos que el tecnico lleva encima: los que G1 le asigno y siguen en
+   * "Asignado a técnico". El formulario de cierre los sugiere al escribir la
+   * serie de un equipo instalado.
+   */
+  async misEquipos(user: UsuarioAutenticado) {
+    const unidades = await this.prisma.unidad_equipo.findMany({
+      where: {
+        id_empresa: user.id_empresa,
+        id_tecnico_asignado: user.userId,
+        // Los mismos origenes que valida el cierre, enteros: lo que se sugiere
+        // es exactamente lo que despues se acepta.
+        estado: { in: ORIGENES_VALIDOS_G1.INSTALADO_EN_CLIENTE },
+      },
+      select: { numero_serie: true, modelo: true, tipo_equipo: { select: { nombre: true } } },
+      orderBy: { numero_serie: 'asc' },
+    });
+    return unidades.map((u) => ({ numero_serie: u.numero_serie, modelo: u.modelo, tipo: u.tipo_equipo?.nombre ?? null }));
+  }
+
+  /**
+   * Valida contra `unidad_equipo` las series declaradas al cerrar. Junta los
+   * problemas de todos los equipos en un solo 400, para que el tecnico los
+   * corrija de una vez desde el celular. Las reglas, en validar-equipos.ts.
+   */
+  private async validarSeries(equipos: EquipoAValidar[], ctx: { id_empresa: number; id_tecnico: number }) {
+    if (equipos.length === 0) return;
+
+    const series = [...new Set(equipos.map((e) => e.numero_serie))];
+    // Solo la empresa del tecnico: lo de otra cuenta como desconocido. Y sin
+    // distinguir mayusculas, porque el formulario sube la serie a mayusculas
+    // y el inventario de G1 no promete guardarla asi.
+    const unidades = await this.prisma.unidad_equipo.findMany({
+      where: { numero_serie: { in: series, mode: 'insensitive' }, id_empresa: ctx.id_empresa },
+      select: { numero_serie: true, estado: true, id_empresa: true, id_tecnico_asignado: true },
+    });
+    const clave = (serie: string) => serie.toUpperCase();
+    const porSerie = new Map(unidades.map((u) => [clave(u.numero_serie), u]));
+
+    const problemas = equipos
+      .map((e) => problemaDeEquipo(e, porSerie.get(clave(e.numero_serie)), ctx))
+      .filter((p): p is string => p !== null);
+    if (problemas.length > 0) throw new BadRequestException(problemas.join('. '));
   }
 
   async listarCategoriasFalla() {

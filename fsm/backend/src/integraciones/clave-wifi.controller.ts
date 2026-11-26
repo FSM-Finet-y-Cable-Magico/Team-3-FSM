@@ -1,9 +1,10 @@
-import { Controller, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { ClaveWifiService } from './clave-wifi.service.js';
 
 interface UsuarioActual {
+  userId: number;
   id_empresa: number;
 }
 
@@ -19,6 +20,16 @@ interface UsuarioActual {
 export class ClaveWifiController {
   constructor(private claveWifi: ClaveWifiService) {}
 
+  /** Las solicitudes de un ticket, sin la clave: es lo que lista el panel. */
+  @Roles('ADMIN', 'JEFE_TECNICO')
+  @Get('ticket/:id')
+  porTicket(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: UsuarioActual,
+  ) {
+    return this.claveWifi.porTicket(id, user.id_empresa);
+  }
+
   /**
    * Entrega la clave en claro, UNA SOLA VEZ.
    *
@@ -33,6 +44,6 @@ export class ClaveWifiController {
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: UsuarioActual,
   ) {
-    return this.claveWifi.entregar(id, user.id_empresa);
+    return this.claveWifi.entregar(id, user);
   }
 }
