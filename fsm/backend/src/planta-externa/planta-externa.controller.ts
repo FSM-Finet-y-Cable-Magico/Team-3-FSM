@@ -8,11 +8,12 @@ import {
   Post,
   Query,
   UploadedFile,
+  UseFilters,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { LIMITE_KML_BYTES } from '../common/http/limites-http.js';
+import { ArchivoGrandeFilter, LIMITE_KML_BYTES, MENSAJE_KML_GRANDE } from '../common/http/limites-http.js';
 import { PlantaExternaService } from './planta-externa.service.js';
 import { TopologiaService } from './topologia.service.js';
 import { SaludCajasService } from './salud-cajas.service.js';
@@ -215,6 +216,7 @@ export class PlantaExternaController {
 
   @Roles('ADMIN')
   @Post('importar-kml')
+  @UseFilters(new ArchivoGrandeFilter(MENSAJE_KML_GRANDE))
   @UseInterceptors(FileInterceptor('kml', { storage: memoryStorage(), limits: { fileSize: LIMITE_KML_BYTES } }))
   importar(
     @UploadedFile() file: { buffer?: Buffer } | undefined,
