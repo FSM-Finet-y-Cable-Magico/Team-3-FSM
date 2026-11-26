@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { LIMITE_FOTO_BYTES } from '../common/http/limites-http.js';
 import { OrdenesService } from './ordenes.service.js';
 import { CrearOtDto } from './dto/crear-ot.dto.js';
 import { AsignarTecnicoDto } from './dto/asignar-tecnico.dto.js';
@@ -188,7 +189,7 @@ export class OrdenesController {
 
   @Roles('TECNICO')
   @Post(':id/foto')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: LIMITE_FOTO_BYTES } }))
   async subirFoto(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
