@@ -30,3 +30,29 @@ describe('Cloudinary sin configuración completa', () => {
     await moduleRef.close();
   });
 });
+
+describe('Cloudinary guarda la evidencia reducida', () => {
+  // La foto llega tal como sale de la camara del celular (3-8 MB). Con una
+  // transformacion de entrada, Cloudinary guarda la version reducida y no el
+  // original: la cuota de almacenamiento se gasta en ~300 KB por foto.
+  it('pide a Cloudinary acotar el ancho y la calidad al subir', async () => {
+    const upload_stream = jest.fn((_o: unknown, cb: (e: unknown, r: unknown) => void) => ({
+      end: () => cb(null, { secure_url: 'https://res.cloudinary.com/c/image/upload/v1/f/x.jpg', format: 'jpg', bytes: 300 * 1024 }),
+    }));
+    const moduleRef = await Test.createTestingModule({ providers: [
+      CloudinaryService,
+      { provide: ConfigService, useValue: new ConfigService({ CLOUDINARY_CLOUD_NAME: 'c', CLOUDINARY_API_KEY: 'k', CLOUDINARY_API_SECRET: 's' }) },
+      { provide: CLOUDINARY_CLIENT, useValue: { uploader: { upload_stream } } },
+    ] }).compile();
+
+    await moduleRef.get(CloudinaryService).subirEvidencia(file);
+
+    expect(upload_stream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transformation: [{ width: 1600, height: 1600, crop: 'limit', quality: 'auto' }],
+      }),
+      expect.any(Function),
+    );
+    await moduleRef.close();
+  });
+});
