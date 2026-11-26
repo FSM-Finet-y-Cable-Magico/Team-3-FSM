@@ -91,12 +91,25 @@ describe('limites de tamano de las peticiones', () => {
     expect(sdk.uploader.upload_stream).not.toHaveBeenCalled();
   });
 
-  it('un KML de 21 MB se rechaza con 413', async () => {
-    await request(app.getHttpServer())
+  it('el rechazo de la foto le dice al tecnico que hacer, en espanol', async () => {
+    // El frontend muestra `message` tal cual. El de Nest es "File too large".
+    const res = await request(app.getHttpServer())
+      .post('/api/ordenes/1/foto')
+      .auth(token('TECNICO'), { type: 'bearer' })
+      .attach('file', Buffer.alloc(11 * MB), { filename: 'foto.jpg', contentType: 'image/jpeg' });
+    expect(res.status).toBe(413);
+    expect(res.body.message).toBe(
+      'La foto supera los 10 MB. Tómala con menor resolución o elige otra.',
+    );
+  });
+
+  it('un KML de 21 MB se rechaza con 413 y un mensaje en espanol', async () => {
+    const res = await request(app.getHttpServer())
       .post('/api/planta-externa/importar-kml')
       .auth(token('ADMIN'), { type: 'bearer' })
-      .attach('kml', Buffer.alloc(21 * MB), { filename: 'red.kml', contentType: 'application/xml' })
-      .expect(413);
+      .attach('kml', Buffer.alloc(21 * MB), { filename: 'red.kml', contentType: 'application/xml' });
+    expect(res.status).toBe(413);
+    expect(res.body.message).toBe('El archivo KML supera los 20 MB.');
   });
 
   it('control: un KML de 1 MB (el real de Tomodat pesa 740 KB) todavia entra', async () => {

@@ -23,13 +23,32 @@ function servicioCon(filas: ReturnType<typeof alerta>[]) {
 }
 
 const argumentos = (findMany: jest.Mock<(a: unknown) => unknown>) =>
-  findMany.mock.calls[0][0] as { take?: number };
+  findMany.mock.calls[0][0] as { take?: number; orderBy?: unknown };
 
 describe('listar alertas', () => {
   it('las resueltas se acotan en la base, no en memoria', async () => {
     const { service, findMany } = servicioCon([]);
     await service.listar(1, true, undefined, 200);
     expect(argumentos(findMany).take).toBe(200);
+  });
+
+  it('la ventana de las resueltas es por fecha de resolucion, no de creacion', async () => {
+    // Cortando por `creada_en`, una CRITICA creada hace tres semanas y
+    // resuelta hoy quedaba fuera si habia mas de 200 resueltas creadas
+    // despues. Las sin `resuelta_en` (filas viejas) van al final: en un
+    // DESC, Postgres pone los NULL primero.
+    const { service, findMany } = servicioCon([]);
+    await service.listar(1, true, undefined, 200);
+    expect(argumentos(findMany).orderBy).toEqual([
+      { resuelta_en: { sort: 'desc', nulls: 'last' } },
+      { creada_en: 'desc' },
+    ]);
+  });
+
+  it('las abiertas se siguen leyendo por fecha de creacion', async () => {
+    const { service, findMany } = servicioCon([]);
+    await service.listar(1, false, undefined, 200);
+    expect(argumentos(findMany).orderBy).toEqual({ creada_en: 'desc' });
   });
 
   it('el tope de las resueltas respeta el maximo de 200 aunque pidan mas', async () => {
